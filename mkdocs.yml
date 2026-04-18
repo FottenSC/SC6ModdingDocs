@@ -101,6 +101,7 @@ nav:
       - Character Data: sc6/character-data.md
       - Battle Manager: sc6/battle-manager.md
       - Trace / Hitbox System: sc6/trace-system.md
+      - Move System (VM): sc6/move-system.md
   - Cookbook:
       - cookbook/index.md
   - Reference:
