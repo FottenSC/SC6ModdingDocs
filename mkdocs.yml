@@ -1,0 +1,114 @@
+site_name: SoulCalibur VI Modding Docs
+site_description: Community documentation for modding SoulCalibur VI with the UE4SS framework.
+site_url: https://example.com/  # TODO: replace with your GH Pages or CF Pages URL
+repo_url: https://github.com/YOUR_USER/SC6ModdingDocs  # TODO: update
+repo_name: SC6ModdingDocs
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
+    - content.action.view
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.caret
+  - pymdownx.mark
+  - pymdownx.tilde
+  - pymdownx.keys
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      check_paths: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+  - tags
+
+# Navigation — add new pages here as the docs grow.
+# Folder-level index.md files render as section landing pages.
+nav:
+  - Home: index.md
+  - Getting Started:
+      - getting-started/index.md
+      - Install UE4SS: getting-started/install-ue4ss.md
+      - First Mod: getting-started/first-mod.md
+  - UE4SS Framework:
+      - ue4ss/index.md
+      - Lua API Overview: ue4ss/lua-api.md
+      - Hooks & Events: ue4ss/hooks.md
+  - SoulCalibur VI Internals:
+      - sc6/index.md
+      - Game Structures: sc6/structures.md
+      - Character Data: sc6/character-data.md
+  - Cookbook:
+      - cookbook/index.md
+  - Reference:
+      - reference/index.md
+      - Glossary: reference/glossary.md
+  - Contributing: contributing.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/YOUR_USER/SC6ModdingDocs
+  generator: false
+
+copyright: Community-maintained documentation. Not affiliated with BANDAI NAMCO or the UE4SS team.
