@@ -1,14 +1,76 @@
-# MkDocs build output
+# ---- MkDocs ---------------------------------------------------------------
+# Build output — Cloudflare Pages builds this fresh on each deploy.
 site/
+# Material for MkDocs "insiders" cache (if ever used)
+.cache/
 
-# Python
+# ---- Python ---------------------------------------------------------------
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
 .venv/
 venv/
+env/
+ENV/
 
-# Editors
+# Pip
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ---- Node / tooling (in case we add search plugins, linkcheckers, etc.) ----
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ---- Secrets / local config ----------------------------------------------
+# Never commit env files — Cloudflare Pages handles env vars in dashboard.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.*
+
+# ---- Editors / IDEs -------------------------------------------------------
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
+.history/
+*.code-workspace
+
+# ---- OS detritus ----------------------------------------------------------
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ---- Misc -----------------------------------------------------------------
+# Local scratch files — anything named `_scratch*` or under `_local/` is ignored
+_scratch*
+_local/
+
+# Log files
+*.log
