@@ -1,0 +1,22 @@
+{
+  // Cloudflare Workers config for deploying SC6ModdingDocs as a static site.
+  // Docs: https://developers.cloudflare.com/workers/static-assets/
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sc6moddingdocs",
+  "compatibility_date": "2025-04-18",
+
+  // Serve the MkDocs build output as static assets.
+  // `mkdocs build` writes here; Cloudflare uploads this directory to the edge.
+  "assets": {
+    "directory": "./site",
+
+    // When a path doesn't match a file, fall back to the 404 page MkDocs
+    // generates. Without this, unknown URLs return Cloudflare's default 404.
+    "not_found_handling": "404-page"
+  },
+
+  // Observability (free) — shows request logs in the dashboard.
+  "observability": {
+    "enabled": true
+  }
+}
