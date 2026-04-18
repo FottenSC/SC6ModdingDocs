@@ -22,6 +22,40 @@ Use that template verbatim so the search index picks up fields consistently.
 
 ---
 
+## Battle manager
+
+### `ALuxBattleManager`
+
+- **Path**: `/Script/LuxorGame.LuxBattleManager`
+- **Discovered via**: `ALuxBattleManager__StaticClass @ 0x140947390`,
+  `ALuxBattleManager::Update_Impl @ 0x140437590`,
+  `ALuxBattleManager::PlayMove_Impl @ 0x140429840`
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x050 | `FLuxDataTable` | ConfigTable | round / timer / per-player settings tree |
+| +0x098 | `UObject*` | GameState | isa-checked against `ALuxBattleManager` every tick |
+| +0x388 | `ALuxBattleChara` (embedded) | SubChara | host of `MoveComponent` used by `PlayMoveDirect` |
+| +0x390 | `ALuxBattleChara**` | PlayerCharas | array of player chara ptrs |
+| +0x398 | `int32` | NumPlayerCharas | |
+| +0x3A0 | `uint8` | PendingMoveCommandType | 1 = PlayMove, 2 = Stop |
+| +0x3A8 | `int32` | PendingMoveCommandParam | player index |
+| +0x3B0 | `byte[0x30]` | PendingMoveCommandData | 0x30 payload slot |
+| +0x3E0 | `bool` | SavedCommandPlayerActive | swapped by PlayMove/StopMove |
+| +0x400 | `float*` | AxisValues | dynamic float array |
+| +0x408 | `int32` | AxisCount | |
+| +0x410 | `uint8*` | AxisInhibitFlags | dynamic byte array |
+| +0x418 | `int32` | AxisInhibitCount | |
+| +0x420 | `float` | AxisXAccumulator | per-tick decay |
+| +0x424 | `float` | AxisYAccumulator | per-tick decay |
+| +0x508 | `UObject*` | (axis-consumer; walked by `Update`) | |
+| +0x12F3 | `bool` | GlobalAxisInhibit | when set, zeroes every axis this tick |
+
+See [Battle Manager & DataTable Config Tree](battle-manager.md) for the
+UFunction map and the hierarchical config-tree path convention.
+
+---
+
 ## Trace / hitbox system
 
 ### `ALuxBattleChara`

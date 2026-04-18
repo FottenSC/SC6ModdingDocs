@@ -107,6 +107,25 @@ World = T.Rot * off + T.Pos                                                 // q
 
 The `* 100.0f` is the game-wide cm→UE scaling constant at `DAT_143e8a418`.
 
+## `ELuxTraceKindId` (trace visual kinds)
+
+`ULuxTraceComponent` stores the active kind in `+0x498 KindIndexCopy` (int32).
+The enum has >30 entries. Selected examples (full list via Ghidra strings
+`0x14335A7B0`+):
+
+| Symbol | Meaning |
+|---|---|
+| `TRC_KIND_NONE` | no trail |
+| `TRC_KIND_AUTO` | engine-driven default |
+| `TRC_KIND_NORMAL` / `TRC_KIND_NORMAL_S` | default swing trail (S = short) |
+| `TRC_KIND_TUBE` / `TRC_KIND_LINE` | geometry variants |
+| `TRC_KIND_THUNDER` / `TRC_KIND_WIND` / `TRC_KIND_FLAME` / `TRC_KIND_LIGHT` | elemental |
+| `TRC_KIND_SPARK` / `TRC_KIND_FIRE_S` | short-lived VFX |
+| `TRC_KIND_P*` (e.g. `TRC_KIND_PFLAME`, `PFLAME_L`, `PSMOKE`, `PBURN`, `PLIGHT`, `PDUST`, `PAURA`, `PTHUNDER`, `PWIND`) | particle-only trails (no mesh); `_L` = large variant |
+| `TRC_KIND_LIGHTSABER` | Yoda / Maxi? variant (unconfirmed) |
+| `TRC_KIND_KICK` | kick-attack trail |
+| `TRC_KIND_ULTIMATE_EDGE` / `TRC_KIND_ULTIMATE_CALIBUR` | super/reversal trails |
+
 ## Debug-draw flags (stripped in shipping)
 
 `ULuxTraceDataAsset` declares three UPROPERTY bools:

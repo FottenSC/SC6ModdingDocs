@@ -99,6 +99,7 @@ nav:
       - sc6/index.md
       - Game Structures: sc6/structures.md
       - Character Data: sc6/character-data.md
+      - Battle Manager: sc6/battle-manager.md
       - Trace / Hitbox System: sc6/trace-system.md
   - Cookbook:
       - cookbook/index.md

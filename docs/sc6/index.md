@@ -6,6 +6,7 @@ Game-specific notes: class paths, structures, and useful entry points discovered
 
 - [Game Structures](structures.md)
 - [Character Data](character-data.md)
+- [Battle Manager](battle-manager.md)
 - [Trace / Hitbox System](trace-system.md)
 
 ## Engine version
