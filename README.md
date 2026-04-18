@@ -16,6 +16,11 @@ AI agents should follow when adding pages.
 ## Local preview
 
 ```bash
+# With uv (matches the Cloudflare build — fastest):
+uv pip install -r requirements.txt
+mkdocs serve
+
+# Or plain pip:
 pip install -r requirements.txt
 mkdocs serve
 # open http://127.0.0.1:8000
@@ -31,13 +36,25 @@ One-time setup in the Cloudflare dashboard — **Workers & Pages → Create → 
 | Setting | Value |
 |---|---|
 | Framework preset | *None* |
-| Build command | `pip install -r requirements.txt && mkdocs build --strict` |
+| Build command | `pip install uv && uv pip install --system -r requirements.txt && mkdocs build --strict` |
 | Build output directory | `site` |
 | Root directory | *(leave blank)* |
 | Environment variable | `PYTHON_VERSION` = `3.12` |
 
 You'll get a `*.pages.dev` URL after the first build. Add a custom domain under the project's
 **Custom domains** tab if desired.
+
+> **Why `uv`?** The naïve `pip install -r requirements.txt` takes ~90s on Cloudflare Pages
+> (serial resolver + building `regex` from source). `uv` resolves in parallel and prefers
+> pre-built wheels, cutting the install step to ~5s. `mkdocs build` itself is sub-second,
+> so the whole Cloudflare deploy drops from ~3 min to ~30s. A curl-install variant works
+> too if you'd rather skip the `pip install uv` bootstrap:
+>
+> ```bash
+> curl -LsSf https://astral.sh/uv/install.sh | sh \
+>   && $HOME/.local/bin/uv pip install --system -r requirements.txt \
+>   && mkdocs build --strict
+> ```
 
 ### Why no GitHub Actions?
 
