@@ -1,26 +1,46 @@
 # Trace / Hitbox System
 
-SC6 calls its hitboxes "traces" internally. Every attack's hit window, visual weapon trail, and
-hit-detection volume is driven by the trace system. This page maps the classes, ownership chain,
-and the data the game actually collides against.
+SC6's "trace" system and its hitbox system are two different things that sit next to each other
+on the chara. This page covers both, because move scripts drive them in lockstep — but don't
+confuse them.
 
-!!! warning "Naming"
-    Despite the name, **`ALuxTraceManager` is not the hitbox owner** — it's a thin actor that
-    wraps a `ULuxTraceComponent`. The *real* runtime state lives on `ULuxTraceComponent`. The
-    *real* capsule geometry lives on the chara's `MoveProvider`, not on any trace asset.
+!!! warning "Naming — `TraceManager` is not the hitbox system"
+    **`ALuxTraceManager` is literally "the traces" — the visual weapon trails / swooshes /
+    particle effects.** It owns `EffectSlotA/B` (particle systems), a `ULuxTraceComponent`
+    (renderable trail component), and a `KindIndex` (`ELuxTraceKindId`, the visual style). It
+    does **not** own, store, or resolve hitboxes.
+
+    **Hitboxes are a separate system.** They live as `FLuxCapsule` entries in the container
+    hanging off the chara's `MoveProvider` (`chara+0x388 → +0x30 → +0x30 / +0x38`). Hit
+    resolution walks that capsule array directly — it never goes through `ALuxTraceManager`.
+
+    The two systems share the same `AttackTag` (1..9) as a coordination key so a move script can
+    turn on the visual trail and open the corresponding capsule's hit window in one call, but
+    they are otherwise independent. `ALuxBattleChara::Active` opens the hit slot in the per-chara
+    slot hash (`+0x3B0 / +0x3F0`); `ALuxTraceManager::ActivateTrace` spawns the trail. Either can
+    fire without the other.
 
 ## Ownership chain
 
 ```text
-ALuxBattleChara                 (chara+0x388) -> ULuxBattleMoveProvider (hit capsules live here)
-    ├ +0x3A8  ULuxTraceComponent*            (the renderable / active-trace table)
-    └ +0x458  ALuxTraceManager*              (thin wrapper; receives UFunction calls)
+ALuxBattleChara
+    ├ +0x388  ULuxBattleMoveProvider*   <-- HITBOXES LIVE HERE (FLuxCapsule array)
+    │             +0x30 -> capsule container -> FLuxCapsule** / count
+    │
+    ├ +0x3A8  ULuxTraceComponent*       (visual — renderable trail + active-trace table)
+    │
+    ├ +0x3B0  FActiveAttackSlot[]       (hit-slot hash — keyed by AttackTag 1..9)
+    │
+    └ +0x458  ALuxTraceManager*         VISUAL ONLY — weapon-trail / FX driver
                    ├ +0x388  MoveProvider back-ref
                    ├ +0x398  UParticleSystemComponent* EffectSlotA
                    ├ +0x3A0  UParticleSystemComponent* EffectSlotB
-                   ├ +0x3A8  ULuxTraceComponent*  (same kind of component)
-                   └ +0x400  int32  KindIndex     (ELuxTraceKindId)
+                   ├ +0x3A8  ULuxTraceComponent*  (same component, for trail rendering)
+                   └ +0x400  int32  KindIndex     (ELuxTraceKindId — visual style)
 ```
+
+The left column (MoveProvider + slot hash) is the hit system. The right column (TraceManager +
+its components) is the visual system. They do not share runtime state — only the `AttackTag`.
 
 > source: Ghidra reversing of `ALuxTraceManager_ActivateTrace_Impl @ 1408d5d10` and
 > `ALuxBattleManager_Update_Impl @ 140437590`.
@@ -30,10 +50,12 @@ ALuxBattleChara                 (chara+0x388) -> ULuxBattleMoveProvider (hit cap
 | Class | Purpose | Size |
 |---|---|---:|
 | `ALuxBattleChara` | A fighter on stage. Declares the `Active` / `Inactive` / `GetTracePosition` UFunctions. | 0x568 |
-| `ALuxTraceManager` | Wrapper actor — `ActivateTrace(mode, chara, mesh, kind)` + per-tick `Update(x, y)` stick-axis feed. | 0x408 |
-| `ULuxTraceComponent` | The ticking component. Holds the `ActiveTraces` TArray and spawns `ALuxTraceMeshActor` for rendering. | 0x4B0 |
-| `ALuxTraceMeshActor` | Child actor that actually renders the trail (via a procedural mesh component). | — |
-| `ULuxTracePartsDataAsset` | Visual asset (curves, material params). Not involved in collision. | — |
+| `ULuxBattleMoveProvider` | **Hit system.** Owns the `FLuxCapsule**` container that hit resolution walks. No visual role. | — |
+| `FLuxCapsule` | **Hit system.** One entry per hit/hurt capsule endpoint pair; tagged by `CapsuleType` matching `AttackTag`. | 0x50 |
+| `ALuxTraceManager` | **Visual only.** Wrapper actor that drives the weapon trail / FX — `ActivateTrace(mode, chara, mesh, kind)` + per-tick `Update(x, y)` stick-axis feed. Not consulted by hit resolution. | 0x408 |
+| `ULuxTraceComponent` | **Visual only.** Ticking component that holds the `ActiveTraces` TArray and spawns `ALuxTraceMeshActor` for rendering. | 0x4B0 |
+| `ALuxTraceMeshActor` | **Visual only.** Child actor that actually renders the trail (via a procedural mesh component). | — |
+| `ULuxTracePartsDataAsset` | **Visual only.** Curves, material params. Not involved in collision. | — |
 
 ## UFunctions exposed on `ALuxBattleChara`
 

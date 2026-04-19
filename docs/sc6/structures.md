@@ -76,7 +76,7 @@ UFunction map and the hierarchical config-tree path convention.
 | +0x3F0 | `int32*` | hash bucket base | open-addressing hash over `+0x3B0` |
 | +0x3F8 | `int32` | bucket count | mask = count − 1 |
 | +0x400 | `int32` | current attack tag cache | read by `Active_Impl` validation |
-| +0x458 | `ALuxTraceManager*` | TraceManager | thin wrapper actor |
+| +0x458 | `ALuxTraceManager*` | TraceManager | **visual-only** — drives the weapon-trail / FX. Not part of hit resolution. |
 
 > source: Ghidra reversing of `ALuxBattleChara_Active_Impl @ 0x1408CD940`,
 > `ALuxBattleChara_Inactive_Impl @ 0x1408D1420`, `ALuxBattleManager_Update_Impl @ 0x140437590`.
@@ -85,6 +85,10 @@ UFunction map and the hierarchical config-tree path convention.
 
 - **Path**: `/Script/LuxorGame.LuxTraceManager`
 - **Size**: 0x408
+- **Role**: drives the **visual** weapon trail / particle FX for one chara. Despite the name, this
+  actor has nothing to do with hit resolution — hitboxes are `FLuxCapsule` entries on the
+  `MoveProvider`. Everything on this class is visual state: two particle components, the
+  trail-rendering `ULuxTraceComponent`, and a `KindIndex` picking the visual style.
 
 | Offset | Type | Name |
 |-------:|------|------|
@@ -102,6 +106,9 @@ UFunction map and the hierarchical config-tree path convention.
 
 - **Path**: `/Script/LuxorGame.LuxTraceComponent`
 - **Size**: 0x4B0
+- **Role**: **visual-only** ticking component that renders the weapon trail. Holds the
+  `ActiveTraces` TArray of in-flight trail segments and spawns an `ALuxTraceMeshActor` to draw
+  them. Consumed by `ALuxTraceManager`; not referenced by the hit resolver.
 
 | Offset | Type | Name |
 |-------:|------|------|

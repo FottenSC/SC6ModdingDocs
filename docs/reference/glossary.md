@@ -13,7 +13,8 @@
 | **MoveProvider** | `ULuxBattleMoveProvider` — the per-chara asset that holds the current move's hit/hurt capsules. Accessed via `chara+0x388` in SC6 native code. |
 | **Pak / PAK** | Packaged content archive. SC6 reads game content from `.pak` files. |
 | **Pose / PoseSelector** | The `uint32` argument that `ALuxBattleChara::GetBoneTransformForPose` and `GetTracePosition_Impl` take to pick *which* evaluated skeletal pose to sample. Callers in the shipping binary pass small integers (0 and 1 are the values observed from `GetTracePositionForPlayer`), and the values line up with per-player pose slots, but the parameter itself is a pose selector, not a player index — they just happen to coincide for the `PlayerRight` / `PlayerLeft` pair. |
-| **Trace** | SC6's internal word for *hitbox*. The "trace system" is the hitbox / weapon-trail system collectively. |
+| **Trace** | SC6's internal word for the **visual weapon trail / swoosh / particle FX** on a swing — *not* a hitbox. `ALuxTraceManager` drives traces; it has no role in hit resolution. Hitboxes are `FLuxCapsule` on the `MoveProvider`. The two systems only share an `AttackTag` so a move script can turn both on at once. |
+| **TraceManager** | `ALuxTraceManager`. The visual-trail actor on a chara (chara+0x458). Owns `EffectSlotA/B` particle components, a `ULuxTraceComponent` for trail rendering, and a `KindIndex` picking the visual style. Does not own, store, or resolve hitboxes. |
 | **UE4SS** | Unreal Engine 4/5 Scripting System — injects Lua/BP modding into UE games. |
 | **UFunction** | A reflected Unreal function, hookable from Lua via `RegisterHook`. |
 | **UObject** | Root base class of Unreal's reflection system. |
