@@ -19,10 +19,14 @@
 
 ```lua
 local pc = FindFirstOf("PlayerController")
-if pc:IsValid() then
-    local loc = pc.Pawn.K2_GetActorLocation and pc.Pawn:K2_GetActorLocation()
+if pc:IsValid() and pc.Pawn:IsValid() then
+    local loc = pc.Pawn:K2_GetActorLocation()
     print(("location: %.1f %.1f %.1f"):format(loc.X, loc.Y, loc.Z))
 end
 ```
 
-Always null-check with `:IsValid()` before dereferencing.
+Always null-check each link in the chain with `:IsValid()` before dereferencing — `pc.Pawn` can
+be `nil` during level transitions even when the PlayerController itself is alive. Don't try to
+test for a UFunction's existence with `pc.Pawn.K2_GetActorLocation and …`: UE4SS resolves
+UFunction accessors lazily via `__index`, so that field read never returns `nil` on a live
+wrapper, and the guard always passes.

@@ -11,16 +11,19 @@ Game-specific notes: class paths, structures, and useful entry points discovered
 
 ## Engine version
 
-SoulCalibur VI ships on **Unreal Engine 4.17**. Confirm against your copy's UE4SS log:
+SoulCalibur VI ships on an Unreal Engine 4.x release in the **4.17-to-4.21** window — always
+confirm against your own copy's UE4SS log, which prints the detected version on startup:
 
 ```text
-[PS] Found EngineVersion: 4.17
+[PS] Found EngineVersion: 4.XX
 ```
 
-This affects which UE4SS release you should use and which UObject layouts are valid. For 4.17 the
-`LessEqual421` build definition (added in UE4SS 3.1.0 dev) is the correct target if you build
-UE4SS yourself — the public v3.0.1 release works for most things but has alignment edge cases on
-pre-4.21 engines.
+Whatever number shows up there is authoritative for your build — Steam / console patches have
+been known to bump minor versions, and "which 4.x" changes which UObject memory layout and which
+UE4SS release is safest. The UE4SS `LessEqual421` build definition covers any version ≤ 4.21, so
+it is the correct build target for SC6 whether the log reports 4.17 or 4.21. The public v3.0.1
+release works for most read/write patterns but has known alignment edge cases on pre-4.21
+engines; prefer a dev build if you hit odd UStruct misreads.
 
 > source: in-game `UE4SS.log` banner on any SC6 launch.
 

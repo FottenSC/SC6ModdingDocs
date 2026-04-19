@@ -46,7 +46,9 @@ The `1` means enabled.
 2. Watch the UE4SS console — you should see `[HelloSC6] loaded` early, then the `ClientRestart` line once you're past the splash/title.
 
 !!! tip "Hot reload"
-    Press the configurable hotkey (default `Ctrl+R` in newer UE4SS builds) to re-run Lua mods without restarting the game.
+    UE4SS can re-run Lua mods without restarting the game. The exact hotkey is configurable in
+    `UE4SS-settings.ini` (look for `[Hotkeys]`) and has changed between releases — check your
+    copy's ini rather than assuming a default.
 
 ## Next
 

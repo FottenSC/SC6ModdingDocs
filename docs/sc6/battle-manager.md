@@ -20,8 +20,8 @@ per-player settings as a hierarchical string/int key path.
 | +0x398 | `int32` | NumPlayerCharas | |
 | +0x3A0 | `uint8` | PendingMoveCommandType | 1 = PlayMove, 2 = Stop |
 | +0x3A8 | `int32` | PendingMoveCommandParam | player index |
-| +0x3B0 | `FLuxMoveCommandData` (0x30) | PendingMoveCommandData | cleared/filled by PlayMoveDirect/StopMove |
-| +0x3E0 | `bool` | SavedCommandPlayerActive | saved by `PlayMove`, restored by `StopMove` |
+| +0x3B0 | `FLuxMoveCommandData` | PendingMoveCommandData | cleared/filled by PlayMoveDirect / StopMove (size ≥ 0x18; exact layout unverified) |
+| +0x3E0 | `bool` | SavedLuxorPhotographyAllowed | `PlayMove` saves `LuxPhotography::IsLuxorAllowed()` here and force-disables the CVar for the duration; `StopMove` restores it. Not a "command player" flag — the name was a misread in an earlier pass. |
 | +0x400 | `float*` | AxisValues (dyn) | per-tick axis buffer |
 | +0x408 | `int32` | AxisCount | |
 | +0x410 | `uint8*` | AxisInhibitFlags (dyn) | bytes; when set, the tick zeroes that axis |
@@ -46,15 +46,15 @@ chara+0x458 ALuxTraceManager* TraceManager   (see trace-system.md)
 
 | UFunction | Impl @ | Notes |
 |---|---|---|
-| `PlayMove(PlayerIndex, MoveTableIndex, MoveIndex)` | `0x140429840` | validates + dispatches to `PlayMoveDirect` |
-| `PlayMoveDirect(PlayerIndex, MoveDef)` | `0x1404298e0` | low-level; queues into `PendingMoveCommand` or runs direct |
-| `StopMove(PlayerIndex)` | `0x140434410` | sets `PendingMoveCommand = (Stop, -1)`, `SetMoveState(6)`, notifies end |
-| `ChangeBattleLife(bPlayerRight, Index, float[2])` | `0x14059B630` | writes `LifeInit` / `LifeMax` |
+| `PlayMove(PlayerIndex, MoveTableIndex, MoveIndex)` | `0x140429840` | validates bounds on `PlayerCharas` and `MoveTables`, saves + clears the Luxor-Photography CVar, then tail-calls `PlayMoveDirect_Impl(this, PlayerIndex, &entry->def)`. |
+| `PlayMoveDirect(PlayerIndex, MoveDef*)` | `0x1404298e0` | low-level entry point. Either dispatches the move straight onto the chara's MoveComponent/CommandPlayer, or stages it in `PendingMoveCommand` for the next tick — branch depends on MoveComponent state. |
+| `StopMove(PlayerIndex)` | `0x140434410` | restores the saved Luxor-Photography CVar, writes `PendingMoveCommand = (Stop, -1)` into `+0x3A0/+0x3A8/+0x3B0`, calls `ALuxBattleChara::SetMoveState(chara, 6)`, then fires `NotifyCharaMoveEnded(gameState, playerIdx+1, 1)`. |
+| `ChangeBattleLife(bPlayerRight, Index, float[2])` | `0x14059B630` | writes `LifeInit` / `LifeMax` under the side's gauge path |
 | `ChangeBattleRounds(int Rounds)` | `0x14059CCF0` | writes `BattleRule.Rounds` |
-| `ChangeBattleTime(uint8 TimeEnum)` | `0x14059CEA0` | enum → seconds via static TMap |
-| `ChangeBattlePlayerSetting(bPlayerRight, Index, Setting*)` | `0x14059C6F0` | writes row-indexed or appends |
-| `GetTracePositionForPlayer({playerIdx,slot}, outHilt, outTip)` | `0x1403F4960` | wraps `ALuxBattleChara::GetTracePosition_Impl` |
-| `NotifyCharaMoveEnded(playerIdx+1, finishReason)` | `0x1403F9200` | 1-based playerIdx convention |
+| `ChangeBattleTime(uint8 TimeEnum)` | `0x14059CEA0` | enum → seconds via a lazily-built static TMap |
+| `ChangeBattlePlayerSetting(bPlayerRight, Index, Setting*)` | `0x14059C6F0` | replaces the row at that index, or appends if out of range |
+| `GetTracePositionForPlayer({playerIdx,slot}, outHilt, outTip)` | `0x1403F4960` | resolves `(playerIdx, slot)` to the right chara and its `FLuxCapsule` tag, then calls `ALuxBattleChara::GetTracePosition_Impl` |
+| `NotifyCharaMoveEnded(playerIdx+1, finishReason)` | `0x1403F9200` | 1-based playerIdx convention — the `+1` is not a typo, it's how the game encodes the "which side" field everywhere this helper is called from |
 
 ## Per-frame `Update_Impl`
 

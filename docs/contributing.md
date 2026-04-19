@@ -6,8 +6,8 @@ friendly for both human contributors and AI agents.
 ## Add a new page (the 30-second version)
 
 1. Create a new `.md` file under `docs/` in the right folder (e.g. `docs/cookbook/swap-mesh.md`).
-2. Add it to the `nav:` list in [`mkdocs.yml`](https://github.com/YOUR_USER/SC6ModdingDocs/blob/main/mkdocs.yml) so it shows up in the sidebar.
-3. Open a PR. CI will build the site; GitHub Pages / Cloudflare Pages will redeploy on merge.
+2. Add it to the `nav:` list in `mkdocs.yml` (at the repo root) so it shows up in the sidebar.
+3. Open a PR. Cloudflare Pages builds and redeploys on merge to `main`; every other branch / PR gets its own preview URL.
 
 That's the whole workflow. You do **not** need to know JavaScript, React, Vue, or Astro.
 
@@ -44,4 +44,4 @@ Open <http://127.0.0.1:8000> — the site live-reloads on save.
 mkdocs build   # outputs to ./site
 ```
 
-CI does this for you on every push to `main`.
+Cloudflare Pages runs the same command on every push — you rarely need to build locally unless you're debugging a `--strict` failure.

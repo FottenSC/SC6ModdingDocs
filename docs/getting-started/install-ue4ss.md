@@ -10,11 +10,20 @@ Grab the latest **zDEV** or release zip from the [UE4SS releases page](https://g
 
 ## 2. Locate the game's `Win64` folder
 
-The default Steam path is:
+The default Steam path looks like:
 
 ```
-C:\Program Files (x86)\Steam\steamapps\common\SOULCALIBUR VI\SoulcaliburVI\Binaries\Win64\
+<SteamLibrary>\steamapps\common\SOULCALIBUR VI\SoulcaliburVI\Binaries\Win64\
 ```
+
+`<SteamLibrary>` is wherever you installed the game — typically
+`C:\Program Files (x86)\Steam`, but Steam will happily install SoulCalibur VI on any drive
+you've added as a library (e.g. `D:\SteamLibrary` or `E:\SteamLibrary`). Right-click the game in
+Steam → **Manage → Browse local files** is the fastest way to get there.
+
+The casing on disk is `SOULCALIBUR VI` at the top level and `SoulcaliburVI` for the subfolder and
+executable — Windows is case-insensitive, but scripts that run under `mklink` / WSL / Git tooling
+are not.
 
 ## 3. Extract UE4SS
 

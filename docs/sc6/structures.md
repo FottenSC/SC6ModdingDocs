@@ -40,8 +40,8 @@ Use that template verbatim so the search index picks up fields consistently.
 | +0x398 | `int32` | NumPlayerCharas | |
 | +0x3A0 | `uint8` | PendingMoveCommandType | 1 = PlayMove, 2 = Stop |
 | +0x3A8 | `int32` | PendingMoveCommandParam | player index |
-| +0x3B0 | `byte[0x30]` | PendingMoveCommandData | 0x30 payload slot |
-| +0x3E0 | `bool` | SavedCommandPlayerActive | swapped by PlayMove/StopMove |
+| +0x3B0 | `FLuxMoveCommandData` | PendingMoveCommandData | pending move-dispatch payload; `StopMove` zeroes a 0x18 local then copies it in, so the visible footprint is ≥ 0x18 (exact size unconfirmed) |
+| +0x3E0 | `bool` | SavedLuxorPhotographyAllowed | `PlayMove` caches `LuxPhotography::IsLuxorAllowed()` here and clears the CVar; `StopMove` restores the cached value. Gameplay has nothing to do with it — this slot only exists to keep Photography Mode from capturing through scripted move dispatches. |
 | +0x400 | `float*` | AxisValues | dynamic float array |
 | +0x408 | `int32` | AxisCount | |
 | +0x410 | `uint8*` | AxisInhibitFlags | dynamic byte array |
@@ -69,13 +69,12 @@ UFunction map and the hierarchical config-tree path convention.
 
 | Offset | Type | Name | Notes |
 |-------:|------|------|-------|
-| +0x098 | `UObject*` | GameState-like | isa-checked against `ALuxBattleManager` in tick path |
-| +0x388 | `ULuxBattleMoveProvider*` | MoveProvider | holds hit capsules; the source of truth for hitbox geometry |
+| +0x388 | `ULuxBattleMoveProvider*` | MoveProvider | holds the capsule container (hit + hurt geometry). `GetTracePosition_Impl` dereferences this then walks `+0x30 → +0x30 / +0x38` to iterate the `FLuxCapsule*` array. |
 | +0x3A8 | `ULuxTraceComponent*` | TraceComponent | active-trace list (see below) |
 | +0x3B0 | `TArray<FActiveAttackSlot>` data ptr | slot hash data | stride 0x44; key byte at +0x00, hash chain at +0x3C |
 | +0x3B8 | `int32` | slot count | |
 | +0x3F0 | `int32*` | hash bucket base | open-addressing hash over `+0x3B0` |
-| +0x3F8 | `int32` | bucket count | mask = count - 1 |
+| +0x3F8 | `int32` | bucket count | mask = count − 1 |
 | +0x400 | `int32` | current attack tag cache | read by `Active_Impl` validation |
 | +0x458 | `ALuxTraceManager*` | TraceManager | thin wrapper actor |
 
@@ -124,19 +123,29 @@ UFunction map and the hierarchical config-tree path convention.
 
 ### `FLuxCapsule`
 
-- **Size**: 80 (0x50)
-- **Storage**: `TArray<FLuxCapsule*>` (array-of-pointer) at `MoveProvider +0x30 -> +0x30 / +0x38`
+- **Size**: 80 bytes (0x50) — confirmed from the Ghidra struct layout.
+- **Storage**: the MoveProvider owns a *container* struct at `MoveProvider +0x30`; that container
+  holds an array-of-pointer — `FLuxCapsule**` at `container +0x30`, count `int32` at `container +0x38`.
+  So the iteration chain is `chara +0x388 → +0x30 (container) → +0x30 (FLuxCapsule**) / +0x38 (count)`.
+- The first 48 bytes (`+0x00 .. +0x2F`) are an internal header — `GetTracePosition_Impl` never
+  touches them. The documented fields all live in the tail of the struct.
 
 | Offset | Type | Name | Notes |
 |-------:|------|------|-------|
 | +0x30 | `uint8` | CapsuleType | matched against `Active()` tag 1..9 |
 | +0x31 | `uint8` | BoneId_A | 8-bit internal index (remapped via `LuxSkeletalBoneIndex_Remap`) |
-| +0x34 | `float[3]` | LocalOffset_A | bone-local, pre cm→UE scaling |
-| +0x40 | `uint8` | BoneId_B | |
-| +0x44 | `float[3]` | LocalOffset_B | |
-| +0x50 | `ULuxTracePartsDataAsset*` | VisualPartsAsset | visual only; not collision |
+| +0x34 | `float[3]` | LocalOffset_A | bone-local; scaled by `DAT_143E8A418` (≈100 — cm→UE units) |
+| +0x40 | `uint8` | BoneId_B | second endpoint's bone index |
+| +0x44 | `float[3]` | LocalOffset_B | second endpoint's bone-local offset |
 
-> source: `ALuxBattleChara_GetTracePosition_Impl @ 0x1408D0BB0`.
+There is **no `VisualPartsAsset` field on `FLuxCapsule`** — an earlier pass guessed a
+`ULuxTracePartsDataAsset*` at `+0x50`, but that offset is past the end of the 80-byte struct and
+`GetTracePosition_Impl` never reads it. Visual-parts data-assets are referenced elsewhere in the
+trace pipeline (kind data-asset on `ULuxTraceComponent`, stored in the per-trace record), not
+embedded in a capsule.
+
+> source: `ALuxBattleChara_GetTracePosition_Impl @ 0x1408D0BB0`, `FLuxCapsule` type in the
+> Ghidra data-type manager (80 bytes, header + 32-byte endpoint pair).
 
 See [Trace / Hitbox System](trace-system.md) for how these fields feed the per-tick hit resolver
 and the world-space transform math.

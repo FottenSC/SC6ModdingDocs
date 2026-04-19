@@ -43,16 +43,20 @@ Used by the `WeaponAttackTypeTable` row to classify each attack's sound / VFX se
 `ALuxBattleManager::PlayMove(PlayerIndex, MoveTableIndex, MoveIndex)` walks:
 
 ```text
-chara    = BM.PlayerCharas[PlayerIndex]
+chara    = BM.PlayerCharas[PlayerIndex]              // BM +0x390 [PlayerIndex]
 table    = chara.MoveTables[MoveTableIndex]          // FMoveTable, 0x10 bytes
-entry    = table[MoveIndex]                          // MoveEntry, 0x18 bytes
-def      = entry.def                                 // -> FMoveDef*
-PlayMoveDirect(BM, PlayerIndex, def)                 // queues on MoveCommandPlayer
+entry    = &table.data[MoveIndex]                    // MoveEntry*, 0x18 bytes stride
+PlayMoveDirect(BM, PlayerIndex, &entry->def)         // passes &entry.def, not &entry
 ```
 
-The `MoveEntry` indexing inside a `FMoveTable` starts at `+0x8` of the entry's
-backing struct (that's where `def` sits). See
-[Battle Manager & DataTable Config Tree](battle-manager.md) for full details.
+The `PlayMoveDirect` call receives a **pointer to the `def` field inside the entry**, not a
+pointer to the entry itself — in assembly that's `entry + 0x8`, because `MoveId id` occupies the
+first 8 bytes of each `MoveEntry` and `MoveDef* def` sits at `+0x8`. Mention this only because
+anyone stepping through `PlayMove_Impl` in Ghidra will see `lVar1 + 0x8` fed into the call and
+wonder if it means something deeper. It doesn't — it's address-of-field.
+
+See [Battle Manager & DataTable Config Tree](battle-manager.md) for the rest of the dispatch
+pipeline.
 
 ## Safe-to-edit vs anti-tamper
 

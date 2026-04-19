@@ -79,13 +79,17 @@ Inherited UFunctions from parents registered with the extended form are still fi
 
 ## `FindFirstOf` vs `BattleCharaArray[i]`
 
-Both return a usable wrapper for a chara in most cases. But **TArray-element wrappers** (`bm.BattleCharaArray[i]`)
-have looser ties to `GUObjectArray` than wrappers returned by `FindAllOf` / `FindFirstOf`. On
-class hierarchies that already have marginal reflection metadata, the TArray-element path can
-trip extra UE4SS validation that the global-iteration path avoids.
+Both return a usable wrapper for a chara in most cases. But **TArray-element wrappers**
+(e.g. `bm.BattleCharaArray[i]`) and **`FindAllOf` / `FindFirstOf` results** reach the wrapped
+UObject through different UE4SS code paths, and those paths differ in how strictly they validate
+the object against `GUObjectArray` before you call anything on it. On class hierarchies with
+marginal reflection metadata (see above), the TArray-element path can trip checks that the
+global-iteration path quietly skips — you get the same `nullptr` error even though the object is
+alive.
 
 If your UFunction call fails on `bm.BattleCharaArray[i]`, try `FindAllOf("LuxBattleChara")[i]`
-first before assuming it's a different problem.
+first before assuming it's a different problem. (UE4SS strips the `A` / `U` prefix from native
+class names when matching, so the right string is `"LuxBattleChara"`, not `"ALuxBattleChara"`.)
 
 ## Static UFunctions with `WorldContextObject`
 

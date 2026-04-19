@@ -47,14 +47,14 @@ Only **three** UFunctions are reflected on this class:
 
 > source: Ghidra exec-function enumeration of the `ALuxBattleChara` class.
 
-`Active` takes a 48-byte `FTraceActiveParam` but **only the first byte matters for hit logic** —
-it's the `AttackTag`. The remaining 47 bytes configure the *visual* trail only.
+`Active` takes a 48-byte (`0x30`) `FTraceActiveParam` but **only the first byte matters for hit
+logic** — it's the `AttackTag`. The remaining 47 bytes configure the *visual* trail only.
 
 ```cpp
-struct FTraceActiveParam { // 0x30
-    uint8    AttackTag;     // +0x00 — the only field Active_Impl reads
-    uint32   Flags;         // +0x04 — visual
-    // ... cosmetic fields through +0x2C
+struct FTraceActiveParam {  // sizeof == 0x30 (48 bytes)
+    uint8    AttackTag;      // +0x00 — the only field Active_Impl reads for hit resolution
+    uint32   Flags;          // +0x04 — visual
+    // ... cosmetic fields through +0x2C (trail tint FLinearColor at +0x1C)
 };
 ```
 
@@ -79,22 +79,39 @@ netcode work.
 ## FLuxCapsule
 
 The geometry primitive for everything in the trace system. One per attacker endpoint, one per
-hurtbox. Lives in a `TArray<FLuxCapsule*>` at `MoveProvider +0x30 -> +0x30` (data ptr) / `+0x38` (count).
+hurtbox. Stored as `TArray<FLuxCapsule*>` (array-of-*pointer*) one level below the move provider:
+
+```text
+chara (+0x388) -> ULuxBattleMoveProvider
+                       +0x30  -> capsule container
+                                   +0x30  -> FLuxCapsule**   (data ptr)
+                                   +0x38  -> int32           (count)
+```
+
+`GetTracePosition_Impl` walks that pointer array and picks the first capsule whose `CapsuleType`
+matches the requested tag, so the first match wins — ordering in the container is significant.
 
 ```cpp
-struct FLuxCapsule {         // 80 bytes
-    uint8  header[48];       // game-internal header
+struct FLuxCapsule {         // 80 bytes (confirmed size)
+    uint8  header[48];       // +0x00 .. +0x2F — game-internal header, never read by GetTracePosition
     uint8  CapsuleType;      // +0x30  key: matched against Active() tag (1..9)
     uint8  BoneId_A;         // +0x31  8-bit bone index (remapped via LuxSkeletalBoneIndex_Remap)
-    float  LocalOffset_A[3]; // +0x34  bone-local position (cm, pre UE unit scale)
+    // +0x32 .. +0x33 pad
+    float  LocalOffset_A[3]; // +0x34  bone-local position (pre UE unit scale; see below)
     uint8  BoneId_B;         // +0x40  second bone id
+    // +0x41 .. +0x43 pad
     float  LocalOffset_B[3]; // +0x44  second local offset
-    ULuxTracePartsDataAsset* VisualPartsAsset;  // +0x50  visual only
+    // sizeof == 0x50 — struct ends at +0x50 exclusive
 };
 ```
 
-> source: `FLuxCapsule` struct mapped in Ghidra against
-> `ALuxBattleChara::GetTracePosition_Impl` at `1408d0bb0`.
+There is **no visual-parts-asset pointer inside the capsule** — an earlier pass guessed a field
+at `+0x50`, but `GetTracePosition_Impl` never reads past `+0x4F`, and the Ghidra type layout caps
+the struct at 80 bytes. Visual data lives on the trace component's kind data-asset, not on each
+capsule.
+
+> source: `FLuxCapsule` type in the Ghidra data-type manager (80 bytes),
+> `ALuxBattleChara::GetTracePosition_Impl` at `1408d0bb0` (reads only `+0x30 .. +0x4F`).
 
 The world-space endpoint is computed the same way by the game, every frame:
 
