@@ -191,6 +191,67 @@ yourself (`UKismetSystemLibrary::DrawDebugLine` is not stripped).
     and viable workarounds (C++ plugin calling `GetTracePosition_Impl` at `1408d0bb0` directly,
     or raw-memory walk of the capsule table).
 
+## `ReceiveGetWeaponTip` — a promising-looking dead end
+
+SC6 registers a BlueprintImplementableEvent called `ReceiveGetWeaponTip` on
+`ALuxBattleWeaponEventHandler`. In a `ProcessEvent` spy log it fires every frame during
+attacks — including ranged moves like Cervantes's gun where `GetTracePosition` is silent
+— so it *looks* like a universal "give me the weapon endpoint" query.
+
+It isn't. **No SC6 character's Blueprint subclass overrides the event.** A global
+`ProcessEvent` post-hook shows every call arriving with `outRoot == outTip == (0,0,0)` and
+`bReturnValue == 0`. The native caller (`ALuxBattleManager::GetTracePositionForPlayer @
+0x1403F4960`) calls the event first, ignores the result regardless, and falls through to
+`ALuxBattleChara::GetTracePosition_Impl` unconditionally. The event exists only as a BP
+extension point that no one shipped an implementation for.
+
+See [`ALuxBattleWeaponEventHandler` in Structures](structures.md#aluxbattleweaponeventhandler)
+for the UFunction layout and the wrapper-call chain. Documented explicitly so future RE
+passes don't lose an afternoon chasing it.
+
+## Empirical capsule-type ranges
+
+The `CapsuleType` byte at `FLuxCapsule +0x30` is matched against the `AttackTag` passed to
+`GetTracePosition`. The plate comment on `Z_Construct_UFunction_...GetTracePosition`
+documents the *valid* range as 1..9 based on one caller's usage (`SlotIdx + 1`), but a
+training-mode scan that iterates `InTracePartsId` values from 1 to 64 empirically sees
+many more types populated:
+
+- **Types that fire immediately when the overlay turns on, with characters standing idle**:
+  e.g. 1, 2, 3, 15, 18, 21, 24, 27. Shared hilt points across 1/2/3 suggest anchored body
+  segments (shoulder joints, arm / leg / torso rigs). These are very likely **hurtboxes**
+  — always-on body capsules.
+- **Types that fire only during the active frames of an attack**: these are the attack
+  capsules proper. Which numeric values get used varies per character and per move.
+
+So the canonical attack-tag range 1..9 only reflects one code path; the full capsule
+system uses a wider type space. A mod that wants to visualise everything should scan at
+least 1..31, possibly up to 1..63.
+
+!!! info "Catalogue these by watching the log"
+    HorseMod's `GetTracePosition` scan logs each `InTracePartsId` the first time it ever
+    returns true for a given player in a session. Do a move in training mode, then
+    `grep 'first active capsule' UE4SS.log` to see which tag numbers your character's
+    attacks activate. The per-character map emerges after a few reps.
+
+## What's still unfound
+
+- **The hit-resolution function.** The page above describes what it *must* look like
+  (capsule-vs-capsule tests on `MoveProvider`'s arrays) and where its inputs come from.
+  The exact native function doing the tests hasn't been located yet. Candidates in a
+  `ProcessEvent` spy during a confirmed hit: `TO_DamageInfo_C::OnDamage` and
+  `CockpitBase_C::OnVitalGaugeEvent` — both post-hit signals — should be walked back in
+  Ghidra to their native callers to find the resolver.
+- **Projectile-style attacks** like Cervantes's pistol. `GetTracePosition` returns nothing
+  new during the shot at any tag in 1..64, and `ReceiveGetWeaponTip` is dead. Either the
+  gun uses a much higher tag, a completely different entry point, or is resolved via a
+  native path that bypasses the chara's UFunction surface entirely. Open question.
+- **`FLuxCapsule` radius.** `GetTracePosition_Impl` reads only the two endpoints; the
+  "capsule" geometry implies a radius but no field for it has been located in the
+  80-byte struct. It may live on the `TracePartsDataAsset` referenced elsewhere in the
+  pipeline, or on a sibling struct the move-provider container points at. The overlay
+  currently renders lines, not swept-sphere shapes, for this reason.
+
 ## Key binary addresses (SC6 Steam, image base `0x140000000`)
 
 | Symbol | RVA | Description |

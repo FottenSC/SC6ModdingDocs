@@ -181,3 +181,97 @@ Passed to `ALuxBattleChara::Active`. Only the first byte matters for hit logic.
 |-------:|------|------|
 | +0x00 | `uint8` | InactiveType (`ETraceInactiveType`: `Immediatery` / `Standard` / `Stoped`) |
 | +0x01 | `uint8` | SubSlot |
+
+---
+
+## Engine structures referenced by SC6 mods
+
+### `UWorld`
+
+- **Path**: `/Script/Engine.World`
+- **Discovered via**: `Z_Construct_UClass_UWorld @ 0x1428A5C40`
+
+Offsets of interest to SC6 modding. The full UE4.21 `UWorld` has many more fields —
+only the ones mods commonly need are listed here.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x040 | `ULineBatchComponent*` | `LineBatcher` | depth-tested debug lines, per-frame |
+| +0x048 | `ULineBatchComponent*` | `PersistentLineBatcher` | depth-tested, persists until `FLUSHPERSISTENTDEBUGLINES` |
+| +0x050 | `ULineBatchComponent*` | `ForegroundLineBatcher` | **no depth test, always on top** — recommended for debug overlays |
+| +0x098 | `AGameModeBase*` | `AuthorityGameMode` | isa-checked against `ALuxBattleManager` by `GetPlayerIndex`, `GetTracePositionForPlayer`, etc. |
+
+See [Drawing 3D Debug Lines](line-batching.md) for the batcher path.
+
+### `ULineBatchComponent`
+
+- **Path**: `/Script/Engine.LineBatchComponent`
+- **Size**: 0x850
+- **Discovered via**: `Z_Construct_UClass_ULineBatchComponent @ 0x1425C9590`
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x808 | `FBatchedLine*` | `BatchedLines.Data` | append target for drawing lines |
+| +0x810 | `int32` | `BatchedLines.Num` |  |
+| +0x814 | `int32` | `BatchedLines.Max` |  |
+| +0x818 | `FBatchedPoint*` | `BatchedPoints.Data` |  |
+| +0x820 | `int32` | `BatchedPoints.Num` |  |
+| +0x830 | `FBatchedMesh*` | `BatchedMeshes.Data` |  |
+| +0x838 | `int32` | `BatchedMeshes.Num` |  |
+
+### `FBatchedLine` (0x34 bytes)
+
+```cpp
+struct FBatchedLine {
+    FVector      Start;              // +0x00
+    FVector      End;                // +0x0C
+    FLinearColor Color;              // +0x18
+    float        Thickness;          // +0x28
+    float        RemainingLifeTime;  // +0x2C
+    uint8        DepthPriority;      // +0x30
+    // +0x31..+0x33  padding to align 4
+};
+```
+
+> source: `Z_Construct_UScriptStruct_FBatchedLine @ 0x1425CFCD0` (registered name `"BatchedLine"`, size `0x34`).
+
+---
+
+## Dead or vestigial classes — document once, stop chasing
+
+### `ALuxBattleWeaponEventHandler`
+
+- **Path**: `/Script/LuxorGame.LuxBattleWeaponEventHandler`
+- **Status**: **Live event source, dead BP override slot in SC6.**
+
+The native game fires the Blueprint-implementable event
+`ReceiveGetWeaponTip(FLuxBattleEvent, out FVector outRoot, out FVector outTip,
+out bool bReturnValue, bool bGetType) -> void` on this handler during attacks, including
+ranged attacks like Cervantes's gun where the `FLuxCapsule` trace system is silent. On
+paper, hooking it would be an attractive "universal hitbox endpoint query".
+
+**In practice, no SC6 character's Blueprint subclass overrides the event.** Every post-hook
+sample observed arrives with `outRoot == outTip == (0,0,0)` and `bReturnValue == 0`. The
+native caller (`ALuxBattleManager::GetTracePositionForPlayer`) calls the event first,
+ignores the result, and falls through to `ALuxBattleChara::GetTracePosition_Impl`
+unconditionally — so any "hitbox" value a mod might have read from the hook is garbage
+by construction.
+
+Documented here so the next person who sees the class in a `ProcessEvent` spy log can
+skip the RE chase. The real hit-detection geometry is [`FLuxCapsule`](structures.md#fluxcapsule);
+the real query path is [`GetTracePosition_Impl`](trace-system.md#ufunctions-exposed-on-aluxbattlechara).
+
+**UFunction registration**: `Z_Construct_UFunction_ALuxBattleWeaponEventHandler_ReceiveGetWeaponTip
+@ 0x1409CFCE0`. Param block is 0x24 bytes — layout:
+
+| Offset | Type | Name | In/Out |
+|-------:|------|------|--------|
+| +0x00 | `FLuxBattleEvent` (8 bytes) | `inEvent` | IN |
+| +0x08 | `FVector` (12 bytes) | `outRoot` | OUT |
+| +0x14 | `FVector` (12 bytes) | `outTip` | OUT |
+| +0x20 | `bool` | `bReturnValue` | OUT |
+| +0x21 | `bool` | `bGetType` | IN |
+
+> source: `FUN_1409A9A80 @ 0x1409A9A80` (the native caller wrapper that invokes
+> `ReceiveGetWeaponTip` via `FindFunction` + `vtable[0x1F8]::ProcessEvent`) called from
+> `ALuxBattleManager::GetTracePositionForPlayer @ 0x1403F4960`.

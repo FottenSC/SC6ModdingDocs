@@ -94,6 +94,7 @@ nav:
       - ue4ss/index.md
       - Lua API Overview: ue4ss/lua-api.md
       - Hooks & Events: ue4ss/hooks.md
+      - Global Hooks: ue4ss/global-hooks.md
       - Reflection Gotchas: ue4ss/reflection-gotchas.md
   - SoulCalibur VI Internals:
       - sc6/index.md
@@ -101,6 +102,7 @@ nav:
       - Character Data: sc6/character-data.md
       - Battle Manager: sc6/battle-manager.md
       - Trace / Hitbox System: sc6/trace-system.md
+      - Drawing 3D Debug Lines: sc6/line-batching.md
       - Move System (VM): sc6/move-system.md
   - Cookbook:
       - cookbook/index.md
