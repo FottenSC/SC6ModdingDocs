@@ -204,6 +204,123 @@ in the plate comment on `0x140365900`. The ring is zeroed by the `start!`
 opcode of every move, so these are **per-move transient flags** (e.g.
 "opponent has been hit by this move's first attack", "we are in a stance").
 
+### IF predicate families — the six test kinds
+
+The `class` cell in an IF opcode selects one of six native predicate
+functions. The first three are near-identical state-id lookups in
+`g_LuxMoveStateTable @ 0x1440F4750`; the last three pull real game
+state (range, geometry, move-class pair) from the chara and its
+opponent.
+
+| Class | Predicate | RVA | Shape |
+|-------|-----------|-----|-------|
+| A (family 0xF)  | `LuxMoveVM_CheckCharaStateEqualsU16` | `0x140364FC0` | `chara->MoveStateId == 0xF  && chara->+0x1982 == value` |
+| B (family 0x7)  | `LuxMoveVM_CheckNotifFamilyB`        | `0x140365040` | same shape, different state-id |
+| C (family 0x1C) | `LuxMoveVM_CheckNotifFamilyC`        | `0x1403650C0` | same shape, different state-id |
+| D (range)       | `LuxMoveVM_CheckRangeOrDistance`     | `0x140365140` | terrain/reach sample `param` units along the opponent direction |
+| E (angle/geom)  | `LuxMoveVM_CheckAngleOrGeometry`     | `0x1403652E0` | range + angle rotation + terrain-type filter |
+| F (class-name)  | `LuxMoveVM_CompareMoveClassName`     | `0x140394E30` | reads move-class pair vs one of 18 symbolic tokens |
+
+All three state predicates look up their state id in `g_LuxMoveStateTable`
+(a fixed 0x29-entry table, stride 0x14 bytes per row = 5 x uint32) and
+match the chara's own `MoveStateId` at `chara+0x2B4A4` against the row's
+key field.
+
+### Move-class pair descriptor (IF class F)
+
+`LuxMoveVM_BuildMoveClassPair @ 0x140394AC0` packs self's and opponent's
+current moves into a 7-uint32 descriptor that subsequent IF-F predicates
+compare against:
+
+```
+outPair[0]  self.MoveSubclass (chara+0x19FE)
+outPair[1]  self.MoveClassB   (chara+0x6E)
+outPair[2]  self.MoveClassA   (chara+0x6C) (low 16)
+outPair[3]  self bucket       (0=kick?, 1=throw?, 2=special? by class range)
+outPair[4]  (self.MoveFlags at chara+0x70 != 0) ? 1 : 0
+outPair[5]  opp.MoveClassA    + opp bucket
+outPair[6]  ClassifyMovePairKind(selfMoveClassA, oppMoveClassA)
+```
+
+`ClassifyMovePairKind @ 0x140394BB0` maps the (self, opp) MoveClass
+pair to a small integer kind used for yarare/frame-data lookups —
+e.g. `horizontal vs horizontal → 7`, `kick vs throw → 2`, various
+`default → 3`. See the Ghidra plate comment on that function for the
+full map.
+
+### Opponent & self position access (runtime-verified chara offsets)
+
+Reverse-engineering `LuxMoveVM_CheckRangeOrDistance` at `0x140365140`
+confirmed several chara-class field locations that weren't previously
+documented:
+
+| Chara offset | Type | Purpose |
+|-------:|------|---------|
+| +0xA0 | `float` | `SelfPos.X` (world-space) |
+| +0xA8 | `float` | `SelfPos.Z` (lateral world-space) |
+| +0x6C  | `int16`  | `MoveClassA`    (5..12 — SC6 move category) |
+| +0x6E  | `uint16` | `MoveClassB`    (subclass) |
+| +0x70  | `int32`  | `MoveFlags`     (flag bits) |
+| +0x23C | `uint8`  | `CharaKindByte` (row index into `g_LuxCharaAttrTable_*`) |
+| +0x250 | `uint16` | `MoveSubclassAlt` (checked `==100` / `0x69` by IF-F) |
+| +0x1982 | `uint16` | `CurrentNotifToken` (read by IF families A/B/C) |
+| +0x19FE | `uint16` | `MoveSubclass` (read by `BuildMoveClassPair`) |
+| +0x2B4A4 | `int32` | `MoveStateId` (key into `g_LuxMoveStateTable`) |
+| +0x973E8 | `ALuxBattleChara*` | **Opponent** — direct pointer, NOT `chara+0x390` as an earlier pass of these docs claimed |
+
+The **opponent pointer at `chara+0x973E8`** is the critical correction.
+Earlier versions of this page and of `structures.md` described
+`chara+0x390` as the opponent pointer (on the basis of Ghidra
+annotations that turned out to be wrong for this build). Runtime
+class-name introspection shows `chara+0x390` is actually
+`WeaponMesh0` (a `USkeletalMeshComponent*`), and `LuxMoveVM_CheckRangeOrDistance`
+dereferences `chara+0x973E8 → +0xA0/+0xA8` to read opponent
+world-space position for range checks.
+
+### Spatial acceleration chain (call graph underneath predicates D and E)
+
+Predicates D (`CheckRangeOrDistance`) and E (`CheckAngleOrGeometry`) are the only
+two families that actually touch the arena geometry. They both fan out through
+the same helpers into a single shared acceleration grid:
+
+```
+LuxMoveVM_CheckRangeOrDistance                (0x140365140)
+ └─> LuxBattle_TryTraceSegmentAgainstBounds   (0x140314BC0)
+      └─> LuxBattle_TraceSegmentThroughFrameBoundsGrid (0x1403149E0)
+           └─> LuxBattle_TestFrameBoundsCell  (0x1403916E0)
+                └─> LuxBattle_IntersectSegmentWithTerrainTriangle (0x140390A90)
+
+LuxMoveVM_CheckAngleOrGeometry                (0x1403652E0)
+ ├─> LuxBattle_TryTraceSegmentAgainstBounds   (0x140314BC0)      — same reach test
+ └─> LuxBattle_SampleTerrainAtWorldXZ         (0x1403915A0)
+      └─> LuxBattle_SampleTerrainAtXZ_Impl    (0x140391350)
+           ├─> LuxBattle_FindTerrainRowBucketByZ        (0x140390E90)
+           ├─> LuxBattle_IsTerrainProbeInsideTriangleXZ (0x140391270)
+           └─> LuxBattle_IsTerrainEntryActive           (0x140391270 path)
+```
+
+Key globals on the shared layer (see `structures.md` §
+"Stage / frame spatial acceleration"):
+
+- `g_LuxBattle_FrameContextUseB @ 0x14470DEDC` — byte flag; selects A vs B variants.
+- `g_LuxBattle_FrameBoundsGridA @ 0x144844DD0` / `g_LuxBattle_FrameBoundsGridB @ 0x144845E80` —
+  the two alternate 2D cell grids of triangle entries that the VM traces against.
+- `g_LuxBattle_FrameTransformA @ 0x144844170` / `g_LuxBattle_FrameTransformB @ 0x144845220` —
+  matched transform blocks read in lockstep with the bounds grid.
+- `g_LuxBattle_TerrainProbeUp @ 0x1440FBC38` / `g_LuxBattle_TerrainProbeDown @ 0x1440F7688` —
+  two 16-byte vec4 scratch slots. Primed by `SampleTerrainAtXZ_Impl` as vertical
+  probes at ±100 units, reused by `IntersectSegmentWithTerrainTriangle` as
+  edge-cross-product scratch for the point-in-triangle step. **NOT thread safe.**
+
+The triangle entries the grid holds are **arena frame walls and floor tris**,
+not character hitboxes. That's why these two predicates flag moves like "are you
+close enough to the ring-out edge to use this ring-throw" or "is there a wall
+behind the opponent for this wall-splat". They do **not** resolve move hit detection.
+
+> If you're instrumenting the geometry chain, the cheapest single-detour point
+> is `LuxBattle_TryTraceSegmentAgainstBounds` (0x140314BC0) — it's called by
+> both predicates and its parameters are the fully-baked segment + filter tags.
+
 ---
 
 ## Stances

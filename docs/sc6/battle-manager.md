@@ -32,6 +32,108 @@ per-player settings as a hierarchical string/int key path.
 > source: `ALuxBattleManager::Update_Impl @ 0x140437590`, `PlayMove_Impl @ 0x140429840`,
 > `PlayMoveDirect_Impl @ 0x1404298e0`, `StopMove_Impl @ 0x140434410`.
 
+## BattleManager subsystem layout
+
+Runtime-verified map of UObject-pointer slots on `ALuxBattleManager`.
+Captured 2026-04-19 via UE4SS class-name introspection of every 8-byte
+slot in `BM+0x00..+0x800`. All 43 subsystem pointers that were live in
+a training match are listed. Addresses in the middle column are
+examples of one particular run; treat them as "this slot holds a
+pointer to an instance of class X" rather than fixed addresses.
+
+!!! warning "`BM+0x140` is NOT the MoveComponent on this build"
+    Earlier documentation claimed `ALuxBattleManager_GetMoveProviderPtr
+    @ 0x140546600` reads `*(BM+0x140)` and returns a
+    `ULuxBattleMoveComponent*`. At runtime on this Steam build,
+    `*(BM+0x140)` is the IEEE 754 value `0x3F800000` (float `1.0`) —
+    not a pointer. Either the layout shifted between builds or the
+    function decompile is misleading. See the
+    [`ALuxBattleChara` runtime-layout note](structures.md#aluxbattlechara)
+    for the downstream consequences.
+
+### Camera & events
+| Offset | Type | Name |
+|-------:|------|------|
+| +0x3A8 | `ALuxBattleCamera*`             | Camera |
+| +0x3B8 | `ULuxBattleEventListener*`      | EventListener |
+| +0x3C8 | `ULuxBattleVFxEventHandler*`    | VFxEventHandler |
+| +0x3D8 | `ULuxBattleSoundEventHandler*`  | SoundEventHandler |
+| +0x3E8 | `ULuxBattleStageEventHandler*`  | StageEventHandler |
+| +0x3F8 | `ULuxBattleTraceEventHandler*`  | TraceEventHandler |
+| +0x408 | `ALuxBattleWeaponEventHandler*` | WeaponEventHandler (hosts the `ReceiveGetWeaponTip` BP event — [see note](trace-system.md#receivegetweapontip-a-promising-looking-dead-end)) |
+| +0x410 | `ULuxBattlePauseTicker*`        | PauseTicker |
+| +0x420 | `ULuxBattlePauseController*`    | PauseController |
+| +0x430 | `ULuxBattleShortcutController*` | ShortcutController |
+
+### Input & replay
+| Offset | Type | Name |
+|-------:|------|------|
+| +0x440 | `ULuxBattleCommonInput*`        | CommonInput |
+| +0x450 | `ULuxBattleFrameInput*`         | FrameInput |
+| +0x460 | `ULuxBattleFrameStream*`        | FrameStream |
+| +0x478 | `ULuxBattleFrameInputLog*`      | FrameInputLog |
+| +0x480 | `ULuxBattleReplayRecorder*`     | ReplayRecorder |
+| +0x488 | `ULuxBattleReplayPlayer*`       | ReplayPlayer |
+
+### Training-mode managers
+| Offset | Type | Name |
+|-------:|------|------|
+| +0x490 | `ULuxBattleTrainingManager*`    | TrainingManager |
+| +0x498 | `ULuxBattleGaugeTypeChanger*`   | GaugeTypeChanger |
+| +0x4A0 | `ULuxBattlePositionResetter*`   | PositionResetter |
+| +0x4A8 | `ULuxBattleDummyCustomizer*`    | DummyCustomizer |
+| +0x4B0 | `ULuxBattleAICustomizer*`       | AICustomizer |
+| +0x4B8 | `ULuxBattleKeyRecorder*`        | KeyRecorder |
+
+### Move system (critical for hit-detection work)
+| Offset | Type | Name |
+|-------:|------|------|
+| +0x4C0 | `ALuxBattleMoveCommandPlayer*`    | MoveCommandPlayer — the command-script VM actor. See [Move System](move-system.md). Per-move capsule/hit data is believed to live inside this object. |
+| +0x4C8 | `ULuxBattleTrainingReplayPlayer*` | TrainingReplayPlayer |
+
+### Flow & demo
+| Offset | Type | Name |
+|-------:|------|------|
+| +0x4D0 | `ULuxBattleDramaticVoice*`      | DramaticVoice |
+| +0x4D8 | `ULuxBattleMissionManager*`     | MissionManager |
+| +0x4E0 | `ULuxBattleMissionResultDemo*`  | MissionResultDemo |
+| +0x4E8 | `ULuxBattleTutorialManager*`    | TutorialManager |
+| +0x4F0 | `ULuxBattleVariableAI*`         | VariableAI |
+
+### Stage, timing, VFX
+| Offset | Type | Name |
+|-------:|------|------|
+| +0x4F8 | `ULuxBattleTimeManager*`        | TimeManager |
+| +0x500 | `ULuxBattleStageActorManager*`  | StageActorManager |
+| +0x508 | `ULuxVFxInstanceManager*`       | VFxInstanceManager — spawns trace VFx via `BattleMgrSubsystem_LookupOrAllocateMeshActorSlot @ 0x1408A2660`. |
+| +0x510 | `ULuxBattleStageInfinityManager*` | StageInfinityManager |
+| +0x518 | `ULuxBattleColorFadeManager*`   | ColorFadeManager |
+| +0x520 | `ULuxBattleSound*`              | Sound |
+
+### HUD, audio, replay tail
+| Offset | Type | Name |
+|-------:|------|------|
+| +0x528 | `ULuxBattlePlayerDataWatcher*`       | PlayerDataWatcher |
+| +0x530 | `ULuxBattleHUDManager*`              | HUDManager |
+| +0x538 | `ULuxBattleSpecialtyVFxManager*`     | SpecialtyVFxManager |
+| +0x540 | `ULuxBattleSpecialtySEManager*`      | SpecialtySEManager |
+| +0x548 | `ULuxBattleSubtitleManager*`         | SubtitleManager |
+| +0x550 | `ULuxBattleAchievementChecker*`      | AchievementChecker |
+| +0x558 | `ULuxBattleRealtimeMultiplayManager*` | RealtimeMultiplayManager |
+
+### Match-level data
+| Offset | Type | Name |
+|-------:|------|------|
+| +0x1420 | `UMaterialParameterCollection*` | BattleMPC |
+| +0x1450 | `void*`                         | InputProcessor raw target (`LuxMoveProviderRef_Get @ 0x14045FC70` reads this) |
+| +0x1458 | `void*`                         | InputProcessor ctrl block (refcount twin) |
+| +0x1463 | `uint8`                         | Global match move-state byte (`5 = playing`, `6 = stopping`) — written by `ALuxBattleManager_SetMoveState @ 0x1403F8370` |
+
+> source: UE4SS class-name introspection of every 8-byte-aligned slot
+> in `BM+0x00..+0x800` on a live training-match instance, captured by
+> HorseMod's BattleManager slot-map diagnostic (2026-04-19).
+> `Z_Construct_UClass_ALuxBattleManager @ 0x140949450` registered size.
+
 Chara sub-structures touched by the move dispatcher:
 
 ```text

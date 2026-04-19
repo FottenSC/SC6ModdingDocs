@@ -67,19 +67,78 @@ UFunction map and the hierarchical config-tree path convention.
   [Reflection Gotchas](../ue4ss/reflection-gotchas.md))
 - **Discovered via**: `ALuxBattleChara__StaticClass @ 0x14015EA40`
 
+!!! warning "Layout verified at runtime on the Steam build (2026-04-19)"
+    The field table below was corrected against the **actual running
+    binary** using UE4SS class-name introspection on a live chara.
+    Earlier versions of this page described `chara+0x388` as the
+    `ULuxBattleMoveProvider` pointer — that is **wrong on the shipping
+    Steam build**. `+0x388` and `+0x390` are actually the `CharaMesh0`
+    and `WeaponMesh0` `USkeletalMeshComponent*`s, stored by
+    `ALuxCharaActorBase_Constructor @ 0x140440FB0` as
+    `param_1[0x71]` / `param_1[0x72]`. There is no per-chara
+    `ULuxBattleMoveProvider` on this build.
+
+    The real opponent pointer is **`chara+0x973E8`** (not `+0x390`) —
+    identified by `LuxMoveVM_CheckRangeOrDistance @ 0x140365140`
+    dereferencing that field to read the opponent's world-space
+    position.
+
 | Offset | Type | Name | Notes |
 |-------:|------|------|-------|
-| +0x388 | `ULuxBattleMoveProvider*` | MoveProvider | holds the capsule container (hit + hurt geometry). `GetTracePosition_Impl` dereferences this then walks `+0x30 → +0x30 / +0x38` to iterate the `FLuxCapsule*` array. |
-| +0x3A8 | `ULuxTraceComponent*` | TraceComponent | active-trace list (see below) |
-| +0x3B0 | `TArray<FActiveAttackSlot>` data ptr | slot hash data | stride 0x44; key byte at +0x00, hash chain at +0x3C |
-| +0x3B8 | `int32` | slot count | |
-| +0x3F0 | `int32*` | hash bucket base | open-addressing hash over `+0x3B0` |
-| +0x3F8 | `int32` | bucket count | mask = count − 1 |
-| +0x400 | `int32` | current attack tag cache | read by `Active_Impl` validation |
-| +0x458 | `ALuxTraceManager*` | TraceManager | **visual-only** — drives the weapon-trail / FX. Not part of hit resolution. |
+| +0x6C   | `int16` | MoveClassA | SC6 move category (5..12) — `HorizontalAttack`, `VerticalAttack`, `Kick`, `Throw`, etc. |
+| +0x6E   | `uint16` | MoveClassB | subclass |
+| +0x70   | `int32` | MoveFlags | |
+| +0x98   | `UObject*` | GameState | isa-checked against `ALuxBattleManager` each branch |
+| +0xA0 | `float` | SelfPos.X | world-space position — read by `LuxMoveVM_CheckRangeOrDistance` |
+| +0xA8 | `float` | SelfPos.Z | |
+| +0x168  | `USceneComponent*` | CustomRoot0 | stored by `ALuxCharaActorBase_Constructor` `param_1[0x2D]` |
+| +0x23C  | `uint8` | CharaKindByte | row index into `g_LuxCharaAttrTable_*` |
+| +0x250  | `uint16` | MoveSubclassAlt | alternative move-category byte (checked `==100` / `0x69` by IF predicates) |
+| +0x388  | `USkeletalMeshComponent*` | CharaMesh0 | **NOT MoveProvider.** Set by `ALuxCharaActorBase_Constructor` `param_1[0x71]`. |
+| +0x390  | `USkeletalMeshComponent*` | WeaponMesh0 | **NOT Opponent.** Set by `ALuxCharaActorBase_Constructor` `param_1[0x72]`. |
+| +0x3A8  | `ULuxTraceComponent*` | TraceComponent | often null on this build; set later by `Setup`/`ActivateTrace` |
+| +0x3B0  | `TArray<FActiveAttackSlot>` data ptr | slot hash data | stride 0x44; key byte at +0x00, hash chain at +0x3C |
+| +0x3B8  | `int32` | slot count | |
+| +0x3C0  | `uint8` | active-attack-flag byte | written by `ResetMove` |
+| +0x3C8  | `int32` | active slot index | `-1` = none |
+| +0x3D0  | `int32**` | per-chara small array | |
+| +0x3D8  | `int32` | array size | |
+| +0x3DC  | `int32` | array capacity | |
+| +0x3E8  | `void*` | attached-entity array data | walked by `OnMoveStart_Phase*` trampolines |
+| +0x3F0  | `int32*` | hash bucket base | open-addressing hash over `+0x3B0` |
+| +0x3F8  | `int32` | bucket count | mask = count − 1 |
+| +0x400  | `int32` | current attack tag cache | read by `Active_Impl` validation |
+| +0x448  | `UShapeComponent*` | TestCollision | stored by `ALuxBattleChara_Constructor` `param_1[0x89]` |
+| +0x458  | `ALuxTraceManager*` | TraceManager | **visual-only** — drives the weapon-trail / FX. Not part of hit resolution. |
+| +0x1438 | `UObject*` | cached MoveComponent | lazy cache filled by `ALuxBattleChara_GetMoveProvider @ 0x1403F00B0` — returns `BattleManager+0x140`, which on this build is a float (`1.0f`) and NOT a UObject, so the cache stays at sentinel (`0xFFFFFFFF_FFFFFFFF`) indefinitely. |
+| +0x1463 | `uint8` | current move-state byte | set by `ALuxBattleManager_SetMoveState @ 0x1403F8370`; `5=playing`, `6=stopping` |
+| +0x1982 | `uint16` | CurrentNotifToken | read by VM IF-predicate families A/B/C |
+| +0x19FE | `uint16` | MoveSubclass | read by `BuildMoveClassPair` |
+| +0x19F0..+0x1A64 | condition-flag ring | cleared by VM opcode `start!` (`0x50001`); read by IF-subject `0x60007..0x60058` |
+| +0x2B4A4 | `int32` | MoveStateId | looked up in `g_LuxMoveStateTable @ 0x1440F4750` (0xF / 7 / 0x1C / … ) |
+| +0x973E8 | `ALuxBattleChara*` | **Opponent** | direct pointer to the other player's chara — used by `LuxMoveVM_CheckRangeOrDistance` / `LuxMoveVM_CheckAngleOrGeometry` |
 
-> source: Ghidra reversing of `ALuxBattleChara_Active_Impl @ 0x1408CD940`,
-> `ALuxBattleChara_Inactive_Impl @ 0x1408D1420`, `ALuxBattleManager_Update_Impl @ 0x140437590`.
+> source: Ghidra reversing of `ALuxBattleChara_Constructor @ 0x1403AB8D0`,
+> `ALuxCharaActorBase_Constructor @ 0x140440FB0`, `ALuxBattleChara_Active_Impl
+> @ 0x1408CD940`, `ALuxBattleChara_Inactive_Impl @ 0x1408D1420`,
+> `LuxMoveVM_CheckRangeOrDistance @ 0x140365140`. Runtime class-name
+> introspection on both live charas in a training match confirmed `+0x388`
+> and `+0x390` are SkeletalMeshComponents on this Steam build.
+
+!!! note "`ULuxBattleMoveProvider` on this build"
+    Searches for `Z_Construct_UClass_ULuxBattleMoveProvider*` and any
+    literal `"LuxBattleMoveProvider"` string in the shipping binary
+    return no hits. The class is either C++-only (no UE4 reflection) or
+    was renamed/restructured. `ALuxBattleChara_GetMoveProvider @
+    0x1403F00B0` routes through `ALuxBattleManager_GetMoveProviderPtr
+    @ 0x140546600` which reads `*(BM+0x140)` — on this build that slot
+    contains the float `1.0f` (`0x3F800000`), not a pointer. So the
+    "MoveProvider" the earlier versions of this page described does not
+    exist as a reachable runtime object. The per-move capsule data is
+    believed to live on the `ALuxBattleMoveCommandPlayer` at
+    `BattleManager+0x4C0` (see the new
+    [Battle Manager subsystems](battle-manager.md#battlemanager-subsystem-layout)
+    section) but the exact field offset is still under investigation.
 
 ### `ALuxTraceManager`
 
@@ -181,6 +240,99 @@ Passed to `ALuxBattleChara::Active`. Only the first byte matters for hit logic.
 |-------:|------|------|
 | +0x00 | `uint8` | InactiveType (`ETraceInactiveType`: `Immediatery` / `Standard` / `Stoped`) |
 | +0x01 | `uint8` | SubSlot |
+
+---
+
+## Stage / frame spatial acceleration (used by the `LuxMoveVM` IF predicates)
+
+The two spatial `IF` predicates in `LuxMoveVM` (`CheckRangeOrDistance @ 0x140365140`,
+`CheckAngleOrGeometry @ 0x1403652E0`) query two global, non-thread-safe spatial
+structures shared across the battle subsystem. Both structures come in matched
+A/B pairs and are selected via the byte flag `g_LuxBattle_FrameContextUseB @
+0x14470DEDC` — when non-zero, the "B" variant is returned by the accessors
+`LuxBattle_GetActiveFrameBoundsGrid @ 0x1403133E0` and
+`LuxBattle_GetActiveFrameTransform @ 0x140313400`.
+
+### Frame-bounds grid
+
+- **Instances**:
+  - `g_LuxBattle_FrameBoundsGridA` @ `0x144844DD0`
+  - `g_LuxBattle_FrameBoundsGridB` @ `0x144845E80`
+- **Discovered via**: `LuxBattle_GetActiveFrameBoundsGrid @ 0x1403133E0`,
+  `LuxBattle_TraceSegmentThroughFrameBoundsGrid @ 0x1403149E0`,
+  `LuxBattle_TestFrameBoundsCell @ 0x1403916E0`
+- **Size**: at least 0x430 bytes (reads observed up to the `isValid` byte
+  at +0x410; the grid header is ~0x30 bytes plus a `cells[]` tail).
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x000 | `void*` | `cells` | 0 when the grid is not built. Each slot `cells[i+1]` points to a row bucket. |
+| +0x00C | `float` | `cellSize` | world units per cell along the scanned axis |
+| +0x010 | `float` | `axisMin` | first valid axis value |
+| +0x018 | `float` | `axisMax` | last valid axis value (inclusive) |
+| +0x028 | `int16` | `cellCount` | number of cells in the row |
+| +0x410 | `int8` | `isValid` | non-zero when the grid has been populated. The accessors bail when this is 0. |
+
+**Cell layout (row bucket)** — an 8-byte pointer array indexed as
+`cells[cellIndex + 1]`, each pointing to a struct with:
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `void*` | `primaryEntries` | array of 8-byte pointers to triangle entries |
+| +0x08 | `uint16` | `primaryCount` | |
+| +0x10 | `void*` | `secondaryEntries` | alt-list (used when the "retry with secondary" flag is on) |
+| +0x18 | `uint16` | `secondaryCount` | |
+
+**Triangle entry** — used by `LuxBattle_IntersectSegmentWithTerrainTriangle @ 0x140390A90`:
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `float[3]` | `vertexA` | world XYZ |
+| +0x0C | `uint32` | `flagsA` | sub-flags (bits 4..11 = kind) |
+| +0x10 | `float[3]` | `vertexB` | |
+| +0x1C | `uint32` | `flagsB` | bits 8..11 = sub-kind, bits 12..15 = terrain tag |
+| +0x20 | `float[3]` | `vertexC` | |
+| +0x30 | `float[4]` | `plane` | (nx, ny, nz, d); plane equation `n·p + d = 0` |
+
+> The plane is stored with a pre-baked offset `d` so the test is a single
+> dot-product per endpoint.
+
+### Frame transform
+
+- **Instances**:
+  - `g_LuxBattle_FrameTransformA` @ `0x144844170`
+  - `g_LuxBattle_FrameTransformB` @ `0x144845220`
+- **Discovered via**: `LuxBattle_GetActiveFrameTransform @ 0x140313400`
+- **Pairs with** the bounds grid of the same letter; every read of
+  `GetActiveFrameBoundsGrid` in the VM predicate call path is immediately
+  followed by a read of `GetActiveFrameTransform`, which suggests they describe
+  two arena / camera frames that can be swapped atomically (the two sides of a
+  stage-swap scenario, or two chara-local frames during a switch-cam move).
+
+### Global terrain scratch vec4s
+
+- **Instances**:
+  - `g_LuxBattle_TerrainProbeUp` @ `0x1440FBC38` — primed to `(X, +100.0f, Z, 1.0f)`
+  - `g_LuxBattle_TerrainProbeDown` @ `0x1440F7688` — primed to `(X, -100.0f, Z, 1.0f)`
+- **Discovered via**: `LuxBattle_SampleTerrainAtXZ_Impl @ 0x140391350`
+- **Size**: 16 bytes each (one `FVector4`).
+
+`LuxBattle_SampleTerrainAtXZ_Impl` fills both with the XZ of the probe point
+and a vertical component before kicking off the terrain query. Downstream,
+`LuxBattle_IntersectSegmentWithTerrainTriangle` reuses the same two memory
+locations as edge-cross-product scratch during point-in-triangle classification.
+
+> **Thread safety**: these two globals are not TLS. The VM predicate call path
+> is game-thread-serialized and depends on no other tick overlapping the terrain
+> query. If you hook further up the chain, don't introduce parallelism here.
+
+### Orphaned constants wired to the predicate chain
+
+| Address | Name | Meaning |
+|---------|------|---------|
+| `0x143E8A3F4` | `g_LuxMoveVM_AngleCosScale` | `cos(θ)` scale factor baked into the angle predicate math |
+| `0x143E8A3F8` | `g_LuxMoveVM_AngleSinScale` | `sin(θ)` scale factor baked into the angle predicate math |
+| `0x143E8A674` | `g_LuxBattle_TerrainSample_Invalid` | sentinel returned by `LuxBattle_SampleTerrainAtXZ_Impl` when no entry matches |
 
 ---
 
