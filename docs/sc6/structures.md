@@ -35,8 +35,8 @@ Use that template verbatim so the search index picks up fields consistently.
 |-------:|------|------|-------|
 | +0x050 | `FLuxDataTable` | ConfigTable | round / timer / per-player settings tree |
 | +0x098 | `UObject*` | GameState | isa-checked against `ALuxBattleManager` every tick |
-| +0x388 | `ALuxBattleChara` (embedded) | SubChara | host of `MoveComponent` used by `PlayMoveDirect` |
-| +0x390 | `ALuxBattleChara**` | PlayerCharas | array of player chara ptrs |
+| +0x388 | `UClass*` | BattleCharaClass | `TSubclassOf<ALuxBattleChara>` per `Z_Construct_UClass_ALuxBattleManager @ 0x140949450`. **Not** an embedded chara — an earlier pass of these docs called this "SubChara" but a 0x568-byte embedded chara starting here would collide with the Camera/EventListener slots at +0x3A8..+0x408 confirmed by the runtime-verified subsystem map in [battle-manager.md](battle-manager.md#camera--events). |
+| +0x390 | `ALuxBattleChara**` | PlayerCharas.Data | `TArray<ALuxBattleChara*>` — iterate `PlayerCharas[0..NumPlayerCharas-1]` for all active fighters |
 | +0x398 | `int32` | NumPlayerCharas | |
 | +0x3A0 | `uint8` | PendingMoveCommandType | 1 = PlayMove, 2 = Stop |
 | +0x3A8 | `int32` | PendingMoveCommandParam | player index |
@@ -88,7 +88,7 @@ UFunction map and the hierarchical config-tree path convention.
 | +0x6C   | `int16` | MoveClassA | SC6 move category (5..12) — `HorizontalAttack`, `VerticalAttack`, `Kick`, `Throw`, etc. |
 | +0x6E   | `uint16` | MoveClassB | subclass |
 | +0x70   | `int32` | MoveFlags | |
-| +0x98   | `UObject*` | GameState | isa-checked against `ALuxBattleManager` each branch |
+| +0x98   | `ALuxBattleManager*` | BattleManager | non-UPROPERTY back-ref; read by `SetupWeaponBones` and isa-checked against `ALuxBattleManager` throughout `LuxMoveVM` |
 | +0xA0 | `float` | SelfPos.X | world-space position — read by `LuxMoveVM_CheckRangeOrDistance` |
 | +0xA8 | `float` | SelfPos.Z | |
 | +0x168  | `USceneComponent*` | CustomRoot0 | stored by `ALuxCharaActorBase_Constructor` `param_1[0x2D]` |
@@ -96,21 +96,34 @@ UFunction map and the hierarchical config-tree path convention.
 | +0x250  | `uint16` | MoveSubclassAlt | alternative move-category byte (checked `==100` / `0x69` by IF predicates) |
 | +0x388  | `USkeletalMeshComponent*` | CharaMesh0 | **NOT MoveProvider.** Set by `ALuxCharaActorBase_Constructor` `param_1[0x71]`. |
 | +0x390  | `USkeletalMeshComponent*` | WeaponMesh0 | **NOT Opponent.** Set by `ALuxCharaActorBase_Constructor` `param_1[0x72]`. |
-| +0x3A8  | `ULuxTraceComponent*` | TraceComponent | often null on this build; set later by `Setup`/`ActivateTrace` |
-| +0x3B0  | `TArray<FActiveAttackSlot>` data ptr | slot hash data | stride 0x44; key byte at +0x00, hash chain at +0x3C |
-| +0x3B8  | `int32` | slot count | |
-| +0x3C0  | `uint8` | active-attack-flag byte | written by `ResetMove` |
-| +0x3C8  | `int32` | active slot index | `-1` = none |
-| +0x3D0  | `int32**` | per-chara small array | |
-| +0x3D8  | `int32` | array size | |
-| +0x3DC  | `int32` | array capacity | |
-| +0x3E8  | `void*` | attached-entity array data | walked by `OnMoveStart_Phase*` trampolines |
-| +0x3F0  | `int32*` | hash bucket base | open-addressing hash over `+0x3B0` |
-| +0x3F8  | `int32` | bucket count | mask = count − 1 |
-| +0x400  | `int32` | current attack tag cache | read by `Active_Impl` validation |
-| +0x448  | `UShapeComponent*` | TestCollision | stored by `ALuxBattleChara_Constructor` `param_1[0x89]` |
+| +0x398  | `float` | MaegamiL_Pos | Maegami-L (front-hair-L) position; ctor init `0` |
+| +0x39C  | `float` | MaegamiR_Pos | Maegami-R position; ctor init `0` |
+| +0x3A0  | `int32` | PlayerIndex | ctor init `-1`; UPROPERTY |
+| +0x3A4  | `int32` | CharaID | ctor init `-1`; doubles as `SoulChargeMode` at runtime |
+| +0x3A8  | `int32` | WeaponID | **NOT a TraceComponent pointer** (earlier docs claimed `ULuxTraceComponent*` here — that was wrong). Ctor init `-1`; doubles as `WeaponTypeCode` at runtime. The ctor writes `*(uint32*)(param_1+0x3A8) = 0xFFFFFFFF` so this is clearly a 4-byte int, not an 8-byte pointer. |
+| +0x3B0  | `TArray<USkeletalMeshComponent*>` | CreationComponents | UPROPERTY Instanced; `.Data/.Num/.Max` at `+0x3B0/+0x3B8/+0x3BC`. Earlier docs described "active-attack slot hash" here with stride 0x44 — the constructor initialises this block as CreationComponents, so the slot-hash interpretation was wrong. |
+| +0x3C0  | `USkeletalMeshComponent*` | MaegamiL_SkeletalMeshComponent | UPROPERTY Instanced |
+| +0x3C8  | `USkeletalMeshComponent*` | MaegamiR_SkeletalMeshComponent | UPROPERTY Instanced |
+| +0x3D0..+0x3E7 | bytes + float | Maegami / anim-side state | anim-side bytes, phase-trigger flag, phase timer |
+| +0x3E8  | `TArray<ALuxCharaAppxActor*>` | AppxActors | `.Data/.Num/.Max` at `+0x3E8/+0x3F0/+0x3F4` |
+| +0x3F8..+0x447 | `TSet/TMap` (0x50) | AppxAnimInstanceMap | standard UE4 TSet layout — sparse array at `+0x3F8..+0x42F`, hash extension at `+0x430..+0x447` |
+| +0x448  | `UBoxComponent*` | CollisionComponent | **type is `UBoxComponent*`, not `UShapeComponent*`** (the FName used at construction is `"TestCollision"` but the field is named `CollisionComponent`). Stored by `ALuxBattleChara_Constructor` `param_1[0x89]`. UPROPERTY Instanced. |
+| +0x450  | `uint32` | BreakFlag | UPROPERTY EditAnywhere; cleared by vtable[201] `ResetBreakAndAttackState` |
 | +0x458  | `ALuxTraceManager*` | TraceManager | **visual-only** — drives the weapon-trail / FX. Not part of hit resolution. |
-| +0x1438 | `UObject*` | cached MoveComponent | lazy cache filled by `ALuxBattleChara_GetMoveProvider @ 0x1403F00B0` — returns `BattleManager+0x140`, which on this build is a float (`1.0f`) and NOT a UObject, so the cache stays at sentinel (`0xFFFFFFFF_FFFFFFFF`) indefinitely. |
+| +0x460  | `ULuxBattlePlayerSetup*` | PlayerSetupOverride | UPROPERTY; weapon-data cache pointer |
+| +0x468  | `bool` | bDummyPlayer | UPROPERTY, ctor init `false` |
+| +0x469  | `bool` | bEvilFlag | controls MoveProvider sub-object selection |
+| +0x470..+0x4BF | `TSet` (0x50) | EntityTracking | internal non-UPROPERTY |
+| +0x4C0..+0x50F | `TSet` (0x50) | (unnamed internal) | non-UPROPERTY |
+| +0x510  | `TArray<ELuxPartsSE>` | SEMaterials | UPROPERTY; `.Data/.Num/.Max` at `+0x510/+0x518/+0x51C` |
+| +0x520  | `TArray<FWeakObjectPtr+...>` | (internal anim-inst array) | stride 16B |
+| +0x530..+0x537 | 8 bytes | setup/phase flag block | see constructor plate for per-byte meaning |
+| +0x538  | `bool` | IsSetupCompleted | ctor init `false`; cleared by TearDown |
+| +0x548  | `TArray<FLuxPermanentEffectRuntime>` | PermanentEffects | `.Data/.Num/.Max` at `+0x548/+0x550/+0x554` |
+| +0x558  | `TSharedPtr<BoneDB>.DataPtr` | (bone-DB cache) | |
+| +0x560  | `TSharedPtr<BoneDB>.RefCtrl` | (bone-DB cache) | |
+| +0x568  | — | **end of object** | `sizeof(ALuxBattleChara) = 0x568` |
+| +0x1438 | `UObject*` | cached MoveComponent | lazy cache filled by `ALuxBattleChara_GetMoveProvider @ 0x1403F00B0`. Chain: `chara->GetWorld()->OwningGameInstance (world+0x140) → ISA-check ULuxGameInstance → *(ULuxGameInstance+0x140)`. On this build the final read returns the IEEE 754 value `0x3F800000` (float `1.0f`), not a pointer, so the cache stays at sentinel (`0xFFFFFFFF_FFFFFFFF`) indefinitely. The misnamed Ghidra symbol `ALuxBattleManager_GetMoveProviderPtr @ 0x140546600` actually operates on a `ULuxGameInstance*`, not `ALuxBattleManager*`. Note: the offset `+0x1438` is **past the `0x568` class size** — this means the lazy cache lives in a separately-allocated extension or the `0x568` is an understatement of the actual live size. Under active investigation. |
 | +0x1463 | `uint8` | current move-state byte | set by `ALuxBattleManager_SetMoveState @ 0x1403F8370`; `5=playing`, `6=stopping` |
 | +0x1982 | `uint16` | CurrentNotifToken | read by VM IF-predicate families A/B/C |
 | +0x19FE | `uint16` | MoveSubclass | read by `BuildMoveClassPair` |
@@ -127,18 +140,47 @@ UFunction map and the hierarchical config-tree path convention.
 
 !!! note "`ULuxBattleMoveProvider` on this build"
     Searches for `Z_Construct_UClass_ULuxBattleMoveProvider*` and any
-    literal `"LuxBattleMoveProvider"` string in the shipping binary
-    return no hits. The class is either C++-only (no UE4 reflection) or
-    was renamed/restructured. `ALuxBattleChara_GetMoveProvider @
-    0x1403F00B0` routes through `ALuxBattleManager_GetMoveProviderPtr
-    @ 0x140546600` which reads `*(BM+0x140)` — on this build that slot
-    contains the float `1.0f` (`0x3F800000`), not a pointer. So the
-    "MoveProvider" the earlier versions of this page described does not
-    exist as a reachable runtime object. The per-move capsule data is
-    believed to live on the `ALuxBattleMoveCommandPlayer` at
-    `BattleManager+0x4C0` (see the new
-    [Battle Manager subsystems](battle-manager.md#battlemanager-subsystem-layout)
-    section) but the exact field offset is still under investigation.
+    literal `"LuxBattleMoveProvider"` / `"LuxBattleMoveComponent"`
+    string in the shipping binary return **zero hits**. Neither name
+    survives as a UClass registration. The class was either renamed,
+    dropped, or folded into another type between an earlier dev snapshot
+    (which the older docs described) and the 2026-04-19 Steam build.
+
+    **What's actually reachable — the four move-related slots on
+    `ALuxBattleManager`** (no UE4 reflection metadata for any of these
+    because `ALuxBattleManager` is registered short-form via
+    `UE4_RegisterClassEx` with no UPROPERTY list — see
+    `Z_Construct_UClass_ALuxBattleManager @ 0x140949450`):
+
+    | Slot | Inferred class | Notes |
+    |------|----------------|-------|
+    | `BM+0x140` | `UObject*` (class unknown) | Read by the misnamed `ALuxBattleManager_GetMoveProviderPtr @ 0x140546600` — which, despite the name, takes a `ULuxGameInstance*`. Lazy-cached on every chara at `chara+0x1438` by `ALuxBattleChara_GetMoveProvider @ 0x1403F00B0`. |
+    | `BM+0x1450` | `UObject*` (TSharedPtr Target) | Read by `LuxMoveProviderRef_Get @ 0x14045FC70` — which ISA-checks `world+0x98` against `ALuxBattleManager`, then fetches `(*BM+0x1450, *BM+0x1458)` as a TSharedPtr-style pair. The target's `vtable[0x10]` is `IsValid`, `vtable[0x100]` returns the default sub-provider, `vtable[0xE0]` returns an indexed sub-provider. Also referenced by `ALuxBattleChara` vtable slots 208 (`GetWeaponData`) and 210/211 (`GetBoneDataSharedPtr`) — role is ambiguous between a MoveProvider and a unified weapon/bone/move data asset. |
+    | `BM+0x1458` | ref-count control block | Second half of the TSharedPtr pair at `BM+0x1450`. |
+    | `BM+0x4C0` | `ALuxBattleMoveCommandPlayer*` | **The one slot whose class IS known** — registered name `"BattleMoveCommandPlayer"` via `Z_Construct_UClass_ALuxBattleMoveCommandPlayer @ 0x140953780`. This is the command-script VM actor that runs move bytecode; see [Move System](move-system.md). The per-move capsule data is believed to live inside this object, but the exact `FLuxCapsuleContainer` offset is still being located. |
+
+    **Stale call paths to avoid** — these functions were written for an
+    older layout where `chara+0x388` held a MoveProvider pointer. On
+    this build `chara+0x388` is `CharaMesh0`, so these produce garbage
+    or silently fail:
+
+    - `ALuxTraceManager_GetTracePosition_Impl @ 0x1408D0BB0`
+      (Ghidra-renamed; was `ALuxBattleChara_GetTracePosition_Impl`) —
+      reads `this+0x388 → +0x30 → +0x30 / +0x38` expecting the
+      `FLuxCapsuleContainer` chain; instead walks a `USkeletalMeshComponent`.
+    - `LuxMoveProviderRef_Get @ 0x14045FC70` and
+      `LuxMoveProviderRef_GetSubProvider @ 0x140467FE0` — callers pass
+      `chara+0x388` as the "context" pair and these functions invoke
+      `(*(param_1))->vtable[0]` on it to "get world". On a SkeletalMeshComponent
+      vtable[0] is the destructor, so the ISA-check at
+      `world+0x98 -> ALuxBattleManager` falls through with garbage and
+      the functions early-out. The many callers in `FUN_1403A66F0`
+      through `FUN_1403AAA60` (~20 adjacent functions) are effectively
+      dead code on this build.
+
+    The live move pipeline routes through `ALuxBattleMoveCommandPlayer`
+    and the raw `BM+0x1450` TSharedPtr, not through the chara's
+    `+0x388` slot.
 
 ### `ALuxTraceManager`
 
@@ -200,7 +242,7 @@ UFunction map and the hierarchical config-tree path convention.
 |-------:|------|------|-------|
 | +0x30 | `uint8` | CapsuleType | matched against `Active()` tag 1..9 |
 | +0x31 | `uint8` | BoneId_A | 8-bit internal index (remapped via `LuxSkeletalBoneIndex_Remap`) |
-| +0x34 | `float[3]` | LocalOffset_A | bone-local; scaled by `DAT_143E8A418` (≈100 — cm→UE units) |
+| +0x34 | `float[3]` | LocalOffset_A | bone-local; scaled by `g_LuxCmToUEScale @ 0x143E8A418` — the Ghidra label calls it a cm→UE conversion but the actual value is `10.0f` (bit pattern `0x41200000`), which implies the stored offset is in millimetres (or some other decimetre-like internal unit) rather than cm. Multiplying by 10 lands the value in UE4's native cm units. |
 | +0x40 | `uint8` | BoneId_B | second endpoint's bone index |
 | +0x44 | `float[3]` | LocalOffset_B | second endpoint's bone-local offset |
 
@@ -210,8 +252,13 @@ There is **no `VisualPartsAsset` field on `FLuxCapsule`** — an earlier pass gu
 trace pipeline (kind data-asset on `ULuxTraceComponent`, stored in the per-trace record), not
 embedded in a capsule.
 
-> source: `ALuxBattleChara_GetTracePosition_Impl @ 0x1408D0BB0`, `FLuxCapsule` type in the
-> Ghidra data-type manager (80 bytes, header + 32-byte endpoint pair).
+> source: `ALuxTraceManager_GetTracePosition_Impl @ 0x1408D0BB0` (formerly misnamed
+> `ALuxBattleChara_GetTracePosition_Impl` in older Ghidra databases — the function body
+> receives a chara `this` but the UFunction is registered under `ALuxTraceManager`),
+> `FLuxCapsule` type in the Ghidra data-type manager (80 bytes, header + 32-byte
+> endpoint pair). Per its plate comment this function is **stale on the current
+> Steam build** — it reads the legacy MoveProvider slot that no longer contains
+> live capsule data.
 
 See [Trace / Hitbox System](trace-system.md) for how these fields feed the per-tick hit resolver
 and the world-space transform math.
@@ -341,17 +388,39 @@ locations as edge-cross-product scratch during point-in-triangle classification.
 ### `UWorld`
 
 - **Path**: `/Script/Engine.World`
-- **Discovered via**: `Z_Construct_UClass_UWorld @ 0x1428A5C40`
+- **Discovered via**: `Z_Construct_UClass_UWorld @ 0x1428A5B90`
 
-Offsets of interest to SC6 modding. The full UE4.21 `UWorld` has many more fields —
-only the ones mods commonly need are listed here.
+Offsets of interest to SC6 modding. The full UE4.17 `UWorld` has many more fields —
+only the ones mods commonly need are listed here. Offsets below are confirmed
+against the property-builder sequence inside `Z_Construct_UClass_UWorld`.
 
 | Offset | Type | Name | Notes |
 |-------:|------|------|-------|
+| +0x030 | `ULevel*` | `PersistentLevel` | |
+| +0x038 | `UNetDriver*` | `NetDriver` | |
 | +0x040 | `ULineBatchComponent*` | `LineBatcher` | depth-tested debug lines, per-frame |
 | +0x048 | `ULineBatchComponent*` | `PersistentLineBatcher` | depth-tested, persists until `FLUSHPERSISTENTDEBUGLINES` |
 | +0x050 | `ULineBatchComponent*` | `ForegroundLineBatcher` | **no depth test, always on top** — recommended for debug overlays |
-| +0x098 | `AGameModeBase*` | `AuthorityGameMode` | isa-checked against `ALuxBattleManager` by `GetPlayerIndex`, `GetTracePositionForPlayer`, etc. |
+| +0x088 | `TArray<ULevelStreaming*>` | `StreamingLevels` | |
+| +0x098 | `FString` | `StreamingLevelsPrefix` | 24-byte FString — **not a UObject pointer.** Earlier docs claimed this was `AuthorityGameMode`; that's wrong. `AuthorityGameMode` is at `+0xF0`. |
+| +0x0E8 | `UNavigationSystem*` | `NavigationSystem` | |
+| +0x0F0 | `AGameModeBase*` | `AuthorityGameMode` | the real slot. ISA-checked against `ALuxBattleManager` by `GetPlayerIndex`, `GetTracePositionForPlayer`, etc. |
+| +0x0F8 | `AGameStateBase*` | `GameState` | |
+| +0x100 | `UAISystemBase*` | `AISystem` | |
+| +0x138 | `ULevel*` | `CurrentLevel` | |
+| +0x140 | `UGameInstance*` | `OwningGameInstance` | **On SC6 this points to `ULuxGameInstance`** (registered name `"LuxGameInstance"`, size 0x220, `Z_Construct_UClass_ULuxGameInstance @ 0x140A55E60`; short-form static-class getter at `0x140A51870`). `ALuxBattleChara::GetMoveProvider @ 0x1403F00B0` reads this slot, ISA-checks it against `ULuxGameInstance`, and then reads **the GameInstance's own `+0x140`** to get the move-provider pointer. |
+
+!!! warning "Do not confuse `world+0x140` with `ALuxBattleManager+0x140`"
+    They're unrelated fields on unrelated objects that happen to share an
+    offset. `world+0x140 = OwningGameInstance` (= `ULuxGameInstance*` on
+    SC6). `BattleManager+0x140` is the (lazy) MoveComponent slot on the
+    BattleManager itself. The Ghidra symbol
+    `ALuxBattleManager_GetMoveProviderPtr @ 0x140546600` is MISNAMED — its
+    actual parameter is a `ULuxGameInstance*`, reached through
+    `world+0x140`. See
+    [`ALuxBattleChara` runtime-layout note](#aluxbattlechara) for the
+    downstream consequence (the chara's cached MoveProvider slot stays
+    sentinel on this build).
 
 See [Drawing 3D Debug Lines](line-batching.md) for the batcher path.
 

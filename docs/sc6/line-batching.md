@@ -51,7 +51,7 @@ auto** slot = reinterpret_cast<UObject**>(
 auto* foreground_batcher = *slot;                // ULineBatchComponent*
 ```
 
-> source: `Z_Construct_UClass_UWorld @ 0x1428a5c40` registers the three UProperties with
+> source: `Z_Construct_UClass_UWorld @ 0x1428a5b90` registers the three UProperties with
 > `size=8` (pointer) at offsets `0x40` / `0x48` / `0x50`.
 
 ## ULineBatchComponent layout
@@ -215,7 +215,7 @@ every line you want visible on the current frame. The component's tick does the 
 
 | Symbol | RVA | Description |
 |---|---|---|
-| `Z_Construct_UClass_UWorld` | `0x2A5C40` | Registers the three LineBatcher UProperties (`+0x40`, `+0x48`, `+0x50`). |
+| `Z_Construct_UClass_UWorld` | `0x2A5B90` | Registers the three LineBatcher UProperties (`+0x40`, `+0x48`, `+0x50`). |
 | `Z_Construct_UClass_ULineBatchComponent` | `0x25C9590` | Class size `0x850`; confirms the layout. |
 | `Z_Construct_UScriptStruct_FBatchedLine` | `0x25CFCD0` | Confirms 0x34-byte struct. |
 | `ULineBatchComponent::Flush` | `0x1D774C0` | Zeros `Num` at `+0x810 / +0x820 / +0x838`; confirms `BatchedLines.Data` at `+0x808`. |

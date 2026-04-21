@@ -4,8 +4,15 @@ title: SoulCalibur VI Modding Docs
 
 # SoulCalibur VI Modding Docs
 
-Community documentation for modding **SoulCalibur VI** using the
-[UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) (Unreal Engine 4/5 Scripting System) framework.
+Reverse-engineering notes for **SoulCalibur VI**, written primarily as a
+knowledge base for AI coding agents working on mods via
+[UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) (Unreal Engine 4/5 Scripting System).
+
+Pages are auto-generated from Ghidra analysis of the shipping Steam binary
+(class layouts, function RVAs, struct offsets, UFunction trampolines) and
+cross-checked against live UE4SS runtime introspection. Content is dense
+and offset-accurate with explicit source citations — optimised for machine
+readers but still readable to humans.
 
 !!! warning "Unofficial"
     This project is **not** affiliated with BANDAI NAMCO or the UE4SS maintainers.
