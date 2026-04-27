@@ -89,7 +89,7 @@ UMG widget tree, not through these settings.
 `Z_Construct_UProperties_ULuxTraceDataAsset` @ `0x140c0cf60` · UClass cache `DAT_144159b60`.
 
 Same story as the HUD settings: registered as UPROPERTies, zero consumers. The draw-trace
-paths were compiled out. See [Trace / Hitbox System](trace-system.md#debug-draw-flags-stripped-in-shipping)
+paths were compiled out. See [Trace System: Debug-draw flags](trace-system.md#debug-draw-flags-stripped-in-shipping)
 for the surrounding context on how `TracePartsDataAssetList` is used for the live VFX overlays.
 
 ## UE4 built-in `DrawDebug*` UFunctions

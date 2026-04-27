@@ -25,7 +25,7 @@ Mods" crash in practice.
     callback but skips the *post*. A global `ProcessEvent` post-hook intercepts at the
     engine level and **does** fire for BP events — reads the `parms` block after
     dispatch, sees whatever the BP body wrote. See the ReceiveGetWeaponTip case in
-    [Trace / Hitbox System](../sc6/trace-system.md#receivegetweapontip-a-promising-looking-dead-end)
+    [Trace System](../sc6/trace-system.md#receivegetweapontip-promising-looking-dead-end)
     for a concrete SC6 example — even though the hook works, the BP side is never
     implemented, so captured data is always zero.
 

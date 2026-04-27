@@ -101,7 +101,8 @@ nav:
       - Game Structures: sc6/structures.md
       - Character Data: sc6/character-data.md
       - Battle Manager: sc6/battle-manager.md
-      - Trace / Hitbox System: sc6/trace-system.md
+      - Hitbox System: sc6/hitbox-system.md
+      - Trace System (weapon trail): sc6/trace-system.md
       - Drawing 3D Debug Lines: sc6/line-batching.md
       - Move System (VM): sc6/move-system.md
       - Dev / Debug Hooks: sc6/dev-debug-hooks.md

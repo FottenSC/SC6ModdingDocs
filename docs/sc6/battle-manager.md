@@ -169,10 +169,10 @@ pointer to an instance of class X" rather than fixed addresses.
 | +0x4B0 | `ULuxBattleAICustomizer*`       | AICustomizer |
 | +0x4B8 | `ALuxBattleKeyRecorder*`        | KeyRecorder — Training-mode "Recorded" input playback. Layout in [Structures](structures.md#aluxbattlekeyrecorder-956-bytes); slot table holds `FLuxBattleKeyRecorderSlot` (12 bytes per queued input: duration / wait-counter / move-id) |
 
-### Move system (critical for hit-detection work)
+### Move system
 | Offset | Type | Name |
 |-------:|------|------|
-| +0x4C0 | `ALuxBattleMoveCommandPlayer*`    | MoveCommandPlayer — the command-script VM actor. See [Move System](move-system.md). Per-move capsule/hit data is believed to live inside this object. |
+| +0x4C0 | `ALuxBattleMoveCommandPlayer*`    | MoveCommandPlayer — the command-script VM actor. See [Move System](move-system.md). The live `FLuxCapsule` array (visual trace pipeline) is believed to live inside this object — see [Trace System: Where the live `FLuxCapsule` array is on this build](trace-system.md#where-the-live-fluxcapsule-array-is-on-this-build). For actual hit detection, see [Hitbox System](hitbox-system.md). |
 | +0x4C8 | `ULuxBattleTrainingReplayPlayer*` | TrainingReplayPlayer |
 
 ### Flow & demo

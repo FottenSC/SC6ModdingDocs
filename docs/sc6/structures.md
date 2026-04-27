@@ -22,7 +22,7 @@ Alphabetical jump table. Click through for full layout.
 | `FLuxBattleChara` (Ghidra type) | `0x97330` | Big-struct view of a fighter's runtime state — same entity as [`ALuxBattleChara`](#aluxbattlechara), wider field coverage. |
 | [`FLuxBattleCharaVisibilityFlags`](#fluxbattlecharavisibilityflags-7-bytes) | `0x07` | 7-byte mesh visibility bitfield. |
 | [`FLuxBattleVMFreezeRecord`](#fluxbattlevmfreezerecord-64-bytes) | `0x40` | Slow-motion / VM-freeze blend state. |
-| [`FLuxCapsule`](#fluxcapsule) | `0x50` | Pipeline-1 capsule endpoint pair (visual). |
+| [`FLuxCapsule`](#fluxcapsule) | `0x50` | Trace-system capsule endpoint pair (visual). |
 | [`FLuxCapsuleContainer`](trace-system.md#fluxcapsulecontainer-0x40-bytes-legacy-view) / [`FLuxMoveProvider_CapsuleSlot`](#fluxmoveprovider_capsuleslot-64-bytes) | `0x40` | TArray-shaped wrapper around `FLuxCapsule*`. |
 | [`FLuxDamageInfo`](#fluxdamageinfo-18-bytes) | `0x12` | HUD/network hit-event payload. |
 | [`FTraceActiveParam`](#ftraceactiveparam-0x30-bytes) | `0x30` | Param to `ALuxBattleChara::Active` (only `+0x00 AttackTag` matters). |
@@ -354,8 +354,9 @@ embedded in a capsule.
 > Steam build** — it reads the legacy MoveProvider slot that no longer contains
 > live capsule data.
 
-See [Trace / Hitbox System](trace-system.md) for how these fields feed the per-tick hit resolver
-and the world-space transform math.
+See [Hitbox System](hitbox-system.md) for how the equivalent `KHitArea` / `KHitSphere`
+endpoints feed the per-tick hit resolver, and [Trace System](trace-system.md) for
+`FLuxCapsule`'s role in the visual weapon-trail pipeline.
 
 ---
 
@@ -573,8 +574,11 @@ unconditionally — so any "hitbox" value a mod might have read from the hook is
 by construction.
 
 Documented here so the next person who sees the class in a `ProcessEvent` spy log can
-skip the RE chase. The real hit-detection geometry is [`FLuxCapsule`](structures.md#fluxcapsule);
-the real query path is [`GetTracePosition_Impl`](trace-system.md#ufunctions-on-aluxbattlechara).
+skip the RE chase. The real hit-detection geometry lives in the
+[Hitbox System (KHit linked lists)](hitbox-system.md), not on this UFunction. The
+weapon-tip query path the event was meant to feed —
+[`GetTracePosition_Impl`](trace-system.md#ufunctions-on-aluxbattlechara) — is itself
+stale on the shipping build.
 
 **UFunction registration**: `Z_Construct_UFunction_ALuxBattleWeaponEventHandler_ReceiveGetWeaponTip
 @ 0x1409CFCE0`. Param block is 0x24 bytes — layout:
@@ -863,10 +867,10 @@ slot is the slow-mo source (e.g. dramatic finishing-blow camera).
 | +0x38 | `int32`  | `nField_38` | |
 | +0x3C | `int32`  | `nSlowMotionEnabled` | |
 
-### Hit-detection node structs (Pipeline 2 — legacy KHit)
+### Hit-detection node structs (KHit)
 
 These are the structs that drive the **live** hit resolver — kicks, punches, hurtboxes,
-pushboxes, grabs. See [Trace / Hitbox System: Pipeline 2](trace-system.md#pipeline-2-khit-linked-lists-live-hit-resolution)
+pushboxes, grabs. See [Hitbox System](hitbox-system.md)
 for the full call-graph walkthrough.
 
 `FKHitNodeBase` and `FLuxKHitNode` are Ghidra-named partial views — the canonical names
@@ -940,7 +944,7 @@ KHitFixArea (StreamTypeTag = 2) — STATIC OBB from THREE reference points:
 ```
 
 `KHitFixArea`'s OBB is derived at overlap-test time by Gram-Schmidting `(P2-P1)` and
-`(P3-P1)` — see [trace-system.md](trace-system.md#khit-node-layout-0x80-bytes)
+`(P3-P1)` — see [hitbox-system.md](hitbox-system.md#khit-node-layout-0x80-bytes)
 for the formula.
 
 **Subclass vtables**:
