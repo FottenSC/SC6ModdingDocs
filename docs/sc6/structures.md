@@ -1,7 +1,88 @@
 # Game Structures
 
-Reversed class layouts and offsets. Entries are community-verified — cite the Ghidra address you
-reversed it from.
+Reversed class layouts and offsets, cited against Ghidra addresses on the SC6 Steam build
+(image base `0x140000000`).
+
+## Struct index
+
+Alphabetical jump table. Click through for full layout.
+
+### Battle / hit-resolution
+
+| Struct | Size | Purpose |
+|--------|------|---------|
+| [`ALuxBattleChara`](#aluxbattlechara) | `0x568` | One fighter on stage. Three KHit list heads at `+0x44478/+0x44498/+0x444B8`. |
+| [`ALuxBattleManager`](#aluxbattlemanager) | (large) | Per-match actor; player chara list, axis input, config tree at `+0x50`. |
+| [`ALuxBattleFrameInputLog`](#aluxbattleframeinputlog-17428-bytes) | `0x4414` | Input record/replay actor; ring buffer of `FLuxRecordedFrame`. |
+| [`ALuxBattleKeyRecorder`](#aluxbattlekeyrecorder-956-bytes) | `0x3BC` | Training-mode "Recorded" input playback. |
+| [`ALuxBattleReplayPlayer`](#aluxbattlereplayplayer-960-bytes) | `0x3C0` | Replay playback actor. |
+| [`ALuxTraceManager`](#aluxtracemanager) | `0x408` | **Visual-only** weapon-trail driver. |
+| [`FActiveAttackSlot`](#factiveattackslot-68-bytes) | `0x44` | Per-tag active-attack hash slot at `chara+0x3D0`. |
+| [`FKHitNodeBase`](#fkhitnodebase-36-bytes-header-view) / [`FLuxKHitNode`](#fluxkhitnode-160-bytes-full-node-view) | `0x80` runtime | KHit linked-list node — base header + 3 subclass tails. |
+| `FLuxBattleChara` (Ghidra type) | `0x97330` | Big-struct view of a fighter's runtime state — same entity as [`ALuxBattleChara`](#aluxbattlechara), wider field coverage. |
+| [`FLuxBattleCharaVisibilityFlags`](#fluxbattlecharavisibilityflags-7-bytes) | `0x07` | 7-byte mesh visibility bitfield. |
+| [`FLuxBattleVMFreezeRecord`](#fluxbattlevmfreezerecord-64-bytes) | `0x40` | Slow-motion / VM-freeze blend state. |
+| [`FLuxCapsule`](#fluxcapsule) | `0x50` | Pipeline-1 capsule endpoint pair (visual). |
+| [`FLuxCapsuleContainer`](trace-system.md#fluxcapsulecontainer-0x40-bytes-legacy-view) / [`FLuxMoveProvider_CapsuleSlot`](#fluxmoveprovider_capsuleslot-64-bytes) | `0x40` | TArray-shaped wrapper around `FLuxCapsule*`. |
+| [`FLuxDamageInfo`](#fluxdamageinfo-18-bytes) | `0x12` | HUD/network hit-event payload. |
+| [`FTraceActiveParam`](#ftraceactiveparam-0x30-bytes) | `0x30` | Param to `ALuxBattleChara::Active` (only `+0x00 AttackTag` matters). |
+| [`FTraceInactiveParam`](#ftraceinactiveparam-0x8-bytes) | `0x08` | Param to `ALuxBattleChara::Inactive`. |
+| [`ULuxTraceComponent`](#uluxtracecomponent) | `0x4B0` | Visual trail renderer. |
+| [`ULuxTraceDataAsset`](#uluxtracedataasset) | `0x80` | Trace-parts data asset (with three dead `bDebugDrawTrace*` bools). |
+
+### Move VM
+
+| Struct | Size | Purpose |
+|--------|------|---------|
+| [`FLuxMoveCommandPlayer`](#fluxmovecommandplayer-12332-bytes) | `0x302C` | Per-chara VM context (the "slot" indexed by `g_LuxMoveVM_CommandPlayerArray`). |
+| [`FLuxMoveVM_OpcodeScratch`](#fluxmovevm_opcodescratch-96-bytes) | `0x60` | 96-byte view over `vmCtx+0x26AC..+0x26E4` (the per-opcode scratch). |
+| [`FLuxMoveVM_ATKPayload`](#fluxmovevm_atkpayload-16-bytes) | `0x10` | 4-uint32 `(power, range, speed, dir_mask)` tuple. |
+| [`FLuxMoveBankCell`](#fluxmovebankcell-112-bytes) | `0x70` | One row of the per-character move bank. |
+| [`FLuxMoveSchedState`](#fluxmoveschedstate-96-bytes) | `0x60` | Dual-slot move scheduler. |
+| [`FLuxMoveStartRequest`](#fluxmovestartrequest-108-bytes) | `0x6C` | "Queue this move" request. |
+| [`FLuxMoveSubFrameRecord`](#fluxmovesubframerecord-72-bytes) | `0x48` | 60→120 Hz sub-frame interpolation record. |
+| [`LuxMoveLaneState`](#luxmovelanestate-1128-bytes) | `0x468` | Per-lane VM state; three lanes per chara at `+0x444F0/+0x44958/+0x44DC0`. |
+| [`FLuxAttackTouchParam`](move-system.md#fluxattacktouchparam-0x20-bytes) | `0x1D` | Hit-registered struct. |
+| [`FLuxBattleMoveListTableRow`](move-system.md#fluxbattlemovelisttablerow-0x88-bytes) | `0x88` | UI move-list row. |
+
+### Camera
+
+| Struct | Size | Purpose |
+|--------|------|---------|
+| [`APlayerCameraManager` POV](#aplayercameramanager-pov-the-live-render-source) | (engine class) | The render-source. POV at `+0x410..+0x44B`. |
+| [`ALuxBattleCamera_PoseFields`](#aluxbattlecamera_posefields-34-bytes) | `0x22` | Packed pose snapshot. |
+| [`FCameraCacheEntry_PCM_0x400`](#fcameracacheentry_pcm_0x400-55-bytes) | `0x37` | PCM-style cache entry, customised. |
+| [`FLuxBattleCameraInternalPOV`](#fluxbattlecamerainternalpov-56-bytes) | `0x38` | Internal POV transform. |
+| [`FLuxCameraAction`](#fluxcameraaction-740-bytes) | `0x2E4` | Camera action snapshot. |
+
+### Engine / line drawing
+
+| Struct | Size | Purpose |
+|--------|------|---------|
+| [`UWorld`](#uworld) | (engine) | `+0x40/+0x48/+0x50` line batchers; `+0xF0` `AuthorityGameMode`; `+0x140` `OwningGameInstance`. |
+| [`ULineBatchComponent`](#ulinebatchcomponent) | `0x850` | Three append arrays at `+0x808/+0x818/+0x830`. |
+| [`FBatchedLine`](#fbatchedline-0x34-bytes) | `0x34` | Single line entry. |
+| [`TArrayHeader`](#tarrayheader-16-bytes) | `0x10` | UE4 `{Data, Num, Max}` triple. |
+
+### Stage geometry
+
+| Struct | Size | Purpose |
+|--------|------|---------|
+| [Frame-bounds grid](#frame-bounds-grid) | (`>=0x430`) | Spatial acceleration for VM range/angle predicates. |
+| [`FLuxFrameBoundsCellRow`](#fluxframeboundscellrow-32-bytes-and-fluxterraintriangleentry-64-bytes) | `0x20` | Cell row in the bounds grid. |
+| [`FLuxTerrainTriangleEntry`](#fluxframeboundscellrow-32-bytes-and-fluxterraintriangleentry-64-bytes) | `0x40` | Triangle entry with pre-baked plane equation. |
+
+### Misc / discovered-but-uncategorised
+
+`ALuxBattleManager_Partial`, `ALuxBattleManager_PropertyLayout`, `FLinearColor`, `FMatrix64`,
+`FTransform64`, `FVector`, `FLuxBattleKeyRecorderSlot`, `FLuxRecordedFrame`,
+`FLuxTraceManagerLayout`, `FLuxTraceComponentLayout`, `FLuxDataTablePath`. See the
+[Other reversed structs](#other-reversed-structs) section.
+
+### Net / Steam (unrelated to gameplay)
+
+`FNamedOnlineSession_Steam`, `FOnlinePresenceSteam`, `FOnlineSessionInfoSteam`,
+`FFriendStateRecord`. See [Net / Steam structs](#net-steam-structs-unrelated-to-hitbox-work).
 
 ## Template for a new entry
 
@@ -11,14 +92,11 @@ reversed it from.
 - **Path**: `/Script/<Module>.<Class>`
 - **Size**: 0x???
 - **Discovered via**: <UE4SS dumper / hook / xref / …>
-- **Notes**: …
 
 | Offset | Type | Name | Notes |
 |-------:|------|------|-------|
 | 0x00   | FName | Id | |
 ```
-
-Use that template verbatim so the search index picks up fields consistently.
 
 ---
 
@@ -35,7 +113,7 @@ Use that template verbatim so the search index picks up fields consistently.
 |-------:|------|------|-------|
 | +0x050 | `FLuxDataTable` | ConfigTable | round / timer / per-player settings tree |
 | +0x098 | `UObject*` | GameState | isa-checked against `ALuxBattleManager` every tick |
-| +0x388 | `UClass*` | BattleCharaClass | `TSubclassOf<ALuxBattleChara>` per `Z_Construct_UClass_ALuxBattleManager @ 0x140949450`. **Not** an embedded chara — an earlier pass of these docs called this "SubChara" but a 0x568-byte embedded chara starting here would collide with the Camera/EventListener slots at +0x3A8..+0x408 confirmed by the runtime-verified subsystem map in [battle-manager.md](battle-manager.md#camera--events). |
+| +0x388 | `UClass*` | BattleCharaClass | `TSubclassOf<ALuxBattleChara>` per `Z_Construct_UClass_ALuxBattleManager @ 0x140949450`. **Not** an embedded chara — an earlier pass of these docs called this "SubChara" but a 0x568-byte embedded chara starting here would collide with the Camera/EventListener slots at +0x3A8..+0x408 confirmed by the runtime-verified subsystem map in [battle-manager.md](battle-manager.md#camera-events). |
 | +0x390 | `ALuxBattleChara**` | PlayerCharas.Data | `TArray<ALuxBattleChara*>` — iterate `PlayerCharas[0..NumPlayerCharas-1]` for all active fighters |
 | +0x398 | `int32` | NumPlayerCharas | |
 | +0x3A0 | `uint8` | PendingMoveCommandType | 1 = PlayMove, 2 = Stop |
@@ -202,6 +280,22 @@ UFunction map and the hierarchical config-tree path convention.
 
 > source: `Z_Construct_UClass_ALuxTraceManager @ 0x140C096B0`,
 > `ALuxTraceManager_ActivateTrace_Impl @ 0x1408D5D10`.
+
+### `ULuxTraceDataAsset`
+
+- **Path**: `/Script/LuxorGame.LuxTraceDataAsset`
+- **Size**: 128 bytes (0x80)
+- **Discovered via**: `Z_Construct_UProperties_ULuxTraceDataAsset @ 0x140C0CF60`
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00..+0x2F | — | UObject base | unread by trace code |
+| +0x30 | `ULuxTracePartsDataAssetList*` | `TracePartsDataAssetList` | the list of capsule-shaped trace-parts metadata |
+| +0x38 | `ULuxTraceColorPalletDataAsset*` | `TraceColorPalletDataAsset` | per-chara palette |
+| +0x40 | `ULuxTraceInfinityDataAsset*` | `TraceInfinityDataAsset` | infinity-mode override asset |
+| +0x50 | `uint8` (bitfield) | `bDebugDrawBits` | bit 0 = `bDebugDrawTraceFrame`, bit 1 = `bDebugDrawTraceKeyFrame`, bit 2 = `bDebugDrawTraceVelocity`. **All three are dead in shipping** — see [Dev / Debug Hooks](dev-debug-hooks.md). |
+
+Held at `ALuxTraceManager+0x388` as `TraceManager.TraceDataAsset` on this build.
 
 ### `ULuxTraceComponent`
 
@@ -480,7 +574,7 @@ by construction.
 
 Documented here so the next person who sees the class in a `ProcessEvent` spy log can
 skip the RE chase. The real hit-detection geometry is [`FLuxCapsule`](structures.md#fluxcapsule);
-the real query path is [`GetTracePosition_Impl`](trace-system.md#ufunctions-exposed-on-aluxbattlechara).
+the real query path is [`GetTracePosition_Impl`](trace-system.md#ufunctions-on-aluxbattlechara).
 
 **UFunction registration**: `Z_Construct_UFunction_ALuxBattleWeaponEventHandler_ReceiveGetWeaponTip
 @ 0x1409CFCE0`. Param block is 0x24 bytes — layout:
@@ -496,3 +590,642 @@ the real query path is [`GetTracePosition_Impl`](trace-system.md#ufunctions-expo
 > source: `FUN_1409A9A80 @ 0x1409A9A80` (the native caller wrapper that invokes
 > `ReceiveGetWeaponTip` via `FindFunction` + `vtable[0x1F8]::ProcessEvent`) called from
 > `ALuxBattleManager::GetTracePositionForPlayer @ 0x1403F4960`.
+
+---
+
+## Other reversed structs
+
+The Ghidra database holds a number of additional struct layouts that surface in callers
+but don't yet have a dedicated section above. Listed here for completeness; cross-reference
+in the relevant subsystem doc (move system, battle manager, trace system) for context.
+
+### `TArrayHeader` (16 bytes)
+
+The 16-byte UE4 `TArray<T>` header used everywhere as a `{Data, Num, Max}` triple. Defined
+in Ghidra so other structs can reference it by name instead of pasting three raw fields.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `void*` | `Data` | element pointer (heap allocation owned by `GMalloc`) |
+| +0x08 | `int32` | `Num` | element count |
+| +0x0C | `int32` | `Max` | allocator capacity |
+
+Used by `ULineBatchComponent_Partial` for the three batch arrays at `+0x808/+0x818/+0x830`,
+and by every `TArray<T>` field on a Lux class.
+
+### `APlayerCameraManager` POV (the live render-source)
+
+The render thread reads its scene view from `APlayerController->PlayerCameraManager`,
+**not** from `ALuxBattleManager.BattleCamera`. The latter is a "director" camera whose
+output is *consumed* by the PCM. Mods that want to override the rendered pose write to
+the PCM, not to the BattleCamera.
+
+`APlayerCameraManager` carries an `FCameraCacheEntry` at `+0x400`, and the
+`FMinimalViewInfo` block sits at `+0x410..+0x44B`:
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| `+0x400` | `float` | `TimeStamp` | gate — > 0.0f during active battle |
+| `+0x410` | `float` | `Location.X` | written every tick by the director chain |
+| `+0x414` | `float` | `Location.Y` | |
+| `+0x418` | `float` | `Location.Z` | |
+| `+0x41C` | `float` | `Rotation.Pitch` | |
+| `+0x420` | `float` | `Rotation.Yaw` | |
+| `+0x424` | `float` | `Rotation.Roll` | |
+| `+0x428` | `float` | `FOV` | |
+| `+0x42C` | `float` | `DesiredFOV` | |
+| `+0x430..+0x44B` | … | tail | `AspectRatio` / `OrthoWidth` / `PostProcess` settings |
+
+The per-tick commit chain runs from `UWorld::Tick @ 0x141F02230` — the `AController`
+iteration loop calls `APlayerCameraManager_CommitPOV_NoInterp(playerController[+0x84*8])`
+on each frame, where `playerController[+0x84*8]` is the `PlayerCameraManager` pointer.
+Read-back from the renderer goes through:
+
+- `APlayerController::GetPlayerViewPoint @ 0x142046410`
+- `APlayerController::GetCameraViewLoc @ 0x142042730`
+
+Both read from the same `+0x410..+0x424` block on the PCM, and `ULocalPlayer::CalcSceneView`
+is the consumer.
+
+**Free-camera technique** (used by HorseMod's `FreeCamera`): NOP the engine's per-tick
+stores to `+0x410..+0x428`, then write your own pose into the same offsets each cockpit
+tick. The 5 store sites are at `SoulcaliburVI.exe + 0x11EAB225` (primary, `[rdi+...]`)
+and a sibling sequence (`[rbx+...]`) — both follow the same 5-store / 4-load pattern over
+the offset table:
+
+```text
++0x00 (8B) movsd  [rdi+0x410], xmm0    ; Location.X / Y      ← NOP
++0x08 (6B) movsd  xmm0, [rsp+0x3C]     ; load Z / pitch       LEAVE
++0x0E (8B) movsd  [rdi+0x41C], xmm0    ; Rotation.Pitch/Yaw  ← NOP
++0x16 (5B) movups xmm0, [rsp+0x48]     ; load tail FOV/etc.   LEAVE
++0x1B (6B) mov    [rdi+0x418], eax     ; Location.Z          ← NOP
++0x21 (4B) mov    eax, [rsp+0x44]                             LEAVE
++0x25 (6B) mov    [rdi+0x424], eax     ; Rotation.Roll       ← NOP
++0x2B (4B) mov    eax, [rsp+0x5C]                             LEAVE
++0x2F (7B) movups [rdi+0x428], xmm0    ; FOV + tail          ← NOP
+```
+
+Three additional pose writers can also need patching for full lock-on rotational override
+(empirical):
+
+| Function | Address | Note |
+|----------|---------|------|
+| `PerTickPOVUpdater` (whole-pose committer despite the name) | `FUN_1420520F0` | NOP the entire 29-byte store block |
+| `TargetFollowRotationWriter` | `FUN_141F935B0` | rotation-only writer |
+| `SetPOV` (combined setter) | `FUN_141D27C80` | another whole-pose writer; called by `FUN_141D5BB90` (camera-follow updater) |
+
+### Camera structs
+
+#### `ALuxBattleCamera_PoseFields` (34 bytes)
+
+A packed pose snapshot — used by the `LuxBattleCamera` to record sampled poses for
+deterministic replay. The byte/float interleaving (no compiler alignment) is unusual
+for UE4-derived code and looks bytecode-driven.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `uint8`  | `b_prefix` | header tag |
+| +0x01 | `float`  | `flActiveTimestamp` | unaligned (sequence packing) |
+| +0x05 | `uint8`  | `b_gap_404` | |
+| +0x06 | `float`  | `flLocationX` | world XYZ, all unaligned |
+| +0x0A | `float`  | `flLocationY` | |
+| +0x0E | `float`  | `flLocationZ` | |
+| +0x12 | `float`  | `flRotationPitch` | euler PYR |
+| +0x16 | `float`  | `flRotationYaw` | |
+| +0x1A | `float`  | `flRotationRoll` | |
+| +0x1E | `float`  | `flFOV` | |
+
+#### `FCameraCacheEntry_PCM_0x400` (55 bytes)
+
+UE4 `APlayerCameraManager`-style cache entry, customised — same packed-byte / unaligned-float
+discipline as `ALuxBattleCamera_PoseFields`.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `float` | `flTimeStamp` | |
+| +0x04 | 2 × `uint8` | `b_pad_404`, `b_pad_408` | |
+| +0x06 | `float[3]` | `flLocation_X/Y/Z` | unaligned XYZ |
+| +0x12 | `float[3]` | `flRotation_Pitch/Yaw/Roll` | unaligned PYR |
+| +0x1E | `float` | `flFOV` | |
+| +0x22 | `float` | `flDesiredFOV` | |
+| +0x26 | `float` | `flAspectRatio` | |
+| +0x2A | `float` | `flOrthoWidth` | |
+| +0x2E | `float` | `flOrthoNear` | |
+| +0x32 | `uint32` | `dwFlags` | |
+| +0x36 | `bool` | `bConstrainAspectRatio` | |
+
+#### `FLuxBattleCameraInternalPOV` (56 bytes)
+
+Internal POV transform held by the battle camera's per-tick state. Mixes packed
+`{X,Y}` qword pairs with an unaligned `Z` float to keep the on-disk replay
+encoding compact.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `uint64` | `Location_XY` | packed pair |
+| +0x08 | `float`  | `flLocation_Z` | |
+| +0x0C | `uint64` | `Rotation_PitchYaw` | |
+| +0x14 | `float`  | `flRotation_Roll` | |
+| +0x18 | `uint64` | `FieldA_8` | unannotated |
+| +0x20 | `uint64` | `FieldB_8` | unannotated |
+| +0x28 | `uint32` | `dwFieldC_4` | |
+| +0x2C | `uint32` | `dwFlags_Low2BitsUsed` | |
+| +0x30 | `bool`   | `bBoolFlag` | |
+| +0x34 | `float`  | `flTailFloat_FOV_Maybe` | |
+
+#### `FLuxCameraAction` (740 bytes)
+
+Per-action camera snapshot. Spawned and ticked by the camera state machine —
+holds replay timeline state plus the active camera component reference.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00  | `void*` | `vtable` | |
+| +0x10  | `void*` | `pParentChara` | |
+| +0x18  | `void*` | `pParentContextB` | |
+| +0x24  | `int32` | `nReplayCounter` | |
+| +0x28  | `float` | `flCurrentPlaybackFrame` | |
+| +0x30  | `int32` | `nActiveFlag` | |
+| +0x38  | `void*` | `pCameraComponent` | |
+| +0x44  | `int32` | `nSlotEnabledFlag` | |
+| +0x80  | `float` | `flPerActionSpeed` | |
+| +0x88  | `int32` | `nNegSpeedMode` | |
+| +0x8C  | `int32` | `nEndedFlag` | |
+| +0x90  | `int32` | `nReplayModeFlag` | |
+| +0xB0  | `int32` | `nLoopOnEnd` | |
+| +0x2DC | `int32` | `nMinFrame` | |
+| +0x2E0 | `int32` | `nMaxFrame` | |
+
+### Battle subsystem structs
+
+#### `ALuxBattleFrameInputLog` (17428 bytes)
+
+Per-match input record/playback actor at `BattleManager+0x478`. Owns a 17 KB
+ring buffer of `FLuxRecordedFrame` entries (192 bytes each ≈ 90-frame budget),
+a master-clock counter, and a double-tick guard that prevents two ticks in a
+single frame from corrupting the replay buffer.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00   | `void*`  | `pVtable` | |
+| +0x388  | `void*`  | `pUE4Component_at0x388` | UE4 actor base sub-component |
+| +0x398  | `bool`   | `bEnable_at0x398` | |
+| +0x39C  | `uint32` | `dwPlaybackCursor_at0x39C` | |
+| +0x3A0  | `int32`  | `nLastFrameID_at0x3A0` | |
+| +0x3A4  | `int32`  | `nMasterClock_at0x3A4` | |
+| +0x3A8  | `void*`  | `pRecordedFrameBuffer_at0x3A8` | array of `FLuxRecordedFrame` |
+| +0x3B0  | `int32`  | `nTotalRecordedFrames_at0x3B0` | |
+| +0x4404 | `bool`   | `bDoubleTickGuard_at0x4404` | per-tick re-entrancy guard |
+| +0x4410 | `int32`  | `nDrainCursor_at0x4410` | |
+
+#### `ALuxBattleKeyRecorder` (956 bytes)
+
+Training-mode key-recorder actor at `BattleManager+0x4B8`. Holds a slot table
+of `FLuxBattleKeyRecorderSlot` entries that script the training dummy's input
+playback (the `Recorded` setting in Training menu).
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00  | `void*`  | `vtable` | |
+| +0x388 | `void*`  | `pParentActor` | back-ref to the BattleManager |
+| +0x398 | `bool`   | `bRecordPhase` | recording vs playback |
+| +0x39C | `uint32` | `dwPlayerIndex` | which side records |
+| +0x3A0 | `int32`  | `nSlotIndex` | active slot cursor |
+| +0x3A8 | `void*`  | `pSlotTable` | `FLuxBattleKeyRecorderSlot[]` heap array |
+| +0x3B8 | `int32`  | `nMoveSelectionMode` | |
+
+#### `FLuxBattleKeyRecorderSlot` (12 bytes)
+
+One queued input in the key recorder's slot table.
+
+| Offset | Type | Name |
+|-------:|------|------|
+| +0x00 | `int32` | `nDuration` |
+| +0x04 | `int32` | `nWaitCounter` |
+| +0x08 | `int32` | `nMoveID` |
+
+#### `ALuxBattleReplayPlayer` (960 bytes)
+
+Playback actor at `BattleManager+0x488`. Reconstructs the match from a
+serialised state-reset blob plus a `RecordingData` ref.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x39C | `int32` | `nCurrentRound` | |
+| +0x3A0 | `float` | `flCurrentTime` | |
+| +0x3A8 | `void*` | `StateResetData` | round-start serialised blob |
+| +0x3B8 | `void*` | `RecordingData` | raw recording stream |
+
+#### `FLuxRecordedFrame` (192 bytes)
+
+One frame's worth of input/state recorded by `ALuxBattleFrameInputLog`. The
+field layout has not been broken down beyond the byte-grid yet — enough to
+size buffers but not enough to interpret individual fields.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00..+0x9F  | 20 × `uint64` | `qw00..qw98` | undecoded |
+| +0xA0..+0xBF  | 8 × `uint32`  | `dwDw_a0..dwDw_bc` | undecoded tail |
+
+#### `FLuxBattleCharaVisibilityFlags` (7 bytes)
+
+A 7-byte bitfield struct controlling per-frame visibility of the character +
+weapon meshes, with two pad bytes and four boolean toggles.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00..+0x01 | 2 × `uint8` | `b_pad_530`, `b_pad_531` | |
+| +0x02 | `bool` | `bForceHideOverride` | master "hide" override |
+| +0x03 | `bool` | `bCharacterMeshVisibilityFlag` | |
+| +0x04 | `bool` | `bWeaponMeshVisibilityFlag` | |
+| +0x05 | `bool` | `bCharaSecondaryVisibilityGate` | |
+| +0x06 | `bool` | `bWeaponSecondaryVisibilityGate` | |
+
+#### `FLuxBattleVMFreezeRecord` (64 bytes)
+
+Slow-motion / VM-freeze blend state. Holds three candidate alphas + per-mode
+tags and produces a blended output per tick. The `flAlphaCandidate3_SlowMo`
+slot is the slow-mo source (e.g. dramatic finishing-blow camera).
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `bool`   | `bVMFreezeByte` | enable gate |
+| +0x04 | `float`  | `flBaseAlpha` | |
+| +0x08 | `float`  | `flAlphaCandidate1` | |
+| +0x0C | `float`  | `flAlphaCandidate2` | |
+| +0x10 | `int32`  | `nCountdown1` | |
+| +0x14 | `int32`  | `nCountdown2` | |
+| +0x18 | `int32`  | `nModeTag1` | |
+| +0x1C | `int32`  | `nModeTag2` | |
+| +0x20..+0x2C | 4 × `float` | `flOutBlendW0..2`, `flOutScaledAlpha` | output side |
+| +0x30 | `int32`  | `nOutModeTag` | |
+| +0x34 | `float`  | `flAlphaCandidate3_SlowMo` | slow-mo source |
+| +0x38 | `int32`  | `nField_38` | |
+| +0x3C | `int32`  | `nSlowMotionEnabled` | |
+
+### Hit-detection node structs (Pipeline 2 — legacy KHit)
+
+These are the structs that drive the **live** hit resolver — kicks, punches, hurtboxes,
+pushboxes, grabs. See [Trace / Hitbox System: Pipeline 2](trace-system.md#pipeline-2-khit-linked-lists-live-hit-resolution)
+for the full call-graph walkthrough.
+
+`FKHitNodeBase` and `FLuxKHitNode` are Ghidra-named partial views — the canonical names
+in the binary's vtables (`KHitBase_vftable @ 0x143E87838`, etc.) are `KHitBase`, `KHitSphere`,
+`KHitArea`, `KHitFixArea`. Each node is **0x80 (128) bytes** at runtime, regardless of
+subclass; the sparse `FLuxKHitNode` layout in the data-type manager covers the common
+header + the FixArea tail.
+
+#### `FKHitNodeBase` (36 bytes — header view)
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `void*`  | `vtable` | one of `KHitBase / Sphere / Area / FixArea` |
+| +0x08 | `uint64` | `PerAttackerBit` | `1ULL << (KindTag & 0x3F)` — single-bit mask. Same value produced for every subclass; role-dependent (attacker mask / hurtbox mask / body mask). |
+| +0x10 | `uint32` | `dwNode_Flags10_WriteOnly` | authored, write-only — no runtime reader. **Don't gate or classify on this.** |
+| +0x14 | `uint16` | `wActiveThisFrame` | per-frame **geometry** gate, written from MoveVM hot-mask: `(hotMask >> KindTag) & 1`. `hotMask` has a permanent floor of `0x3FFFD` (slots `{0, 2..17}` always on). |
+| +0x16 | `uint8`  | `bStreamTypeTag` | `0=Sphere`, `1=Area`, `2=FixArea` |
+| +0x17 | `uint8`  | `bSubIdOrBoneId` | actually a **KindTag** in `[0, ~22)` — not a skeletal bone id. Drives the `+0x08` mask, the `PerHurtboxBitmask` index, and the strike-vs-throw partition (slots 31, 55 = throw). |
+| +0x18 | `void*`  | `next` | intrusive linked-list link |
+| +0x20 | `uint32` | `dwAux_flags` | |
+
+#### `FLuxKHitNode` (160 bytes — full-node view)
+
+Same header as `FKHitNodeBase`, plus the 128-byte tail used by `KHitFixArea` for its
+three reference points + transforms. `KHitSphere` and `KHitArea` reuse the same byte
+range with subclass-specific layouts (see below).
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `uint64`        | `data_00` | shared with `FKHitNodeBase::vtable`-derived layout |
+| +0x08 | `uint64`        | `CategoryMask` | aliased name for `PerAttackerBit` / `PerHurtboxBit` |
+| +0x10 | `uint32`        | `dwField_10` | aliased `Node_Flags10` (write-only) |
+| +0x14 | `uint16`        | `wPerFrameLiveGate` | aliased `ActiveThisFrame` |
+| +0x17 | `uint8`         | `bBoneIdInternal` | aliased `KindTag` |
+| +0x18 | `uint64`        | `Next` | aliased `next` |
+| +0x20 | 16 × `uint64`   | `pTail_0x80` | 128-byte subclass tail |
+
+#### Subclass-specific layouts (within the 0x80-byte node)
+
+```text
+KHitSphere (StreamTypeTag = 0):
+    +0x30  FVector  BoneLocalCenter      (mirrored at +0x40)
+    +0x50  FVector  WorldCenterCurrent   (this frame; written by
+                                          KHitSphere_UpdateWorldCenter @ 0x14030E1A0)
+    +0x60  FVector  WorldCenterPrevious  (last frame; for sweep tests)
+    +0x70  float    Radius               (may be scaled by anim cell)
+    +0x74  float    RadiusAuthored
+    +0x78  float    ContactImpulseScale  (pushbox contact force)
+    +0x7C  uint32   BoneIndexUe4         (post-Remap)
+    +0x7F  uint8    ActiveByte
+
+KHitArea (StreamTypeTag = 1) — SWEPT CAPSULE, double-buffered for CCD:
+    +0x30  FVector  BoneLocalP1
+    +0x40  FVector  BoneLocalP2
+    +0x50..+0x6F   WorldSpaceBufA  (P1, P2)
+    +0x70..+0x8F   WorldSpaceBufB  (P1, P2)
+                   g_LuxKHitArea_DoubleBufferToggle selects cur vs prev each tick;
+                   the overlap test does 4-way segment/segment CCD across both halves.
+    +0x90  float    ContactImpulseScale
+    +0x94  uint32   BoneIndexUe4_P2
+
+KHitFixArea (StreamTypeTag = 2) — STATIC OBB from THREE reference points:
+    +0x30  FVector  BoneLocalPoint1   (P1, w=1.0 at +0x3C)
+    +0x40  FVector  BoneLocalPoint2   (P2, w=1.0 at +0x4C)
+    +0x50  FVector  BoneLocalPoint3   (P3, w=1.0 at +0x5C)
+    +0x60  FVector  WorldPoint1
+    +0x70  FVector  WorldPoint2
+    +0x80  FVector  WorldPoint3
+    +0x90  uint32   BoneIndexUe4
+    +0x94  float    ContactImpulseScale
+```
+
+`KHitFixArea`'s OBB is derived at overlap-test time by Gram-Schmidting `(P2-P1)` and
+`(P3-P1)` — see [trace-system.md](trace-system.md#khit-node-layout-0x80-bytes)
+for the formula.
+
+**Subclass vtables**:
+
+| Symbol | Address |
+|--------|---------|
+| `KHitBase_vftable` | `0x143E87838` |
+| `KHitSphere_vftable` | `0x143E877F0` |
+| `KHitArea_vftable` | `0x143E877A8` |
+| `KHitFixArea_vftable` | `0x143E87760` |
+
+#### `FActiveAttackSlot` (68 bytes)
+
+The per-tag active-attack slot stored in `ALuxBattleChara_Partial.ActiveAttackSlots`
+(`+0x3D0`/`+0x3D8`). Holds two velocity vectors (slot start + slot end) plus
+the chained hash-bucket pointers used by `chara->HashBuckets_Data`.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `uint8`    | `bTag` | 1..N attack-tag key |
+| +0x04 | `float[3]` | `flVelocityA_x/y/z` | |
+| +0x10 | `float[3]` | `flVelocityB_x/y/z` | |
+| +0x1C | `float[3]` | `flPositionMid_x/y/z` | |
+| +0x28 | `float[3]` | `flDirectionUnit_x/y/z` | unit direction |
+| +0x34 | `bool`     | `bGateStateByte` | |
+| +0x38 | `int32`    | `nGateCountdownFrames` | |
+| +0x3C | `int32`    | `nHashNextBucket` | linked-list next |
+| +0x40 | `int32`    | `nHashThisBucket` | self-bucket marker |
+
+### Move-VM structs
+
+The move VM has substantial scratch state beyond the well-known opcode scratch.
+See [Move System](move-system.md) for the per-opcode semantics; the structs
+themselves are listed here.
+
+#### `FLuxMoveCommandPlayer` (12332 bytes)
+
+The per-chara VM context indexed by `g_LuxMoveVM_CommandPlayerArray @
+0x14470F390` (slot stride `0xC0E`). Despite the name, this is **not** the
+`ALuxBattleMoveCommandPlayer` actor at `BattleManager+0x4C0` — it's a fixed
+global static array holding the live VM state for each chara.
+
+The struct is sparse: most of the 12 KB is uncovered scratch / cell buffers.
+Only fields that have been pinned in Ghidra are listed below.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00     | `void*`  | `vtable` | |
+| +0x08     | `void*`  | `SelfChara` | back-ref to owning `ALuxBattleChara` |
+| +0x10     | `void*`  | `OppChara` | mirror of `chara->Opponent` (`+0x973E8`) |
+| +0x1C     | `uint32` | `dwMode` | VM mode |
+| +0x20     | `uint32` | `dwActivePose` | |
+| +0x340    | `void*`  | `FuncPtr340` | callback ptr used during dispatch |
+| +0xCD0    | `uint32` | `dwPredicateRefreshEnable` | gate for `RefreshConditionFlagRing` |
+| +0xCE0    | `void*`  | `MoveDefArrayBase` | mirror of `g_LuxMoveSystem_MoveDefArrayPerSlot` for this chara |
+| +0xCF0    | `int32`  | `nPostATKRemainingDelayFrames` | feeds `LuxMoveVM_PostATKDelayGate` |
+| +0x1988   | `uint32` | `dwOverrideFlag` | |
+| +0x198C   | `uint32` | `dwActiveFlag` | |
+| +0x1990   | `uint32` | `dwParserState` | |
+| +0x1998   | `void*`  | `CellArrayPtr` | active move's opcode cell array |
+| +0x19C8   | `uint32` | `dwVMEnabled` | mirror of `chara+0x18` |
+| +0x19F0..+0x1A64 | `uint32`/`float`[~30 fields] | `dwPredRing_*` | condition-flag ring: `Self16EC`, `Self1727`, `OppBehaviorInRange`, `StanceInWindow`, etc. — see Ghidra layout for full list |
+| +0x2150   | `uint32` | `dwMoveState0` | |
+| +0x2158   | `uint32` | `dwMoveState1` | |
+| +0x2684..+0x269C | `uint32`[6] | move-counters | `MoveCount`, `CurrentMoveIdx`, `CharaVMPhase`, `StartFlag`, `MoveEnded`, `ReverseFlag` |
+| +0x26A0..+0x26A8 | 3 × `uint32` | `CalcOpA/B/C` | `0x50004 calc` operands |
+| +0x26AC..+0x26B0 | `uint32`,`float` | `BTN_Mask`, `BTN_Time` | `0x1xxxx BTN+TIME` opcode |
+| +0x26B4..+0x26B8 | 2 × `uint32` | `ATB_ComboId`, `ATB_YarareId_0` | `0x40001 ATB` |
+| +0x26BC..+0x26C8 | 4 × `uint32` | `IF_Op/Delta/Subject/Value` | `0x50008 IF` |
+| +0x26CC | `uint32` | `Goto_Delta` | `0x50003 goto` |
+| +0x26D0..+0x26D4 | 2 × `uint32` | `Rand_Threshold`, `Rand_JumpDelta` | `0x50006 RAND` |
+| +0x26D8..+0x26E4 | 4 × `uint32` | `ATK_Power`, `ATK_RangeRaw`, `ATK_Speed`, `ATK_DirectionMask` | `0x40002 ATK` |
+| +0x2A10..+0x2A24 | `uint32`[6] | reservation+cell counters | `Reserve_NoWait`, `AnimSettleFrames`, `CellLoopCounter`, `CellCount`, `Cursor` |
+| +0x2A28 | `char[128]` | `pDebugTextBuf` | per-tick debug-trace text — written every tick, never read in shipping (see [Dev / Debug Hooks](dev-debug-hooks.md)) |
+| +0x2AD8 | `float`  | `flRingout_EdgeReach` | |
+| +0x2B30..+0x2B38 | 3 × `uint32` | `ActiveYarareId`, `ReactionTimer`, `ActiveYarareAce` | |
+| +0x2B68..+0x2B9C | 4 × `uint32` | `Ringout_*` | `YarareId`, `SuccessFlag`, `DirectionCode` |
+| +0x2BC4..+0x2BC8 | 2 × `uint32` | `PostEffectYarareId`, `PostEffectBodyPart` | |
+| +0x2BF8 | `uint32` | `HitIntensity` | |
+| +0x2C34 | `int32`  | `ScaledKnockbackReach` | |
+| +0x2C4C | `int32`  | `PostDispatchHang` | per-hit hang frames |
+| +0x2CF4..+0x2CF8 | 2 × `float` | `RngRoll1`, `RngRoll2` | per-tick RNG samples |
+| +0x2D08..+0x2D10 | 3 × `int32` | `TimerB43..B45` | |
+| +0x3004 | `uint32` | `BodyPartStash` | |
+| +0x3018..+0x3028 | 4 × `uint32` | `AirMoveIndex`, `ReactionCode`, `AirSubFlag`, … | air-juggle subflags |
+
+#### `FLuxMoveVM_OpcodeScratch` (96 bytes)
+
+The 96-byte scratch buffer the VM fills in once per opcode — see
+[Move System: VM opcode scratch layout](move-system.md#vm-opcode-scratch-layout-offsets-on-g_luxmovevm_commandplayerarrayslot).
+Layout matches the `+0x26AC..+0x26E4` slice of `FLuxMoveCommandPlayer`.
+
+#### `FLuxMoveVM_ATKPayload` (16 bytes)
+
+A 16-byte tuple matching the four ATK-opcode fields — used as a struct return /
+local copy for the ATK arm of `LuxMoveVM_ExecuteAndDumpOpcode`.
+
+| Offset | Type | Name |
+|-------:|------|------|
+| +0x00 | `uint32` | `dwPower` |
+| +0x04 | `uint32` | `dwRangeRaw` |
+| +0x08 | `uint32` | `dwSpeed` |
+| +0x0C | `uint32` | `dwDirectionMask` |
+
+#### `FLuxMoveBankCell` (112 bytes)
+
+One row in the per-character "move bank" — categorised, ordered, packed for
+fast 8-byte slot tests. The layout is **deliberately misaligned** at `+0x42`
+onward (qword fields starting at offsets `0x42`, `0x4A`, `0x52`) so a 16-byte
+SSE move can slap two adjacent rows of metadata at once.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `uint64` | `ActiveSlotMask` | |
+| +0x08..+0x30 | 6 × `uint64` | `field_08..field_30` | |
+| +0x38 | `uint16` | `wCategoryFlags` | |
+| +0x3A | `uint16` | `wAttackTypeTier` | |
+| +0x3C | `int16`  | `nBlockHeightMin` | |
+| +0x3E | `int16`  | `nBlockHeightMax` | |
+| +0x40 | `uint16` | `wField_3E` | |
+| +0x42..+0x52 | 3 × `uint64` (unaligned) | `field_40/48/50` | packed |
+| +0x5A | `uint16` | `wField_58` | |
+| +0x5C | `int16`  | `nYarareIdOrHitType` | |
+| +0x5E | `int16`  | `nMoveExtraId` | |
+| +0x60..+0x68 | 2 × `uint64` | `field_60/68` | |
+
+#### `FLuxMoveSchedState` (96 bytes)
+
+Move scheduler state — per-chara dual-slot system that allows the next move to
+be queued while the current one is still ticking. The `pMoveIdSlot[2]`,
+`pPrevMoveId[2]`, etc. arrays hold one entry per slot.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x08 | `uint32`   | `dwSelectedSlotIdx` | 0 or 1 — which of the two queued slots is current |
+| +0x10 | `void*`    | `pChara` | back-ref |
+| +0x30 | `uint32[2]` | `pMoveIdSlot` | per-slot move id |
+| +0x38 | `uint32[2]` | `pPrevMoveId` | per-slot previous move id |
+| +0x40 | `uint32[2]` | `pMoveChangedCounter` | bumps on transition |
+| +0x48 | `uint16[2]` | `pExtraParam0Slot` | per-slot extra arg |
+| +0x4C | `uint16[2]` | `pExtraParam1Slot` | per-slot extra arg |
+| +0x50 | `void*`    | `pSubVM` | optional sub-VM ptr |
+| +0x5C | `uint32`   | `dwActiveSlotIdx` | active vs selected (debug aid) |
+
+#### `FLuxMoveStartRequest` (108 bytes)
+
+The "queue this move" request struct passed into `PlayMove` / `PlayMoveDirect`.
+Allocates its own state machine fields (`dwStateMachine`) plus completion flag
+and two candidate move-id slots so the dispatcher can resolve a request
+spanning a transition window.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `void*`  | `pVtable` | |
+| +0x08 | `uint32` | `dwStatus` | |
+| +0x10 | `void*`  | `pChara` | target chara |
+| +0x18 | `uint16` | `wMoveId` | |
+| +0x1A | `uint16` | `wLevelId` | |
+| +0x20 | `uint32` | `dwMode` | |
+| +0x38 | `uint32` | `dwStateMachine` | request-internal SM phase |
+| +0x54 | `uint32` | `dwCompleted` | |
+| +0x68 | `int16`  | `nCandidateMoveIdA` | for candidate-pair resolution |
+| +0x6A | `int16`  | `nCandidateMoveIdB` | |
+
+#### `FLuxMoveSubFrameRecord` (72 bytes)
+
+Sub-frame record — a 60→120 Hz interpolation entry recorded per VM tick. The
+`flRangeStart`/`flRangeEnd` interval gates which sub-frame samples this record
+applies to.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `float`  | `flFrame_0` | frame index |
+| +0x04 | `float`  | `flRangeStart` | sub-frame interval start |
+| +0x08 | `float`  | `flRangeEnd` | sub-frame interval end |
+| +0x0C | `uint32` | `dwField_0C` | |
+| +0x10..+0x30 | 5 × `uint64` | `field_10..field_30` | |
+| +0x38 | `uint32` | `dwField_38` | |
+| +0x3C | `int16`  | `nCellBoneIndex` | which bone this sub-frame describes |
+| +0x40 | `uint64` | `field_40` | tail |
+
+#### `LuxMoveLaneState` (1128 bytes)
+
+Per-lane VM state for systems that run multiple animation lanes in parallel
+(e.g. the upper-body / lower-body split for stance moves). Mostly opaque
+padding — only the head fields are typed.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x02 | `uint16` | `PackedMoveAddr` | move id + lane id packed |
+| +0x04 | `uint32` | `TickCounter` | |
+| +0x08 | `float`  | `flCurrentAnimFrame` | |
+| +0x10 | `float`  | `flAnimLengthFrames` | |
+| +0x18 | `byte[1104]` | `pPadding_0x18` | undecoded |
+
+#### `FLuxMoveProvider_CapsuleSlot` (64 bytes)
+
+Same shape as `FLuxCapsuleContainer` (header + Data/Num/Max), but referenced
+from a different code path. Reused as the storage type when the move provider
+exposes its `FLuxCapsule*` array — the type-system distinction lets callers
+distinguish whether they're walking the chara's capsule list or the provider's
+capsule list, even though the layout is identical.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `byte[48]` | `pHeader` | unread |
+| +0x30 | `void*`    | `CapsulesData` | pointer to `FLuxCapsule*` array |
+| +0x38 | `int32`    | `nCapsulesNum` | element count |
+| +0x3C | `int32`    | `nCapsulesMax` | allocator capacity |
+
+### Trace-component layouts (extended)
+
+The Ghidra DB carries two extended layouts that overlap with the
+[ALuxTraceManager](#aluxtracemanager) and [ULuxTraceComponent](#uluxtracecomponent)
+sections above but go further into the byte-grid.
+
+#### `FLuxTraceManagerLayout` (1032 bytes)
+
+Includes the 904-byte `AActor` base plus the trace-manager-specific tail.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x388 | `void*` | `pOwnerMoveProvider` | back-ref |
+| +0x398 | `void*` | `pEffectSlotA` | `UParticleSystemComponent*` |
+| +0x3A0 | `void*` | `pEffectSlotB` | `UParticleSystemComponent*` |
+| +0x3A8 | `void*` | `pTraceComponent` | `ULuxTraceComponent*` |
+| +0x3B0 | `byte[48]` | `pActiveTraceHashBase` | 6-bucket active-trace hash |
+| +0x400 | `int32` | `nKindIndex` | `ELuxTraceKindId` |
+
+#### `FLuxTraceComponentLayout` (1200 bytes)
+
+Includes the 1048-byte `UActorComponent` base plus the trace-component-specific
+tail. Field names match the [`ULuxTraceComponent`](#uluxtracecomponent) section
+above; this layout is the Ghidra struct definition used for type-aware decompilation.
+
+#### `FTraceActiveParam` (48 bytes — full layout)
+
+A full-layout version of the `FTraceActiveParam` documented above; the struct
+in Ghidra is 48 bytes (matches `Active_Impl`'s parameter size). The header
+documented earlier lists only the hit-relevant fields; all 48 bytes are below.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `uint8`   | `bAttackTag` | the only field `Active_Impl` reads for hit logic |
+| +0x04 | `uint32`  | `dwFlags` | visual |
+| +0x08 | `uint16`  | `wSubSlot` | |
+| +0x0C | `uint32`  | `dwFrames` | trail duration |
+| +0x10 | `bool`    | `bUseDefault` | |
+| +0x14 | `uint32`  | `dwReservedInt14` | |
+| +0x18 | `uint8`   | `bMode` | |
+| +0x1C | `uint8`   | `bEffectParam` | |
+| +0x2C | `uint32`  | `dwReserved_2C` | |
+
+### Frame-bounds triangle entry
+
+#### `FLuxFrameBoundsCellRow` (32 bytes) and `FLuxTerrainTriangleEntry` (64 bytes)
+
+The cell-row + triangle-entry types referenced by
+[Stage / frame spatial acceleration](#frame-bounds-grid). The Ghidra struct
+definitions match the field list documented in that section. `FLuxTerrainTriangleEntry`
+holds a vertex triple plus a pre-baked plane equation `(nx,ny,nz,d)` so
+`LuxBattle_IntersectSegmentWithTerrainTriangle @ 0x140390A90` can do the test
+in one dot-product per endpoint.
+
+### Misc reflected structs
+
+#### `FLuxAttackTouchParam` (29 bytes)
+
+See [Move System: enums and small structs](move-system.md#fluxattacktouchparam-0x20-bytes) —
+fired when a hit registers, holds `(player, position, hit type, attack type, level, can-down)`.
+
+#### `FLuxDamageInfo` (18 bytes)
+
+See [Move System: FLuxDamageInfo](move-system.md#fluxdamageinfo-0x14-bytes) — HUD/network
+hit-event payload `(side, damage, total, is_critical, is_limited)`.
+
+#### `FLuxDataTablePath` (24 bytes)
+
+The 24-byte hierarchical-path cursor used by every `LuxDataTable*` writer.
+Documented as the vehicle for `BattleManager+0x50` config writes — see
+[Battle Manager: FLuxDataTablePath](battle-manager.md#fluxdatatablepath-24-bytes).
+
+### Net / Steam structs (unrelated to hitbox work)
+
+A handful of online-session structs are also defined for the Steam-online
+subsystem — `FNamedOnlineSession_Steam` (236 bytes), `FOnlinePresenceSteam`
+(496 bytes), `FOnlineSessionInfoSteam` (88 bytes), `FFriendStateRecord`
+(232 bytes). Listed for completeness; not relevant to gameplay reversing.

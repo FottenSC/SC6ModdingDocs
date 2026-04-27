@@ -1,13 +1,70 @@
 # Battle Manager & DataTable Config Tree
 
-`ALuxBattleManager` is the authoritative per-match actor. It owns the player chara
-pointers, the per-frame axis/input buffer, the move-command pipeline, and an
-in-memory **Lux DataTable** config tree that stores round rules, timer, and
-per-player settings as a hierarchical string/int key path.
+`ALuxBattleManager` is the authoritative per-match actor. Owns: player chara list, per-frame
+axis/input buffer, move-command pipeline, and a hierarchical `FLuxDataTable` config tree at
+`+0x50` (round rules, timer, per-player settings).
 
-!!! note "Scope"
-    Everything in this page is confirmed from the shipping Steam build via
-    Ghidra. Addresses are absolute (image base `0x140000000`).
+All addresses on this page are absolute (image base `0x140000000`).
+
+## At a glance
+
+### Most-used offsets on `ALuxBattleManager`
+
+| Offset | Type | What |
+|-------:|------|------|
+| `+0x050` | `FLuxDataTable` | `ConfigTable` — see [DataTable path tree](#lux-datatable-path-tree) |
+| `+0x098` | `UObject*` | `GameState` |
+| `+0x140` | `UObject*` | (lazy MoveComponent slot — **not** related to `world+0x140` `OwningGameInstance`) |
+| `+0x388` | `UClass*` | `BattleCharaClass` (TSubclassOf, NOT an embedded chara) |
+| `+0x390` | `ALuxBattleChara**` | `PlayerCharas.Data` |
+| `+0x398` | `int32` | `NumPlayerCharas` |
+| `+0x3A8` | `ALuxBattleCamera*` | `Camera` |
+| `+0x478` | `ALuxBattleFrameInputLog*` | `FrameInputLog` |
+| `+0x488` | `ALuxBattleReplayPlayer*` | `ReplayPlayer` |
+| `+0x4B8` | `ALuxBattleKeyRecorder*` | `KeyRecorder` (training-mode "Recorded" input) |
+| `+0x4C0` | `ALuxBattleMoveCommandPlayer*` | `MoveCommandPlayer` — VM host (likely live capsule data) |
+| `+0x12F3` | `bool` | `GlobalAxisInhibit` |
+| `+0x1450/+0x1458` | TSharedPtr pair | move-provider / weapon-data context |
+| `+0x1463` | `uint8` | global match move-state byte (`5=playing`, `6=stopping`) |
+
+Full subsystem map of all 43 slots in `+0x00..+0x800`: see
+[BattleManager subsystem layout](#battlemanager-subsystem-layout).
+
+### Key UFunctions (call via reflection)
+
+| UFunction | RVA | Behaviour |
+|-----------|-----|-----------|
+| `PlayMove(PlayerIdx, MoveTableIdx, MoveIdx)` | `0x429840` | bounds-check + tail-call `PlayMoveDirect` |
+| `PlayMoveDirect(PlayerIdx, MoveDef*)` | `0x4298E0` | dispatches to MoveComponent or stages into `PendingMoveCommand` |
+| `StopMove(PlayerIdx)` | `0x434410` | writes `(Stop, -1)` into pending; sets chara move-state = 6; fires `NotifyCharaMoveEnded` |
+| `ChangeBattleLife(bRight, idx, float[2])` | `0x59B630` | writes `LifeInit` / `LifeMax` |
+| `ChangeBattleRounds(int)` | `0x59CCF0` | writes `BattleRule.Rounds` |
+| `ChangeBattleTime(uint8)` | `0x59CEA0` | enum → seconds via lazy static TMap |
+| `ChangeBattlePlayerSetting(bRight, idx, Setting*)` | `0x59C6F0` | replace / append per-side row |
+| `GetTracePositionForPlayer(...)` | `0x3F4960` | wraps `GetTracePosition` by `(playerIdx, slot)` |
+| `NotifyCharaMoveEnded(playerIdx+1, finishReason)` | `0x3F9200` | 1-based playerIdx (not a typo — game-wide convention) |
+
+### Pause / inspection BP API — `ULuxBattleFunctionLibrary`
+
+CDO at `/Script/LuxorGame.Default__LuxBattleFunctionLibrary`. Reflection-callable. The
+breakthrough function: **`SetBattlePause(bPause, inType, WorldContext)`** is the same path
+the in-game pause menu uses — cleanly halts replay timer, replay cursor, round timer, and
+chara hitstop in one call. Sibling UFunctions:
+
+| UFunction | Role |
+|-----------|------|
+| `BattlePauseEnabled` | predicate — pause system available? |
+| `GetBattleManager` | returns active `ALuxBattleManager*` |
+| `GetBattlePauseController` | returns active pause controller |
+| `IsBattleOnline` / `IsBattleOnlineInputSync` | online-match predicates |
+| `IsBattlePaused` / `IsBattlePlaying` / `IsMatchFinished` | match-state predicates |
+| `IsFinishBlow` | predicate — current frame is finish-blow? |
+| `IsLocalUserControl` | predicate — local input controlling? |
+| `SetBattlePause` | **engine pause path.** UFunction at `0x140936190`. Param struct (16B): `bool bPause; uint8 inType; UObject* WorldContext`. |
+| `SetImmortality` / `SetSoulGaugeInfinity` / `SetUserInputCheck` | toggle helpers |
+| `StepInBattlePause` | frame-step while paused |
+
+---
 
 ## `ALuxBattleManager` layout
 
@@ -87,7 +144,7 @@ pointer to an instance of class X" rather than fixed addresses.
 | +0x3D8 | `ULuxBattleSoundEventHandler*`  | SoundEventHandler |
 | +0x3E8 | `ULuxBattleStageEventHandler*`  | StageEventHandler |
 | +0x3F8 | `ULuxBattleTraceEventHandler*`  | TraceEventHandler |
-| +0x408 | `ALuxBattleWeaponEventHandler*` | WeaponEventHandler (hosts the `ReceiveGetWeaponTip` BP event — [see note](trace-system.md#receivegetweapontip-a-promising-looking-dead-end)) |
+| +0x408 | `ALuxBattleWeaponEventHandler*` | WeaponEventHandler (hosts the `ReceiveGetWeaponTip` BP event — [see note](trace-system.md#receivegetweapontip-promising-looking-dead-end)) |
 | +0x410 | `ULuxBattlePauseTicker*`        | PauseTicker |
 | +0x420 | `ULuxBattlePauseController*`    | PauseController |
 | +0x430 | `ULuxBattleShortcutController*` | ShortcutController |
@@ -98,9 +155,9 @@ pointer to an instance of class X" rather than fixed addresses.
 | +0x440 | `ULuxBattleCommonInput*`        | CommonInput |
 | +0x450 | `ULuxBattleFrameInput*`         | FrameInput |
 | +0x460 | `ULuxBattleFrameStream*`        | FrameStream |
-| +0x478 | `ULuxBattleFrameInputLog*`      | FrameInputLog |
+| +0x478 | `ALuxBattleFrameInputLog*`      | FrameInputLog — full layout in [Structures](structures.md#aluxbattleframeinputlog-17428-bytes); 17 KB ring buffer of `FLuxRecordedFrame` (192 bytes each ≈ 90-frame budget) plus a per-tick double-tick guard at `+0x4404` |
 | +0x480 | `ULuxBattleReplayRecorder*`     | ReplayRecorder |
-| +0x488 | `ULuxBattleReplayPlayer*`       | ReplayPlayer |
+| +0x488 | `ALuxBattleReplayPlayer*`       | ReplayPlayer — see [Structures](structures.md#aluxbattlereplayplayer-960-bytes) for layout (round + time + state-reset blob + recording stream) |
 
 ### Training-mode managers
 | Offset | Type | Name |
@@ -110,7 +167,7 @@ pointer to an instance of class X" rather than fixed addresses.
 | +0x4A0 | `ULuxBattlePositionResetter*`   | PositionResetter |
 | +0x4A8 | `ULuxBattleDummyCustomizer*`    | DummyCustomizer |
 | +0x4B0 | `ULuxBattleAICustomizer*`       | AICustomizer |
-| +0x4B8 | `ULuxBattleKeyRecorder*`        | KeyRecorder |
+| +0x4B8 | `ALuxBattleKeyRecorder*`        | KeyRecorder — Training-mode "Recorded" input playback. Layout in [Structures](structures.md#aluxbattlekeyrecorder-956-bytes); slot table holds `FLuxBattleKeyRecorderSlot` (12 bytes per queued input: duration / wait-counter / move-id) |
 
 ### Move system (critical for hit-detection work)
 | Offset | Type | Name |
@@ -349,6 +406,27 @@ after the Title scene is the cleanest way to skip MainMenu and land in a
 configured training match. Only `BattleTime` is parameterised — the rest are
 baked in, so if you need different rules you have to override the leaves after
 the builder returns.
+
+## VM-level pause flag and time-dilation overrides
+
+`ULuxBattleFunctionLibrary::SetBattlePause` (see [at-a-glance](#pause-inspection-bp-api-uluxbattlefunctionlibrary))
+is the clean way to pause. For finer-grained speed control, replace the engine's reads of
+the global delta-time and per-VM dilation field with a single user-controlled `speedval`
+slot at six sites:
+
+| Site | Function | Patch |
+|------|----------|-------|
+| 1 | `KHit_SolvePendulumConstraint` | `movss xmm14, [global]` → `[speedval]` |
+| 3 | `LuxMoveVM_GetTimeDilationScalar` | `movss xmm0, [global]` → `[speedval]` |
+| 4 | `LuxMoveVM_AdvanceLinkedMotionObject` | `movss xmm0, [pVM+0x2080]` → `[speedval]` |
+| 5 | `LuxMoveVM_ExecuteOpStream` | `movss [pVM+0x2080], xmm0` repurposed as a load (engine doesn't read downstream) |
+| 6 | `LuxMoveVM_AdvanceLaneFrameStep` | single-byte ModRM patch `cvttss2si ecx, xmm4` → `xmm3` to avoid 0-frame rounding at `speedval ≈ 0.001` |
+| 7 | `LuxMoveVM_PostATKDelayGate` (entry hook) | early-return 0 when `speedval == 0` so post-ATK recovery countdown freezes |
+| 9 | `LuxBattle_PerFrameTick` (entry hook) | bare-RET when `speedval == 0` — blanket battle-tick freeze that catches the round timer, replay cursor, input ring age, and all per-tick counters that aren't dt-scaled |
+
+Per-VM time dilation is stored at `vmCtx + 0x2080`, and the post-ATK delay countdown is at
+`vmCtx + 0xCF0` (`nPostATKRemainingDelayFrames`). `chara + 0x16E6` is the engine's own
+"VM paused" flag — any path that halts a chara propagates through this byte.
 
 ## `ELuxBattleRuleType`
 

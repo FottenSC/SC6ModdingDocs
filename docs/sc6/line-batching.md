@@ -1,35 +1,32 @@
 # Drawing 3D Debug Lines (ULineBatchComponent)
 
-How to draw arbitrary 3D lines from a mod without fighting with UMG widgets or trying to hook
-the stripped `DrawDebugLine` path.
+The one live debug-draw path in SC6 Shipping: `UWorld`'s three `ULineBatchComponent`
+instances. Append `FBatchedLine` entries to the `BatchedLines` `TArray` at component
+`+0x808` and the engine renders them every frame.
 
-!!! tip "TL;DR"
-    `UWorld` owns three `ULineBatchComponent` instances that are fully functional in SC6's
-    Shipping build. Append `FBatchedLine` entries directly to the `BatchedLines` `TArray`
-    at `ULineBatchComponent +0x808` using the game's own `GMalloc`. One of the three
-    components — `ForegroundLineBatcher` — renders without depth test, i.e. always on top,
-    which is the natural choice for a debug overlay.
+## At a glance
 
-## Why this is the right path
+- **Use** `ForegroundLineBatcher` at `UWorld+0x50` — no depth test, always on top.
+- **Append** to `ULineBatchComponent+0x808 BatchedLines` (`{Data, Num, Max}` at
+  `+0x808/+0x810/+0x814`).
+- **Allocate** through the game's `GMalloc` (`DAT_0x1971C8`); `FMemory::Realloc` at `0xD51430`.
+- **Mark dirty** with `UActorComponent::MarkRenderStateDirty @ 0x1D4E910` after the append,
+  or rely on the lifetime-sweep auto-dirty (set `RemainingLifeTime ≈ 0.1f` per entry and the
+  component's tick will re-mark itself a few frames later).
 
-The UE4 debug-draw helpers you'd reach for first are **stripped from shipping**:
+## What's stripped vs what's live
 
-- `UKismetSystemLibrary::DrawDebugLine` — UFunction is registered but its native handler is
-  not bound. Calling it from reflection is a silent no-op.
-- `DrawDebugBox` — only the UFunction *constructor* (`Z_Construct_UFunction_DrawDebugBox`)
-  survives; the actual implementation is gone via `UE_BUILD_SHIPPING`.
-- `ULuxTraceDataAsset::bDebugDrawTraceFrame` — three UPROPERTY bools exist but no code reads
-  them. See [Trace / Hitbox System](trace-system.md#debug-draw-flags-stripped-in-shipping).
+| Path | Status |
+|------|--------|
+| `UKismetSystemLibrary::DrawDebugLine` | UFunction registered (`0x142558090`), exec handler unbound — silent no-op |
+| `DrawDebugBox` | UFunction constructor only (`Z_Construct_UFunction_DrawDebugBox @ 0x142552640`); implementation gone via `UE_BUILD_SHIPPING` |
+| `ULuxTraceDataAsset::bDebugDrawTrace*` | UPROPERTY metadata only; zero consumers |
+| **`UWorld::Exec("FLUSHPERSISTENTDEBUGLINES")` → `ULineBatchComponent::Flush`** | **Live in shipping.** Routes through the component as expected. |
+| `FBatchedLine` UScriptStruct | Live |
+| Scene proxy `BatchedLines` rasterisation | Live, every frame |
 
-The `ULineBatchComponent` pipeline is a **different story**:
-
-- `UWorld::Exec("FLUSHPERSISTENTDEBUGLINES")` routes to `ULineBatchComponent::Flush`. That
-  path is live code in shipping — the component has real state and real renderers.
-- `FBatchedLine` is registered as a live `UScriptStruct`.
-- The component's scene proxy rasterises `BatchedLines` every frame.
-
-So drawing a line reduces to: get a `ULineBatchComponent*`, append an `FBatchedLine` to its
-`BatchedLines` array, and the engine does the rest.
+For the full inventory of dev-left-behind hooks (including `ULuxDev*Setting` classes and
+the per-tick move-VM debug text buffer), see [Dev / Debug Hooks](dev-debug-hooks.md).
 
 ## UWorld's three batchers
 
@@ -37,12 +34,23 @@ Every `UWorld` owns three of them, all reachable via fixed offsets:
 
 | Offset | Name | Behaviour |
 |--------|------|-----------|
-| `+0x40` | `LineBatcher` | Depth-tested; entries normally cleared per frame |
+| `+0x40` | `LineBatcher` | Depth-tested, per-frame |
 | `+0x48` | `PersistentLineBatcher` | Depth-tested; entries persist until `FLUSHPERSISTENTDEBUGLINES` |
 | `+0x50` | `ForegroundLineBatcher` | **No depth test, always on top** |
 
 For an always-visible debug overlay, use `ForegroundLineBatcher`. The other two are useful
 if you explicitly want the lines to occlude or persist across frames.
+
+!!! warning "Depth-tested batchers are mostly useless for hit-volume overlays"
+    The two depth-tested slots (`+0x40` / `+0x48`) sound appealing — "draw the lines but
+    let geometry occlude them" — but in SC6 character meshes and stage geometry are
+    **always closer to the camera** than the bone-attached hit volumes you're trying to
+    draw. The result is that hitbox / hurtbox lines disappear behind characters,
+    weapons, and props for most of every match. HorseMod tried exposing the depth-tested
+    slot as a `Default` UI option and ended up hiding it again because the overlay was
+    only visible for the few frames per round when nothing was between the camera and
+    the chara. **`ForegroundLineBatcher` (`+0x50`) is the only practical choice** for an
+    always-visible hitbox overlay.
 
 ```cpp
 auto* world = any_uobject->GetWorld();           // any UObject works
@@ -133,27 +141,49 @@ void reserveAtLeast(TArrHdr* arr, int32_t needed_count) {
 
 ## The scene-proxy dirty problem
 
-`ULineBatchComponent::MarkRenderStateDirty()` is what tells UE4 the scene proxy needs a
-rebuild to pick up new `BatchedLines`. Two problems:
+`UActorComponent::MarkRenderStateDirty()` is what tells UE4 the scene proxy needs a
+rebuild to pick up new `BatchedLines`. It's not a UFunction (not reachable by
+reflection), but the C++ implementation **is not inlined** in SC6 shipping — it lives
+at a known address and can be called directly.
 
-- It's not a UFunction (not reachable by reflection).
-- The C++ symbol isn't exported and may be inlined.
+> **Location:** `UActorComponent::MarkRenderStateDirty @ 0x141d4e910`
+> (RVA `0x1D4E910`). Ghidra had this mis-labeled as
+> `UActorComponent_ConditionalRegisterComponentInternal`; the body matches the
+> canonical UE4 pattern — gate on `RegistrationState == RS_REGISTERED` (bits 0x3 at
+> `UActorComponent+0x188`), set `bRenderStateDirty` (bit 0x20 at `+0x188`), then
+> call `MarkForNeededEndOfFrameRecreate @ 0x141d4e7b0`. Confirmed by the xref from
+> `USceneComponent::SetVisibility @ 0x141dad60a` which calls it unconditionally.
 
-If you append to `BatchedLines` but never mark dirty, the scene proxy keeps drawing stale
-data. Three workable mitigations:
+If you append to `BatchedLines` but never mark dirty, the scene proxy keeps drawing
+stale data. Four workable mitigations, in roughly descending order of reliability:
 
-1. **Short lifetime trick (recommended).** Append every line with
-   `RemainingLifeTime = 0.05f .. 0.10f`. The component's own `TickComponent` runs the
-   lifetime sweep every frame; when a line expires it removes it and internally calls
-   `MarkRenderStateDirty`. If you re-append every frame you stay in a steady state where
-   the proxy is being rebuilt constantly and always has fresh data. One-to-three frame
-   delay on overlay toggle-off (lines finish their lifetime naturally).
-2. **Toggle component visibility.** `USceneComponent::SetVisibility(bNewVisibility,
-   bPropagateToChildren)` is a UFunction — calling it with the current state flips an
-   internal dirty flag. Slightly hacky; not empirically verified as sufficient.
-3. **Locate `MarkRenderStateDirty` via vtable pattern scan.** It's a virtual on
-   `UActorComponent` with a known position (offset varies by UE version). More work, more
-   reliable. Not needed in practice — option 1 works.
+1. **Direct call to `MarkRenderStateDirty` (recommended).** After your per-frame
+   appends, call the function above on the batcher pointer. No UFunction lookup, no
+   vtable scan — just a plain function pointer at a fixed RVA.
+
+    ```cpp
+    using MarkRenderStateDirty_t = void(__fastcall*)(void* component);
+    static auto MarkRenderStateDirty = reinterpret_cast<MarkRenderStateDirty_t>(
+        reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr)) + 0x1D4E910);
+
+    drawLine(...);          // possibly many
+    MarkRenderStateDirty(foreground_batcher);
+    ```
+
+2. **Short lifetime trick.** Append every line with `RemainingLifeTime = 0.05f ..
+   0.10f`. The component's own `TickComponent` runs the lifetime sweep every frame;
+   when a line expires it removes it and internally calls `MarkRenderStateDirty` (the
+   same function at `0x141d4e910`) via `Flush` at the end of the sweep. If you
+   re-append every frame you stay in a steady state where the proxy is being rebuilt
+   constantly and always has fresh data. One-to-three frame delay on overlay
+   toggle-off (lines finish their lifetime naturally). Works without any direct
+   function-pointer binding.
+3. **Toggle component visibility.** `USceneComponent::SetVisibility(bNewVisibility,
+   bPropagateToChildren)` is a UFunction that calls `MarkRenderStateDirty` as its
+   tail path (confirmed by the xref from `SetVisibility` to `0x141d4e910`). Slightly
+   hacky but UFunction-only.
+4. **Locate `MarkRenderStateDirty` via vtable pattern scan.** Engine-version-robust
+   fallback; not needed for SC6 since option 1 gives a direct address.
 
 ## Minimal example
 
@@ -219,6 +249,8 @@ every line you want visible on the current frame. The component's tick does the 
 | `Z_Construct_UClass_ULineBatchComponent` | `0x25C9590` | Class size `0x850`; confirms the layout. |
 | `Z_Construct_UScriptStruct_FBatchedLine` | `0x25CFCD0` | Confirms 0x34-byte struct. |
 | `ULineBatchComponent::Flush` | `0x1D774C0` | Zeros `Num` at `+0x810 / +0x820 / +0x838`; confirms `BatchedLines.Data` at `+0x808`. |
+| `UActorComponent::MarkRenderStateDirty` | `0x1D4E910` | Sets `bRenderStateDirty` (bit 0x20 at `+0x188`) and queues an end-of-frame proxy rebuild. Call directly after appending to `BatchedLines`. |
+| `UActorComponent::MarkForNeededEndOfFrameRecreate` | `0x1D4E7B0` | Tail-called from `MarkRenderStateDirty`; do not call directly. |
 | `UWorld::Exec("FLUSHPERSISTENTDEBUGLINES")` | `0x21B9ED0` | Routes to `ULineBatchComponent::Flush` on `UWorld+0x48`; proves the pipeline is live in shipping. |
 | `GMalloc` (data) | `DAT_0x1971C8` | The `FMalloc**` used by both the game and UE4SS. |
 | `FMemory::Realloc` | `0xD51430` | Thin wrapper over `GMalloc::vtable[0x18]`. |

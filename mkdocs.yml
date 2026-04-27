@@ -104,6 +104,7 @@ nav:
       - Trace / Hitbox System: sc6/trace-system.md
       - Drawing 3D Debug Lines: sc6/line-batching.md
       - Move System (VM): sc6/move-system.md
+      - Dev / Debug Hooks: sc6/dev-debug-hooks.md
   - Cookbook:
       - cookbook/index.md
   - Reference:

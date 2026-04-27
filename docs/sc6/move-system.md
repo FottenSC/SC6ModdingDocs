@@ -1,33 +1,70 @@
 # Move System (command-script bytecode VM)
 
-What the "move data" for a character actually *is* inside SoulcaliburVI.exe — and
-what pieces you need to join together to export a full move-list (inputs / damage
-/ frames / hit / counter-hit / stance) to a website.
+How SC6 stores and runs per-move data. Two layers split: a UE4 DataTable for UI text, and
+a native command-script bytecode for gameplay.
 
-TL;DR:
+## At a glance
 
-- SC6's move data is **not a flat frame-data table** like Tekken's `moveGen`
-  export. It's a **per-move command-script bytecode** (a little VM program) plus
-  two big per-character attribute tables that the opcodes read from.
-- The UE4 reflection side (`FLuxBattleMoveListTableRow`) carries **text IDs
-  only** — the strings a Training-Mode move-list panel displays. No frame data.
-- To reconstruct "move X is i13 mid for 20 damage, +2 on hit / +6 on CH", you
-  have to (a) load the bytecode for move X, (b) decode the ATK payload opcode,
-  (c) cross-reference the resolved hit-reaction ("yarare") id against the
-  character's attribute table. The game's own training-mode HUD does steps (b)
-  and (c) live via the same VM documented here.
+### Two-layer data model
 
----
+| Layer | Holds | Storage | Extract via |
+|-------|-------|---------|-------------|
+| **Display** (UE4 DataTable) | Per-move TextIDs: `CommandTextID`, `NameTextID`, `ReadingTextID`, `NoteTextID`, `MainMovesTextID`, `RethalHitTextID`, `AttributeTag`, `EffectTag`. **No frame data.** | `/Game/Style/<StyleId>/DA_MoveListTable_<StyleId>.uasset` | unpack pak → parse DataTable with [`FLuxBattleMoveListTableRow`](#fluxbattlemovelisttablerow-0x88-bytes) schema |
+| **Gameplay** (native command-script) | Per-move bytecode: inputs, ATB/ATK payload, IF/goto/calc/RAND opcodes, on-hit/CH yarare ids, stance toggles. | Per-style binary blob in the battle-manager move-provider; runs in the VM at `0x140365900` | parse via [opcode dispatch table](#opcode-dispatch-upper-16-bits-of-each-uint32-cell); join yarare ids against `g_LuxCharaAttrTable_*` |
 
-## The two data-layer split
+To produce "i13 mid for 20 damage, +2 on hit / +6 on CH":
 
-| Layer | What it holds | Lives in | How to extract |
-|---|---|---|---|
-| **Display layer** (UE4 DataTable) | Per-move TextIDs: `CommandTextID`, `NameTextID`, `ReadingTextID`, `NoteTextID`, `MainMovesTextID`, `RethalHitTextID`, `AttributeTag`, `EffectTag` | `/Game/Style/<StyleId>/DA_MoveListTable_<StyleId>.uasset` | unpack pak → parse DataTable with `FLuxBattleMoveListTableRow` schema |
-| **Gameplay layer** (native command-script) | Per-move bytecode: inputs, ATB/ATK payload, IF/goto/calc/RAND opcodes, on-hit/CH yarare ids, stance toggles | Per-style binary blob loaded into the battle manager's move provider; driven by the on-exe VM at `0x140365900` | must be **parsed** via the opcode dispatch table below; resolved yarare ids look up into `g_LuxCharaAttrTable_*` |
+1. Load the bytecode for move X.
+2. Decode the ATK payload opcode (`0x40002`) for `power` / `range` / `speed` / `dir_mask`.
+3. Cross-reference the resolved hit-reaction ("yarare") id against the character's
+   attribute table to get opponent stun frames; subtract own recovery.
 
-The UI docs for `DA_MoveListTable_*` already show up in
-[Character Data](character-data.md). This page is the gameplay-layer side.
+UI docs for `DA_MoveListTable_*` are in [Character Data](character-data.md).
+
+### Key VM globals
+
+| Symbol | Address | Stride | What |
+|--------|---------|-------:|------|
+| `g_LuxMoveVM_CommandPlayerArray` | `0x14470F390` | `0xC0E` | Per-chara VM state (slot indexed by `chara+0x23C` `CharaKindByte`). |
+| `g_LuxMoveSystem_DataTableA` | `0x144710060` | `0x3038` | Per-chara move-definition data table. |
+| `g_LuxMoveSystem_SelfCharaPerSlot` | `0x14470F398` | `0x607` u64 | Self chara back-ref. |
+| `g_LuxMoveSystem_OppCharaPerSlot` | `0x14470F3A0` | `0x607` u64 | Mirror of `chara+0x973E8`. |
+| `g_LuxCharaAttrTable_Byte_0x181cStride` | `0x14470FCD8` | `0x181C` | Per-chara byte table (yarare frames etc.). |
+| `g_LuxCharaAttrTable_Int_0x3038Stride` | `0x1447123BC` | `0x3038` | Per-chara int table. |
+| `g_LuxMoveStateTable` | `0x1440F4750` | `0x14` (0x29 rows) | Move-state ids. |
+
+### Key VM entry points
+
+| Function | RVA | Role |
+|----------|-----|------|
+| `LuxMoveVM_ExecuteAndDumpOpcode` | `0x365900` | **The VM executor + disassembler**. Walks opcodes, mutates state, emits debug-trace string at `vmCtx+0x2A28`. |
+| `LuxMoveVM_TickDriver` | `0x3656B0` | Per-tick entry; gates the executor on VM phase. |
+| `LuxMoveSystem_StartMoveForChara` | `0x31C610` | Full fresh-move init. |
+| `LuxMoveSystem_TickMove` | `0x367EE0` | Plain per-frame tick. |
+| `LuxMoveSystem_TickMoveAndAutoAdvance` | `0x31C740` | Tick + auto-advance to next move. |
+| `LuxMoveVM_TickAgainstReactingOpp` | `0x31C8B0` | Tick variant when opponent is in hit-reaction. |
+| `LuxMoveVM_PostATKDelayGate` | `0x365520` | 1..5-frame randomised post-ATK delay. |
+| `LuxBattle_DispatchYarareReaction` | `0x3521B0` | Yarare dispatcher — 80-case switch on hit-reaction id. |
+
+### Opcode quick reference
+
+| `op >> 16` | Mnemonic | Cells | Payload |
+|------------|----------|------:|---------|
+| `0x1xxxx` | `BTN+TIME` | 2 | button mask + time |
+| `0x40001` | `ATB` | variable | combo_id + yarare_id stream |
+| `0x40002` | `ATK` | 5 | power / range / speed / dir_mask |
+| `0x40004` | `RESERVE_NOWAIT` | 1 | sets `vmCtx+0x2A10 = 1` |
+| `0x40005` | `RESERVE_WAIT` | 1 | sets `vmCtx+0x2A10 = 0` |
+| `0x50001` | `start!` | 1 | zero condition-flag ring |
+| `0x50003` | `goto` | 2 | jump delta |
+| `0x50004` | `calc` | 5 | `dst = a OP b OP c` |
+| `0x50005` | flag-set | 1 | sets `vmCtx+0x2698 = 1` |
+| `0x50006` | `RAND` | 3 | threshold + jump delta |
+| `0x50007` | `_REVERSE` | 1 | sets `vmCtx+0x269C = 1` |
+| `0x50008` | `IF` / `notif` | 5 | op + class + subject + value + delta |
+| `0x80000` | raw command no | 1 | debug echo |
+
+Full opcode semantics: [Opcode dispatch](#opcode-dispatch-upper-16-bits-of-each-uint32-cell).
 
 ---
 
@@ -131,10 +168,75 @@ Entry points that mutate these slots:
 - `LuxMoveSystem_TickMoveAndAutoAdvance @ 0x14031C740` — tick + auto-transition
 - `LuxMoveVM_TickAgainstReactingOpp @ 0x14031C8B0` — tick when opp is in hit-reaction
 
+Auxiliary scratch / queue structs the VM maintains alongside the per-slot state:
+
+- [`FLuxMoveSchedState`](structures.md#fluxmoveschedstate-96-bytes) — 96-byte dual-slot
+  scheduler that lets the next move be queued while the current one is still ticking.
+  `pMoveIdSlot[2]`, `pPrevMoveId[2]`, `pMoveChangedCounter[2]`, `pExtraParam0/1Slot[2]`
+  are the per-slot arrays.
+- [`FLuxMoveStartRequest`](structures.md#fluxmovestartrequest-108-bytes) — 108-byte
+  "queue this move" request struct passed into `PlayMove` / `PlayMoveDirect`. Holds
+  its own internal state machine (`dwStateMachine`) plus two candidate move-id slots
+  (`nCandidateMoveIdA/B`) for transition-window resolution.
+- [`FLuxMoveBankCell`](structures.md#fluxmovebankcell-112-bytes) — 112-byte categorised
+  per-character "move bank" row. Holds `wCategoryFlags`, `wAttackTypeTier`,
+  `nBlockHeightMin/Max`, `nYarareIdOrHitType`, `nMoveExtraId`, plus a deliberately
+  packed unaligned-qword tail that lets a 16-byte SSE move slap two adjacent rows of
+  metadata in one instruction.
+- [`FLuxMoveSubFrameRecord`](structures.md#fluxmovesubframerecord-72-bytes) — 72-byte
+  60→120 Hz sub-frame interpolation record. `flRangeStart`/`flRangeEnd` gates which
+  sub-frame samples this record applies to.
+- [`LuxMoveLaneState`](structures.md#luxmovelanestate-1128-bytes) — 1128-byte per-lane
+  VM state. **Three lane blocks live inline** in every chara at fixed offsets:
+
+    | Offset | Lane | Role |
+    |-------:|------|------|
+    | `chara+0x444F0` | Lane 0 | primary active move (most strikes) |
+    | `chara+0x44958` | Lane 1 | secondary lane (mirror / queued script) |
+    | `chara+0x44DC0` | Lane 2 | stance / yarare / hit-reaction |
+
+    Stride between lanes = 0x468 bytes. `chara+0x44068` (`ActiveLaneStateCursorPtr`) points
+    at whichever lane is currently driving the move. Per-lane fields most useful for
+    instrumentation:
+
+    | Lane offset | Type | Name |
+    |-------:|------|------|
+    | `+0x00` | `i16` | `LaneIndex` (`0`/`1`/`2`) |
+    | `+0x02` | `i16` | `PackedMoveAddr` (`(bank<<12) \| slot`; `-1` = idle) |
+    | `+0x04` | `i32` | `TickCounter` (raw ticks since move start) |
+    | `+0x08` | `float` | `CurrentAnimFrame` — **THE frame counter**, advanced as `+0x08 += time_dilation * +0x30` each tick. Truncate for "current frame N". |
+    | `+0x0C` | `float` | `PrevAnimFrame` (tick-start snapshot) |
+    | `+0x10` | `float` | `AnimLengthFrames` (from bank cell `+0x34`) |
+    | `+0x1A` | `u16` | `AtEndFlag` (`1` at final frame) |
+    | `+0x1C` | `i16` | `FrameDeltaThisTick` |
+    | `+0x24` | `u16` | `FrameStepFinished` (`1` once end reached) |
+    | `+0x26` | `u16` | `InTransitionFlag` (`1` during `TransitionToMove`) |
+    | `+0x30` | `float` | `PlaybackSpeedCurrent` (ramps to target) |
+    | `+0x34` | `float` | `PlaybackSpeedTarget` |
+    | `+0x458` | `i32` | `TotalTickCounter` (monotonic across advances) |
+    | `+0x460` | `u32` | `AnimVariantIndex` (`0..5` bank variant) |
+
+    For a "current move frame N / M" HUD overlay you read `Lane0+0x08` and `Lane0+0x10`
+    every tick — pure pointer arithmetic, no hooks required. `chara+0x1350` is the
+    `MoveStartCounter` bumped on each `TransitionToMove` call (handy for
+    "did the move change?" checks without diffing `PackedMoveAddr`); `chara+0x1360` is the
+    `LastHitAnimFrame` mirror written by `ProcessHit` for HUD consumers.
+- [`FLuxBattleVMFreezeRecord`](structures.md#fluxbattlevmfreezerecord-64-bytes) —
+  64-byte slow-motion / VM-freeze blend state. Three candidate alphas, two countdowns,
+  blended output. The `flAlphaCandidate3_SlowMo` slot is the slow-mo source (e.g. the
+  dramatic finishing-blow camera).
+
 ### VM opcode scratch layout (offsets on `g_LuxMoveVM_CommandPlayerArray[slot]`)
 
 These offsets are filled in by `LuxMoveVM_ExecuteAndDumpOpcode` as each opcode
-fires. See struct `FLuxMoveVM_OpcodeScratch` in Ghidra.
+fires. The slot itself is typed in Ghidra as
+[`FLuxMoveCommandPlayer` (12 332 bytes)](structures.md#fluxmovecommandplayer-12332-bytes);
+the per-opcode scratch view (`+0x26AC..+0x26E4`) is also typed independently as
+[`FLuxMoveVM_OpcodeScratch` (96 bytes)](structures.md#fluxmovevm_opcodescratch-96-bytes)
+so it can be passed by reference into helper functions. The four ATK fields
+that get the most traffic are also wrapped as
+[`FLuxMoveVM_ATKPayload` (16 bytes)](structures.md#fluxmovevm_atkpayload-16-bytes)
+when the VM needs to copy them out as a tuple.
 
 | Offset | Field | Written by opcode |
 |-------:|-------|-------|
