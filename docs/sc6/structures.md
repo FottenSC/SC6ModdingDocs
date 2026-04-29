@@ -71,6 +71,14 @@ Alphabetical jump table. Click through for full layout.
 | [Frame-bounds grid](#frame-bounds-grid) | (`>=0x430`) | Spatial acceleration for VM range/angle predicates. |
 | [`FLuxFrameBoundsCellRow`](#fluxframeboundscellrow-32-bytes-and-fluxterraintriangleentry-64-bytes) | `0x20` | Cell row in the bounds grid. |
 | [`FLuxTerrainTriangleEntry`](#fluxframeboundscellrow-32-bytes-and-fluxterraintriangleentry-64-bytes) | `0x40` | Triangle entry with pre-baked plane equation. |
+| `ALuxBattleStage` | `0x3a0` | Per-stage root actor; loaded from `/Game/Stage/<code>/Maps/<code>.umap`. Owns one `ALuxBattleStageActorManager`. |
+| `ALuxBattleStageActorManager` | `0x420` | Manages 9 `TArray<UObject*>` actor lists at `+0x388..+0x408` (StageMesh/Barrier/BreakableWall/etc). Populated by `LuxActor_CollectActors_By8Classes_IntoTArrays @ 0x140417a70`. See [Stage System](stage-system.md). |
+| `ALuxStageBreakableBarrierActor` | `0x4f0` | Invisible box-trigger actors forming the ring-out boundary. Its UE4 box transform is what gets pushed into the gameplay-engine `BarrierArray` at match start. |
+| `ALuxStageBreakableWallActor` | `0x480` | Visible breakable walls (Soul Charge wall-break geometry). Standard UE4 `BodySetup` collision. |
+| `FBattleStageEnumEntry` | `0x20` | One row in the master stage roster: `{FString DisplayLocId; FString StageCode;}`. 31 stock entries at `g_LuxStage_MasterEnumStringTable @ 0x144149c50`. |
+| `LuxBattleStageInfoTableRow` | `0x108` | UDataTable row type; per-stage round-position config (Center, RingEdge, Wall, OptionalCenters). See [Stage System](stage-system.md#luxbattlestageinfotablerow). |
+| `LuxBattleStageBasePositionParam` | `0x28` | Inner element of `LuxBattleStageInfoTableRow` arrays — `{FVector Position; FRotator Rotation; float DistanceOffset; TArray<int32> RoundNumbers;}`. |
+| scbattle stage globals | `0x148` | Match-time stage-info block at `0x144844010..0x144844158`: RngSeed, StageBoundaryParams (64 B), BarrierCount, BarrierArray (24 × 16 B). See [Stage System](stage-system.md#two-tier-collision-gameplay-vs-visuals). |
 
 ### Misc / discovered-but-uncategorised
 
@@ -1051,25 +1059,48 @@ local copy for the ATK arm of `LuxMoveVM_ExecuteAndDumpOpcode`.
 
 #### `FLuxMoveBankCell` (112 bytes)
 
-One row in the per-character "move bank" — categorised, ordered, packed for
-fast 8-byte slot tests. The layout is **deliberately misaligned** at `+0x42`
-onward (qword fields starting at offsets `0x42`, `0x4A`, `0x52`) so a 16-byte
-SSE move can slap two adjacent rows of metadata at once.
+One row in the per-character "move bank". This is the **attack-cell** the hit
+pipeline consumes: `chara+0x44058 OwnActiveAttackCell` and the per-tick
+opponent copy at `chara+0x44048` both point at one of these. Holds the per-cell
+damage / hitstun / hit-property data; the byte arithmetic is `bank + bank[+0x10]
++ cellBone * 0x70`. The pointer at `chara+0x44058` is set ONCE per
+`LuxMoveVM_TransitionToMove` and stays put for the move's duration —
+`LuxMoveVM_SetActiveMoveSlot` (the function that would re-point it) has no
+native callers, only a `UFunction` wrapper. See
+[Attack cell](hitbox-system.md#attack-cell-fluxmovebankcell) for the full
+runtime model.
+
+Field offsets verified by tracing reads in `LuxBattleChara_ProcessHit @ 0x140342780`,
+`LuxBattle_ApplyDamageFromPendingHit @ 0x1402FF620`,
+`LuxMoveVM_EvaluateMoveTransition @ 0x14033E140`,
+`LuxBattle_ComputeHitReactionParams @ 0x140343B90`,
+`LuxMoveVM_ClassifyHitboxFrameState @ 0x140300620`, and
+`LuxMoveVM_PropagateFieldToHitboxGroup @ 0x140303590`.
 
 | Offset | Type | Name | Notes |
 |-------:|------|------|-------|
-| +0x00 | `uint64` | `ActiveSlotMask` | |
-| +0x08..+0x30 | 6 × `uint64` | `field_08..field_30` | |
-| +0x38 | `uint16` | `wCategoryFlags` | |
-| +0x3A | `uint16` | `wAttackTypeTier` | |
-| +0x3C | `int16`  | `nBlockHeightMin` | |
-| +0x3E | `int16`  | `nBlockHeightMax` | |
-| +0x40 | `uint16` | `wField_3E` | |
-| +0x42..+0x52 | 3 × `uint64` (unaligned) | `field_40/48/50` | packed |
-| +0x5A | `uint16` | `wField_58` | |
-| +0x5C | `int16`  | `nYarareIdOrHitType` | |
-| +0x5E | `int16`  | `nMoveExtraId` | |
-| +0x60..+0x68 | 2 × `uint64` | `field_60/68` | |
+| +0x00 | `uint64` | `u64SlotMask` | which authored hitbox slots are LIVE while this cell is current — ANDed with defender's `PerHurtboxBitmask[i]` by the classifier |
+| +0x08..+0x30 | (opaque) | | not read by hit pipeline |
+| +0x32 | `uint16` | `wAttackFlags` | bit 0x001 = block-high, 0x002 = block-low, 0x008 = LowAttack, 0x010 = MidAttack, 0x040 = CrouchOnly, 0x080 = HighAttack, 0x200 = Unblockable / GI-immune |
+| +0x34 | `uint16` | `wInputCond` | move-input precondition mask, fed to `LuxMoveVM_EvaluateMoveInputCondition` |
+| +0x36 | `int16` | `nMasterWindowStart` | hit-window start frame (60Hz). `ClassifyHitboxFrameState` writes `chara+0x1980 = 1` while `currentAnimFrame < this`, `2` while inside, `3` while past |
+| +0x38 | `int16` | `nMasterWindowEnd` | hit-window end frame |
+| +0x3A | `int16` | `nBaseDamage` | THE damage figure read by `ProcessHit`, added into `attacker+0x3FC`. **One value per cell** — same value for every shape that hits while this cell is active |
+| +0x3C | `int16` | `nStunRecoil` | hitstun bucket, written into `attacker+0x3E4` |
+| +0x3E | `uint16` | `wExtraStateFlags` | mirrored verbatim into `attacker+0x400` |
+| +0x44 | `int16` | `nBlockstunFrames` | `ComputeHitReactionParams` case 1 (blocked) |
+| +0x46 | `int16` | `nHitstunStandingNormal` | case 4–5 (standing hit) |
+| +0x48 | `int16` | `nHitstunStandingAir` | case 4–5 (airborne defender) |
+| +0x4C | `int16` | `nHitstunCrouchNormal` | case 7 (counter-hit / crouch hit) |
+| +0x4E | `int16` | `nHitstunCrouchAir` | case 7 (airborne crouch) |
+| +0x50 | `int16` | `nReactionIdStanding` | case 4–5/9 reaction-move id (standing) |
+| +0x52 | `int16` | `nReactionIdAir` | case 4–5/9 reaction-move id (air) |
+| +0x54 | `int16` | `nThrowEscapeId` | case 7 throw-escape id |
+| +0x5A | `uint16` | `wPassthroughTagA` | mirrored to `chara+0x210A` on slot transition |
+| +0x5E | `uint16` | `wHitboxGroupBitfield` | mirrored to `chara+0x20F6`. **bits 0..10** = group ID (0..63) selecting one of 4 banks of 16 hit-sub-window entries at `DAT_1448554E8 + 0x338 / 0x3B8 / 0x438 / 0x4B8`; **bits 11..13** mirrored to `chara+0x20F2`; **bits 14..15** mirrored to `chara+0x20F0`. See [Per-cell sub-window timing](hitbox-system.md#per-cell-sub-window-timing). |
+| +0x60 | `uint16` | `wPassthroughTagC` | mirrored to `chara+0x20FC` |
+| +0x6A | `uint16` | `wRuntimePropagateField` | mutated at runtime by `LuxMoveVM_PropagateFieldToHitboxGroup @ 0x140303590` across the 8 cells of a hitbox-group entry. Only field on the cell known to change after move start. Semantics not yet identified |
+| (other +0x62..+0x6F) | (opaque) | | tail; not read by main hit pipeline |
 
 #### `FLuxMoveSchedState` (96 bytes)
 

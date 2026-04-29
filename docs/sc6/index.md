@@ -22,6 +22,8 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 | [Battle Manager](battle-manager.md) | `ALuxBattleManager` slot map, UFunctions, DataTable config tree, `SetBattlePause`. |
 | [Hitbox System](hitbox-system.md) | KHit linked lists — the live hit-detection pipeline (strikes, kicks, hurtboxes, pushboxes, grabs). |
 | [Trace System](trace-system.md) | `FLuxCapsule` + `ALuxTraceManager` — the **visual** weapon-trail / sword-swoosh VFX (not hit detection). |
+| [Stage System](stage-system.md) | Master enum table, stage-code routing, DLC gating, `LuxBattleStageInfoTableRow`, two-tier collision, custom-stage mod pipeline. |
+| [Leaderboards & Online](leaderboards.md) | Steam leaderboards (`Characterboard`, `RankmatchWorld/Asia/...`), BNED Cosmos Channel telemetry, building an external API client. |
 | [Move System](move-system.md) | Command-script bytecode VM, opcode dispatch, IF predicates. |
 | [Character Data](character-data.md) | Style ids, DataTable asset paths, move-list display schema. |
 | [Drawing 3D Debug Lines](line-batching.md) | `ULineBatchComponent` recipe — the one live debug-draw path. |
@@ -34,6 +36,9 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 | "Where is `chara+0xNNN`?" | [Game Structures: ALuxBattleChara](structures.md#aluxbattlechara) |
 | "How do hitboxes / hit detection work?" | [Hitbox System](hitbox-system.md) |
 | "How do weapon trails / sword swooshes work?" | [Trace System](trace-system.md) |
+| "How do I add / replace a stage?" | [Stage System](stage-system.md) |
+| "Why do some stages roll more often in random?" | [Stage System: Random-pool bias](stage-system.md#random-pool-bias) |
+| "How do I read character usage / ranked-match data outside the game?" | [Leaderboards & Online](leaderboards.md) |
 | "Where's the move VM?" | [Move System](move-system.md) |
 | "How do I draw a debug line?" | [Drawing 3D Debug Lines](line-batching.md) |
 | "How do I pause the game?" | [Battle Manager: `SetBattlePause`](battle-manager.md#pause-inspection-bp-api-uluxbattlefunctionlibrary) |

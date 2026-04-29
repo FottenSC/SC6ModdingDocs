@@ -150,6 +150,121 @@ per move.
 1. `node->ActiveThisFrame != 0` (geometry/overlap pass)
 2. The node's `KindTag` bit also set in `*(u64*)(chara + 0x44048)[0]` (classifier mask)
 
+## Attack cell (`FLuxMoveBankCell`)
+
+The pointer at `chara+0x44058` (and its per-tick opponent copy at `chara+0x44048`)
+is **not** a `KHitBase`. It points at a 112-byte `FLuxMoveBankCell` row in the
+character's move bank — see the [full layout in structures.md](structures.md#fluxmovebankcell-112-bytes).
+The cell is what carries damage, hitstun, and hit-property values. Each cell holds:
+
+- `u64SlotMask` (`+0x00`) — which authored hitbox slots are live while this cell is current.
+- `wAttackFlags` (`+0x32`) — high / mid / low / unblockable bits.
+- `nMasterWindowStart` / `nMasterWindowEnd` (`+0x36 / +0x38`) — frame range during which the cell is "active for damage" within the move's animation.
+- `nBaseDamage` (`+0x3A`) and `nStunRecoil` (`+0x3C`) — the damage/stun applied on hit.
+- `nBlockstunFrames` / `nHitstunStanding{Normal,Air}` / `nHitstunCrouch{Normal,Air}` / `nReactionId{Standing,Air}` / `nThrowEscapeId` (`+0x44 .. +0x54`) — per-stance reaction frame counts and post-hit move ids.
+- `wHitboxGroupBitfield` (`+0x5E`) — selects one of 64 hit-sub-window timing entries; see [Per-cell sub-window timing](#per-cell-sub-window-timing).
+
+### Cell lifetime: ONE cell per move
+
+`LuxMoveVM_TransitionToMove @ 0x1402FE350` sets `chara+0x44058` from the move's
+bank-slot record (`bank + bank[+0x10] + cellBone * 0x70`) and **does not change
+it again** for the duration of the move. Verified two ways:
+
+1. The bank-slot record carries a 6-entry short table at `+0x3C` — the
+   "AnimVariant → cellBone" mapping. The lane state's `AnimVariantIndex`
+   (`lane+0x460`) selects which entry to use. `TransitionToMove` resets that
+   index to 0 at move start and never advances it natively.
+2. `LuxMoveVM_SetActiveMoveSlot @ 0x140300C70` is the only function that
+   re-resolves `chara+0x44058` mid-move using the variant table. It has zero
+   native callers — only a `UFunction` wrapper. So a variant change requires
+   an explicit reflection call from script (Lua / Blueprint), and the engine's
+   bytecode VM (`LuxMoveVM_ExecuteAndDumpOpcode @ 0x140365900`) does not emit
+   one. **Within a single native move, the cell is fixed.**
+
+Practical consequence: every shape that hits while a given move is playing
+applies the SAME `nBaseDamage` value. Damage does not vary mid-move.
+
+### Per-part attack properties (e.g. tip-of-axe vs body-of-axe)
+
+This is what the cell model actually supports:
+
+- **Spatial selection only.** Each `KHitBase` shape on the AttackList has a
+  distinct `KindTag` (`+0x17`), giving it a distinct `PerAttackerBit` (`1ULL <<
+  KindTag`). The cell's `u64SlotMask` decides which of those shapes can register
+  a hit. So a move with both a tip-shape and a body-shape can have its cell
+  light only the tip bit — body contact then silently fails to register —
+  without changing damage values.
+- **Sub-window timing.** The cell can author up to 4 named sub-windows (one per
+  bank) within its master window via `wHitboxGroupBitfield`, but the BaseDamage
+  is still single-valued.
+- **Damage variation across moves, not within one.** A character action whose
+  damage actually differs depending on what hit (tip vs hilt vs body) is
+  authored as **multiple separate moves**, with the move-VM bytecode chaining
+  between them via `LuxMoveVM_EvaluateIfOpcode @ 0x1403732F0` predicates. Known
+  IF subkeys that read state relevant to chaining:
+  - `0x1389` — compares an immediate against `lane+0x460 AnimVariantIndex`.
+  - The hit-window state at `chara+0x1980` (master-window phase 1/2/3) and the
+    per-bank group ids at `chara+0x20BC..+0x20EE` are also exposed as predicates.
+  Different sub-moves carry their own cell with their own `nBaseDamage`.
+
+> The visual weapon trail (FLuxCapsule) does NOT modulate damage based on
+> hilt-vs-tip contact distance. Damage is purely cell-driven.
+> See [Trace System](trace-system.md).
+
+### Per-cell sub-window timing
+
+`LuxMoveVM_ClassifyHitboxFrameState @ 0x140300620` runs every tick to classify
+where the current animation frame sits within the active cell's hit window:
+
+```text
+chara+0x1980 (state):
+  1 = before MasterWindow      (curFrame < cell.nMasterWindowStart)
+  2 = inside MasterWindow      (cell.nMasterWindowStart .. nMasterWindowEnd)
+  3 = past MasterWindow
+```
+
+It then partitions `cell.wHitboxGroupBitfield & 0x7FF` into 4 banks of 16
+groups (0..15, 16..31, 32..47, 48..63) and looks each up in a per-bank
+sub-window timing table at:
+
+| Bank | Table base | Stride | Entry shape |
+|------|-----------|-------:|-------------|
+| 0 | `DAT_1448554E8 + 0x338` | 8 | `(int16 startOffset, int16 endOffset, ...)` |
+| 1 | `DAT_1448554E8 + 0x3B8` | 8 | same |
+| 2 | `DAT_1448554E8 + 0x438` | 8 | same |
+| 3 | `DAT_1448554E8 + 0x4B8` | 8 | same |
+
+Each entry's offsets are relative to `nMasterWindowStart`, so the effective
+sub-window is `[MasterWindowStart + entry.start, MasterWindowStart + entry.end]`.
+The function writes 28 short slots at `chara+0x20BC..+0x20EE` that classify
+the current frame against each sub-window — these are read by
+`LuxBattleChara_GetImpactCategory @ 0x14033CB60` and as VM IF-opcode predicates.
+
+This system controls **when** within the move's animation different hit-groups
+are considered live. It does not provide a per-window damage value — the cell
+still has only one `nBaseDamage`.
+
+### Runtime cell mutation
+
+The only field on a live cell known to change after move start is
+`wRuntimePropagateField` at `+0x6A`, which `LuxMoveVM_PropagateFieldToHitboxGroup
+@ 0x140303590` writes across the 8 cells of a hitbox-group entry (stride
+`0x40`, 8 cell pointers at `+0x50/+0x58/+0x60/+0x68/+0x70/+0x78/+0x80/+0x88`).
+The semantics aren't yet pinned down — open question for further RE.
+
+### Cell-readers
+
+| Function | RVA | Cell fields read |
+|---|---|---|
+| `LuxBattleChara_ProcessHit` | `0x342780` | `nBaseDamage` `nStunRecoil` `wExtraStateFlags` `wAttackFlags` |
+| `LuxBattle_ApplyDamageFromPendingHit` | `0x2FF620` | `nBaseDamage` (counter-hit followup), null-check on `+0x44040 PrimaryAttackCellPtr` |
+| `LuxMoveVM_EvaluateMoveTransition` | `0x33E140` | `wAttackFlags` `wInputCond` |
+| `LuxBattle_ComputeHitReactionParams` | `0x343B90` | `wAttackFlags`, the full `+0x44 .. +0x54` block |
+| `LuxBattle_ResolveAttackVsHurtboxMask22` | `0x33C100` | `u64SlotMask` (read as `attackerMask`), `wAttackFlags` (block-tier test) |
+| `LuxMoveVM_SetActiveMoveSlot` | `0x300C70` | `u64SlotMask` (gates `KHitBase.+0x14`), `wPassthroughTag*` (mirrors to chara state) |
+| `LuxMoveVM_ClassifyHitboxFrameState` | `0x300620` | `nMasterWindowStart` `nMasterWindowEnd` `wHitboxGroupBitfield` |
+| `LuxMoveVM_PropagateFieldToHitboxGroup` | `0x303590` | writes `wRuntimePropagateField` |
+
 ## Strike vs throw partition
 
 `LuxBattle_ResolveAttackVsHurtboxMask22 @ 0x14033C100` partitions the 64-slot mask space:
