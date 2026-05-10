@@ -157,7 +157,7 @@ pointer to an instance of class X" rather than fixed addresses.
 | +0x460 | `ULuxBattleFrameStream*`        | FrameStream |
 | +0x478 | `ALuxBattleFrameInputLog*`      | FrameInputLog — full layout in [Structures](structures.md#aluxbattleframeinputlog-17428-bytes); 17 KB ring buffer of `FLuxRecordedFrame` (192 bytes each ≈ 90-frame budget) plus a per-tick double-tick guard at `+0x4404` |
 | +0x480 | `ULuxBattleReplayRecorder*`     | ReplayRecorder |
-| +0x488 | `ALuxBattleReplayPlayer*`       | ReplayPlayer — see [Structures](structures.md#aluxbattlereplayplayer-960-bytes) for layout (round + time + state-reset blob + recording stream) |
+| +0x488 | `ALuxBattleReplayPlayer*`       | ReplayPlayer — see [Structures](structures.md#aluxbattlereplayplayer-977-bytes) for layout (round + time + state-reset blob + recording stream) |
 
 ### Training-mode managers
 | Offset | Type | Name |
@@ -407,26 +407,84 @@ configured training match. Only `BattleTime` is parameterised — the rest are
 baked in, so if you need different rules you have to override the leaves after
 the builder returns.
 
-## VM-level pause flag and time-dilation overrides
+## Pausing the simulation: gates, not dt-multiply
 
 `ULuxBattleFunctionLibrary::SetBattlePause` (see [at-a-glance](#pause-inspection-bp-api-uluxbattlefunctionlibrary))
-is the clean way to pause. For finer-grained speed control, replace the engine's reads of
-the global delta-time and per-VM dilation field with a single user-controlled `speedval`
-slot at six sites:
+is the clean way to pause for menu purposes. For per-frame freeze + step
+control (e.g. a frame-step debugger), the verified-correct approach is to
+gate the **entry prologues** of every tick driver with a shared "policy
+slot" — bare-RET when the slot is 0, run normally when it's not.
 
-| Site | Function | Patch |
-|------|----------|-------|
-| 1 | `KHit_SolvePendulumConstraint` | `movss xmm14, [global]` → `[speedval]` |
-| 3 | `LuxMoveVM_GetTimeDilationScalar` | `movss xmm0, [global]` → `[speedval]` |
-| 4 | `LuxMoveVM_AdvanceLinkedMotionObject` | `movss xmm0, [pVM+0x2080]` → `[speedval]` |
-| 5 | `LuxMoveVM_ExecuteOpStream` | `movss [pVM+0x2080], xmm0` repurposed as a load (engine doesn't read downstream) |
-| 6 | `LuxMoveVM_AdvanceLaneFrameStep` | single-byte ModRM patch `cvttss2si ecx, xmm4` → `xmm3` to avoid 0-frame rounding at `speedval ≈ 0.001` |
-| 7 | `LuxMoveVM_PostATKDelayGate` (entry hook) | early-return 0 when `speedval == 0` so post-ATK recovery countdown freezes |
-| 9 | `LuxBattle_PerFrameTick` (entry hook) | bare-RET when `speedval == 0` — blanket battle-tick freeze that catches the round timer, replay cursor, input ring age, and all per-tick counters that aren't dt-scaled |
+The dt-multiply approach used by earlier prototypes (replace `movss xmm0, [global]`
+loads at six sites with `[speedval]` and write `speedval = 0`) was abandoned
+because the affected functions still **execute their bodies** at `dt = 0`,
+and several MoveVM cell-init paths contaminate state when run with a 0
+delta (multi-hit moves break under frame-step). The gate model runs each
+frame fully or not at all — no fractional dt anywhere in the simulation.
 
-Per-VM time dilation is stored at `vmCtx + 0x2080`, and the post-ATK delay countdown is at
-`vmCtx + 0xCF0` (`nPostATKRemainingDelayFrames`). `chara + 0x16E6` is the engine's own
-"VM paused" flag — any path that halts a chara propagates through this byte.
+### Required gate set
+
+| Gate | Hooks | Why |
+|------|-------|-----|
+| **WorldTickGate** | `LuxBattle_PerFrameTick @ 0x1402DBC60` (Site 9) | The simulation core. Halts MoveVM, hit detection, the integrator, frame counter, and every per-tick counter that isn't dt-scaled. |
+| **ReplayClockGate** | INC at `0x1403E1FC0+0x2A` and `0x1403E2000+0x33` | Pins the replay master clock at `ALuxBattleFrameInputLog+0x3A4`. Without this, `SimulationLoop_UpdateInputAndRoundState`'s `delta = master - lastApplied` keeps growing during freeze and replays release as a fast-forward burst. |
+| **ActorTickGate** | Sites 11, 20, 21, 21b, 22, 22b, 22c — see [Replay System](replay-system.md#the-seven-tick-paths-to-halt-for-a-frozen-replay) | Per-chara replay-frame advance, FrameInputLog tick, BM main-state-machine, BM round-timer (`Update_Impl`), chara TickActor + DemoHumanActor + PreviewHumanActor variants. PerFrameTick alone misses every one. |
+| **TimeDilationGate** | `LuxMoveVM_GetTimeDilationScalar @ 0x14030A8C0` entry | Force return `0.0f`. Bypasses the function's state==2 fall-through that returns `chara+0x3500` (≈ 1.0) and ignores `bVMFreezeByte` for normal-play characters during replay viewing — see [TimeDilation fall-through paths](replay-system.md#timedilation-fall-through-paths-bypasses-vmfreezebyte). |
+
+`g_LuxBattle_VMFreezeRecord.bVMFreezeByte @ 0x1448462D0` is the engine's
+own internal "VM paused" lever (read by `LuxMoveVM_GetTimeDilationScalar`
+on Path B only — the hit-stop / cinematic path). Useful as a second
+defence in depth for hit-stop / cinematic flows but **does not** freeze
+a normal-play replay on its own.
+
+For the full per-frame chain and offset map of replay state, see
+[Replay System](replay-system.md).
+
+### Legacy fields (still load-bearing for non-freeze flows)
+
+These slots are part of the simulation regardless of the gate model and
+remain useful for inspection or single-target overrides:
+
+| Slot | Role |
+|------|------|
+| `vmCtx + 0x2080` | Per-VM time dilation (per-`FLuxMoveCommandPlayer` slot). |
+| `vmCtx + 0xCF0` | `nPostATKRemainingDelayFrames` — 1..5-frame randomised post-ATK delay countdown. Freezes naturally under the gate model because `LuxMoveVM_PostATKDelayGate` runs only when its parent tick path runs. |
+| `chara + 0x16E6` | Motion-input flag `0x16` — engine-side "in non-walk state" bit. Read by `RetrackFacingTowardOpponent`, NOT a generic "VM paused" flag (earlier docs misidentified it as such). See [Movement: when moves retrack](movement.md#when-moves-retrack-against-the-opponent-verified). |
+
+### `OnBattleTickWhenPaused` — what still ticks during `SetBattlePause(true)`
+
+`SetBattlePause` does **not** stop everything. SC6 has a deliberate "tick during pause"
+delegate (signature class `OnBattleTickWhenPaused__DelegateSignature`, lazy-initialised
+in `FUN_140957D80`, stored in `DAT_14414D0B0`). The function
+`LuxBattleManager_RegisterOnTickWhenPaused_Delegates @ 0x1403F8E70` binds **six** handlers
+onto the world's PlayerController-equivalent (BM+0x410):
+
+| Source actor (BM offset) | Class | What still runs |
+|---|---|---|
+| `BM+0x440` | `ALuxBattleCommonInput`     | input polling — pause menu UI navigation |
+| `BM+0x420` | `ALuxBattlePauseController` | pause-menu state machine itself |
+| `BM+0x450` | `ALuxBattleFrameInput`      | per-frame input snapshot for replay capture |
+| `BM+0x478` | `ALuxBattleFrameInputLog`   | replay-cursor / replay-buffer maintenance |
+| `BM+0x4E8` | `ALuxBattleTutorialManager` | tutorial state-machine ticks |
+| `BM+0x520` | `ALuxBattleSound`           | audio fades, ducking, ambience |
+
+These fire only when UE4's `bGamePaused == true` (i.e. when `SetBattlePause` is the
+pause path). They do **not** fire when freeze is driven by writing
+`g_LuxBattle_VMFreezeRecord.bVMFreezeByte` (see
+[movement.md → TimeDilation system](movement.md#timedilation-system-verified)) — that
+zeroes `LuxMoveVM_GetTimeDilationScalar` for all simulation callers but leaves UE4's
+pause flag untouched.
+
+Practical consequences for mods:
+
+- Any "pause everything including replay cursor" approach using `SetBattlePause` should
+  expect the replay-cursor handler at `BM+0x478` to keep the replay-side simulation
+  alive. If you want the replay to truly stop, you need an additional gate.
+- Conversely, anything you want to keep responsive *during* pause (custom UI, your own
+  input dispatcher) can be bound through this same delegate without hand-rolling a
+  per-tick hook.
+- Sound fades during pause are intentional — don't try to halt audio by zeroing the VM
+  scalar; use the audio module directly.
 
 ## `ELuxBattleRuleType`
 

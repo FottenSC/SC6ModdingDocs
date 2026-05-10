@@ -29,7 +29,7 @@ statically built — needs a DLL hook).
 | `GetStageCodesIfAvailable_FilterByDLCChunks` | `0x1406409f0` | Filters by DLC ownership; final pool the random picker draws from. |
 | `IsValidStageCodeStr_LookupInMasterEnum` | `0x140647230` | Validation — is this stage code in the table? |
 | `ResolveStageCodeToAssetPath` | `0x140641840` | Stage code string → `/Game/Stage/...` asset path. Substring-based DLC routing. |
-| `GetStageLocIdByStageCode` | `0x140641680` | Stage code → display loc ID. |
+| `GetStageLocIdByStageCode` | `0x1406415B0` | Stage code → display loc ID. |
 | `ApplyBattleSettingDataTableToBattleManager` | `0x140594eb0` | Match-start consumer. Reads `StageSetting.StageCode`, parses to packed int, fires async stage load. |
 | `LuxBattle_CreateStageInfoHandler` | `0x1403c3010` | Allocates the gameplay-side `scbattle::StageInfoHandler`. |
 

@@ -23,6 +23,9 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 | [Hitbox System](hitbox-system.md) | KHit linked lists — the live hit-detection pipeline (strikes, kicks, hurtboxes, pushboxes, grabs). |
 | [Trace System](trace-system.md) | `FLuxCapsule` + `ALuxTraceManager` — the **visual** weapon-trail / sword-swoosh VFX (not hit detection). |
 | [Stage System](stage-system.md) | Master enum table, stage-code routing, DLC gating, `LuxBattleStageInfoTableRow`, two-tier collision, custom-stage mod pipeline. |
+| [Movement System](movement.md) | Per-character step / 8WR table, conditions that modify step performance (hitstop, Soul Charge, face flip, state index). |
+| [Battle Message System](messages.md) | `ELuxBattleMessage` enum, `FLuxBattleMessageParam` struct, `ULuxBattleMessageReceiverInterface`, broadcast dispatchers, modder-feasibility notes. |
+| [Replay System](replay-system.md) | Per-frame replay tick chain, master clock at `FrameInputLog+0x3A4`, the seven Actor::Tick paths a freeze must halt, `TimeDilation` fall-through that bypasses `VMFreezeByte`. |
 | [Leaderboards & Online](leaderboards.md) | Steam leaderboards (`Characterboard`, `RankmatchWorld/Asia/...`), BNED Cosmos Channel telemetry, building an external API client. |
 | [Move System](move-system.md) | Command-script bytecode VM, opcode dispatch, IF predicates. |
 | [Character Data](character-data.md) | Style ids, DataTable asset paths, move-list display schema. |
@@ -36,12 +39,18 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 | "Where is `chara+0xNNN`?" | [Game Structures: ALuxBattleChara](structures.md#aluxbattlechara) |
 | "How do hitboxes / hit detection work?" | [Hitbox System](hitbox-system.md) |
 | "How do weapon trails / sword swooshes work?" | [Trace System](trace-system.md) |
+| "How far does each character step?" | [Movement System](movement.md) |
+| "What changes how well a character moves?" | [Movement System: verified levers](movement.md#what-changes-movement-verified-levers-only) |
 | "How do I add / replace a stage?" | [Stage System](stage-system.md) |
 | "Why do some stages roll more often in random?" | [Stage System: Random-pool bias](stage-system.md#random-pool-bias) |
 | "How do I read character usage / ranked-match data outside the game?" | [Leaderboards & Online](leaderboards.md) |
+| "How does the on-screen *Counter Hit* / *Punish Attack* / *Throw Escape* banner work?" | [Battle Message System](messages.md) |
+| "Can I show a custom HUD banner from a mod?" | [Battle Message System: Modder feasibility](messages.md#modder-feasibility-can-we-send-our-own-messages) |
 | "Where's the move VM?" | [Move System](move-system.md) |
 | "How do I draw a debug line?" | [Drawing 3D Debug Lines](line-batching.md) |
 | "How do I pause the game?" | [Battle Manager: `SetBattlePause`](battle-manager.md#pause-inspection-bp-api-uluxbattlefunctionlibrary) |
+| "How do I freeze a *replay* (not just a training match)?" | [Replay System](replay-system.md) — `SetBattlePause` and `VMFreezeByte` both leak in replay viewing; needs the seven-site Actor::Tick gate stack. |
+| "Why does my freeze release as a fast-forward burst in replay viewing?" | [Replay System: SimulationLoop catch-up](replay-system.md#simulationloop-catch-up) — master clock keeps advancing during freeze, `delta` accumulates, drains in one tick on release. |
 | "What does `ULuxDevBattleHUDSetting` do?" | [Dev / Debug Hooks](dev-debug-hooks.md) |
 | "What's the move-data DataTable schema?" | [Character Data](character-data.md) |
 

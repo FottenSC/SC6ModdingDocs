@@ -15,13 +15,14 @@ Alphabetical jump table. Click through for full layout.
 | [`ALuxBattleManager`](#aluxbattlemanager) | (large) | Per-match actor; player chara list, axis input, config tree at `+0x50`. |
 | [`ALuxBattleFrameInputLog`](#aluxbattleframeinputlog-17428-bytes) | `0x4414` | Input record/replay actor; ring buffer of `FLuxRecordedFrame`. |
 | [`ALuxBattleKeyRecorder`](#aluxbattlekeyrecorder-956-bytes) | `0x3BC` | Training-mode "Recorded" input playback. |
-| [`ALuxBattleReplayPlayer`](#aluxbattlereplayplayer-960-bytes) | `0x3C0` | Replay playback actor. |
+| [`ALuxBattleReplayPlayer`](#aluxbattlereplayplayer-977-bytes) | `0x3D1` | Replay playback actor. |
 | [`ALuxTraceManager`](#aluxtracemanager) | `0x408` | **Visual-only** weapon-trail driver. |
 | [`FActiveAttackSlot`](#factiveattackslot-68-bytes) | `0x44` | Per-tag active-attack hash slot at `chara+0x3D0`. |
-| [`FKHitNodeBase`](#fkhitnodebase-36-bytes-header-view) / [`FLuxKHitNode`](#fluxkhitnode-160-bytes-full-node-view) | `0x80` runtime | KHit linked-list node — base header + 3 subclass tails. |
-| `FLuxBattleChara` (Ghidra type) | `0x97330` | Big-struct view of a fighter's runtime state — same entity as [`ALuxBattleChara`](#aluxbattlechara), wider field coverage. |
+| [`FKHitNodeBase`](#fkhitnodebase-36-bytes-header-view) / [`FLuxKHitNode`](#fluxkhitnode-160-bytes-full-node-view) | `0xA0` runtime | KHit linked-list node — base header + 3 subclass tails. |
+| `FLuxBattleChara` (Ghidra type) | `0x973F0` | Big-struct view of a fighter's runtime state — same entity as [`ALuxBattleChara`](#aluxbattlechara), wider field coverage. (Was previously documented as `0x97330` — Ghidra struct now reports `0x973F0` = 619504 bytes.) |
 | [`FLuxBattleCharaVisibilityFlags`](#fluxbattlecharavisibilityflags-7-bytes) | `0x07` | 7-byte mesh visibility bitfield. |
 | [`FLuxBattleVMFreezeRecord`](#fluxbattlevmfreezerecord-64-bytes) | `0x40` | Slow-motion / VM-freeze blend state. |
+| [`LuxBattleCharaMotionFlags`](#luxbattlecharamotionflags-64-bytes) | `0x40` | 64-byte motion-input flag bank at `chara+0x16D0..+0x170F`. Holds the guard-stance bytes (`+0x02 base`, `+0x2C alt`, `+0x31 alt-locked`) and other state flags. |
 | [`FLuxCapsule`](#fluxcapsule) | `0x50` | Trace-system capsule endpoint pair (visual). |
 | [`FLuxCapsuleContainer`](trace-system.md#fluxcapsulecontainer-0x40-bytes-legacy-view) / [`FLuxMoveProvider_CapsuleSlot`](#fluxmoveprovider_capsuleslot-64-bytes) | `0x40` | TArray-shaped wrapper around `FLuxCapsule*`. |
 | [`FLuxDamageInfo`](#fluxdamageinfo-18-bytes) | `0x12` | HUD/network hit-event payload. |
@@ -37,7 +38,10 @@ Alphabetical jump table. Click through for full layout.
 | [`FLuxMoveCommandPlayer`](#fluxmovecommandplayer-12332-bytes) | `0x302C` | Per-chara VM context (the "slot" indexed by `g_LuxMoveVM_CommandPlayerArray`). |
 | [`FLuxMoveVM_OpcodeScratch`](#fluxmovevm_opcodescratch-96-bytes) | `0x60` | 96-byte view over `vmCtx+0x26AC..+0x26E4` (the per-opcode scratch). |
 | [`FLuxMoveVM_ATKPayload`](#fluxmovevm_atkpayload-16-bytes) | `0x10` | 4-uint32 `(power, range, speed, dir_mask)` tuple. |
-| [`FLuxMoveBankCell`](#fluxmovebankcell-112-bytes) | `0x70` | One row of the per-character move bank. |
+| [`FLuxMoveBank`](#fluxmovebank-48-bytes) | `0x30` | Per-character move-bank header at `chara+0x455C0`. Bucket headers + sub-table offsets. |
+| [`FLuxMoveBankSlotView`](#fluxmovebankslotview-72-bytes) | `0x48` | View into a slot record returned by `ResolveBankSlot`. Holds the variant→cell-bone-id table. |
+| [`FLuxMoveBankCell`](#fluxmovebankcell-112-bytes) | `0x70` | One row of the per-character move bank. The "attack cell" the hit pipeline consumes. |
+| [`FLuxMoveDefEntry`](#fluxmovedefentry-16-bytes) | `0x10` | One entry in the FMoveDef array (table indexed by current move id). `+0x02` = StartCellCursor. |
 | [`FLuxMoveSchedState`](#fluxmoveschedstate-96-bytes) | `0x60` | Dual-slot move scheduler. |
 | [`FLuxMoveStartRequest`](#fluxmovestartrequest-108-bytes) | `0x6C` | "Queue this move" request. |
 | [`FLuxMoveSubFrameRecord`](#fluxmovesubframerecord-72-bytes) | `0x48` | 60→120 Hz sub-frame interpolation record. |
@@ -174,9 +178,15 @@ UFunction map and the hierarchical config-tree path convention.
 | +0x6C   | `int16` | MoveClassA | SC6 move category (5..12) — `HorizontalAttack`, `VerticalAttack`, `Kick`, `Throw`, etc. |
 | +0x6E   | `uint16` | MoveClassB | subclass |
 | +0x70   | `int32` | MoveFlags | |
-| +0x98   | `ALuxBattleManager*` | BattleManager | non-UPROPERTY back-ref; read by `SetupWeaponBones` and isa-checked against `ALuxBattleManager` throughout `LuxMoveVM` |
-| +0xA0 | `float` | SelfPos.X | world-space position — read by `LuxMoveVM_CheckRangeOrDistance` |
-| +0xA8 | `float` | SelfPos.Z | |
+| +0x90   | `float` | flVelocityZ | Per-tick movement velocity Z. Cleared by `LuxBattle_PositionCharasSymmetrically @ 0x140302670` on round start (`pChara->flVelocityZ_at0x90 = 0.0`). |
+| +0x94   | `float` | flVelocityX | Per-tick movement velocity X. Set by `LuxBattle_PositionCharasSymmetrically` to `extraout_XMM0_Da / g_LuxMoveVM_AngleSinScale` (the chara's facing-yaw projected onto a per-tick contribution). |
+| +0x98   | `float` *or* `ALuxBattleManager*` | flVelocityY / BattleManager | **Aliased slot — readers disagree, both interpretations attested.** `LuxBattle_PositionCharasSymmetrically` writes `0.0f` here as a 4-byte float (`flVelocityY_at0x98`). `ALuxBattleChara_SetupWeaponBones @ 0x1403CAEB0` reads `param_1[0x13]` (= +0x98) as a 8-byte `ALuxBattleManager*` and ISA-checks the dereferenced UClass against `ALuxBattleManager` before passing to `LuxAnimInstance_SetBattleManager`. The Ghidra struct `ALuxBattleChara_Partial` types it as `float`. The two readers can be mutually consistent only if BattleManager ends up encoded as a value whose low 4 bytes are float-`0.0` (i.e. `0x00000000`) — possible if the pointer happens to be aligned such that bytes `[0x98..0x9B]` are all zero, which would be a coincidence rather than the canonical layout. **Treat this slot as ambiguous until disassembly resolves which reader is reading the wrong offset.** |
+| +0xA0   | `float` | flStartPosX | Round-spawn target X. Written by `LuxBattleChara_SetStartPosition @ 0x140301E60`. |
+| +0xA4   | `float` | flStartPosY | Round-spawn target Y (Y is plane-up in SC6's world). |
+| +0xA8   | `float` | flStartPosZ | Round-spawn target Z. Same float read by `LuxMoveVM_CheckRangeOrDistance` as `SelfPos.Z` for ring-distance checks (start and current Z are equal at the round-spawn instant). |
+| +0xC0   | `float` | flCurPosX | Game-thread current world-pose X. Updated each tick by `LuxBattleChara_IntegratePhysics_PerTick`. |
+| +0xC4   | `float` | flCurPosY | |
+| +0xC8   | `float` | flCurPosZ | |
 | +0x168  | `USceneComponent*` | CustomRoot0 | stored by `ALuxCharaActorBase_Constructor` `param_1[0x2D]` |
 | +0x23C  | `uint8` | CharaKindByte | row index into `g_LuxCharaAttrTable_*` |
 | +0x250  | `uint16` | MoveSubclassAlt | alternative move-category byte (checked `==100` / `0x69` by IF predicates) |
@@ -209,6 +219,7 @@ UFunction map and the hierarchical config-tree path convention.
 | +0x558  | `TSharedPtr<BoneDB>.DataPtr` | (bone-DB cache) | |
 | +0x560  | `TSharedPtr<BoneDB>.RefCtrl` | (bone-DB cache) | |
 | +0x568  | — | **end of object** | `sizeof(ALuxBattleChara) = 0x568` |
+| +0x29130 | `void*` | pSubcompListHead | Sub-component linked-list head walked by `LuxBattleChara_SetStartPosition @ 0x140301E60`. Each node has `next` at `+0x40`, an inner array pointer at `+0x48`, and a count byte at `+0x50`; the inner walk only writes a 16-bit zero at each item's `+0x7C`. Useful as a **"chara fully constructed"** sentinel — when null, the chara is mid-rebuild (e.g. immediately after a character swap), and calling `SetStartPosition` will walk the list and crash on a null deref (raises 0xE06D7363 unhandled C++ exception). HorseMod's `ResetOverride` validates this slot before invoking the engine's teleport helper. |
 | +0x1438 | `UObject*` | cached MoveComponent | lazy cache filled by `ALuxBattleChara_GetMoveProvider @ 0x1403F00B0`. Chain: `chara->GetWorld()->OwningGameInstance (world+0x140) → ISA-check ULuxGameInstance → *(ULuxGameInstance+0x140)`. On this build the final read returns the IEEE 754 value `0x3F800000` (float `1.0f`), not a pointer, so the cache stays at sentinel (`0xFFFFFFFF_FFFFFFFF`) indefinitely. The misnamed Ghidra symbol `ALuxBattleManager_GetMoveProviderPtr @ 0x140546600` actually operates on a `ULuxGameInstance*`, not `ALuxBattleManager*`. Note: the offset `+0x1438` is **past the `0x568` class size** — this means the lazy cache lives in a separately-allocated extension or the `0x568` is an understatement of the actual live size. Under active investigation. |
 | +0x1463 | `uint8` | current move-state byte | set by `ALuxBattleManager_SetMoveState @ 0x1403F8370`; `5=playing`, `6=stopping` |
 | +0x1982 | `uint16` | CurrentNotifToken | read by VM IF-predicate families A/B/C |
@@ -585,7 +596,7 @@ Documented here so the next person who sees the class in a `ProcessEvent` spy lo
 skip the RE chase. The real hit-detection geometry lives in the
 [Hitbox System (KHit linked lists)](hitbox-system.md), not on this UFunction. The
 weapon-tip query path the event was meant to feed —
-[`GetTracePosition_Impl`](trace-system.md#ufunctions-on-aluxbattlechara) — is itself
+[`GetTracePosition_Impl`](trace-system.md#ufunctions-on-aluxtracemanager) — is itself
 stale on the shipping build.
 
 **UFunction registration**: `Z_Construct_UFunction_ALuxBattleWeaponEventHandler_ReceiveGetWeaponTip
@@ -816,17 +827,21 @@ One queued input in the key recorder's slot table.
 | +0x04 | `int32` | `nWaitCounter` |
 | +0x08 | `int32` | `nMoveID` |
 
-#### `ALuxBattleReplayPlayer` (960 bytes)
+#### `ALuxBattleReplayPlayer` (977 bytes)
 
 Playback actor at `BattleManager+0x488`. Reconstructs the match from a
-serialised state-reset blob plus a `RecordingData` ref.
+serialised state-reset blob plus a `RecordingData` ref. Ghidra struct
+size: `0x3D1` (977 bytes) — earlier docs cited `0x3C0` (960 bytes).
 
 | Offset | Type | Name | Notes |
 |-------:|------|------|-------|
-| +0x39C | `int32` | `nCurrentRound` | |
-| +0x3A0 | `float` | `flCurrentTime` | |
-| +0x3A8 | `void*` | `StateResetData` | round-start serialised blob |
-| +0x3B8 | `void*` | `RecordingData` | raw recording stream |
+| +0x398 | `bool` | `bEnable_at0x398` | |
+| +0x39C | `int32` | `nCurrentRound_at0x39C` | |
+| +0x3A0 | `float` | `flCurrentTime_at0x3A0` | |
+| +0x3A8 | `void*` | `pStateResetData_at0x3A8` | round-start serialised blob |
+| +0x3B0 | `int32` | `nTotalRounds_at0x3B0` | |
+| +0x3B8 | `void*` | `pRecordingData_at0x3B8` | raw recording stream |
+| +0x3D0 | `bool` | `fIsPlayingBack_at0x3D0` | the byte that pushes the struct past `0x3C0` |
 
 #### `FLuxRecordedFrame` (192 bytes)
 
@@ -875,6 +890,45 @@ slot is the slow-mo source (e.g. dramatic finishing-blow camera).
 | +0x38 | `int32`  | `nField_38` | |
 | +0x3C | `int32`  | `nSlowMotionEnabled` | |
 
+#### `LuxBattleCharaMotionFlags` (64 bytes)
+
+A 64-byte flag bank at `chara+0x16D0..+0x170F`, indexed by flag id 0..0x3F.
+Each flag is a single byte (0 / 1). Read by guard / hit-state predicates,
+written by `LuxBattleChara_SetMotionInputFlag @ 0x140304C00` (which has
+side-effects for special indices). The move bank's slot record carries
+two 64-bit "set/clear" masks at slot+0x20 / slot+0x28; on every move
+transition `LuxMoveVM_ApplyLaneMotionInputMasks @ 0x1402FD7F0` walks
+the bits and SetMotionInputFlag's the corresponding flag.
+
+| Flag idx | Chara offset | Name | Role |
+|----:|---|------|------|
+| 0x00 | `chara+0x16D0` | `abFlag00_GuardLockReason` | Cleared in special branches. Used by `CanTrackOpponentLookAt` to decide auto-rotation suppression. |
+| 0x01 | `chara+0x16D1` | `bFlag01_GuardDirty` | per-frame latch; reset by `TickCharaMainSimulation`. |
+| **0x02** | `chara+0x16D2` | **`bGuardCrouchStateBase`** | **Authoritative crouch state. 0=stand, 1=crouch.** Set/cleared only by move-VM transitions via `ApplyLaneMotionInputMasks`. Used as block-direction byte by `CheckGuardConditionForHitbox` when `+0x16FC` alt isn't locked. |
+| 0x03 | `chara+0x16D3` | `bFlag03_Uninterruptible` | uninterruptible state |
+| 0x04 | `chara+0x16D4` | `bFlag04_TerrainGate` | TerrainGateFlag — `CheckOpponentFrontTerrainMatch` early-exit. |
+| 0x0B | `chara+0x16DB` | `bFlag0B_HitstunActive` | "in hit-reaction" — locks block-direction to base for high-tagged attacks. |
+| 0x0C | `chara+0x16DC` | `bFlag0C_BlockstunActive` | "in block-stun" — locks block-direction to base for block-tagged attacks. |
+| 0x0F | `chara+0x16DF` | `bFlag0F_PostHitstunActive` | post-hitstun reaction state |
+| 0x10 | `chara+0x16E0` | `bFlag10_TerrainGateAlt` | secondary terrain gate |
+| 0x12 | `chara+0x16E2` | `bFlag12_Airborne` | airborne; cleared by `SetMotionInputFlag` snaps Y to terrain |
+| **0x2C** | `chara+0x16FC` | **`bAltGuardCrouchState`** | **Per-frame re-derived crouch state**. Reset to 0 each tick; re-computed by `UpdateGuardStanceFlags`. Used as block-direction byte when `+0x1701` alt-locked is set. |
+| **0x2D** | `chara+0x16FD` | **`bIsGuardingFlag`** | "actively guarding this frame" — set by UpdateGuardStanceFlags when guard-input is held + stance-input matches. |
+| **0x31** | `chara+0x1701` | **`bAltGuardLocked`** | when set, the alt is authoritative for hit resolution. Reset each tick. |
+
+The bank is a unified motion-state machine — the move-VM bytecode and the
+input system both call `SetMotionInputFlag(chara, flagIdx, value)` to mutate
+flags. Several flag indices have side effects:
+
+- `flag 0x0B` is auto-set when flags `{0x0C..0x11, 0x29, 0x35}` are set
+  (the cluster mask `0x2000200003F000`).
+- `flag 0x12` (airborne) when CLEARED snaps Y to chara+0x3C8 (terrain).
+- `flag 0x29` when CLEARED also clears flag 0x21 and sets flag 0x30.
+- `flag 0x2A` when SET copies a 4-byte attack-launch state.
+
+See [Block direction & ducking-while-guarding](hitbox-system.md#block-direction--ducking-while-guarding)
+for how these flags drive the duck-under-high-attack mechanic.
+
 ### Hit-detection node structs (KHit)
 
 These are the structs that drive the **live** hit resolver — kicks, punches, hurtboxes,
@@ -883,9 +937,9 @@ for the full call-graph walkthrough.
 
 `FKHitNodeBase` and `FLuxKHitNode` are Ghidra-named partial views — the canonical names
 in the binary's vtables (`KHitBase_vftable @ 0x143E87838`, etc.) are `KHitBase`, `KHitSphere`,
-`KHitArea`, `KHitFixArea`. Each node is **0x80 (128) bytes** at runtime, regardless of
-subclass; the sparse `FLuxKHitNode` layout in the data-type manager covers the common
-header + the FixArea tail.
+`KHitArea`, `KHitFixArea`. Each node is **0xA0 (160) bytes** at runtime, regardless of
+subclass (Ghidra struct sizes for `KHitBase` / `KHitFixArea` both report 160). The sparse
+`FLuxKHitNode` layout in the data-type manager covers the common header + the FixArea tail.
 
 #### `FKHitNodeBase` (36 bytes — header view)
 
@@ -1057,6 +1111,63 @@ local copy for the ATK arm of `LuxMoveVM_ExecuteAndDumpOpcode`.
 | +0x08 | `uint32` | `dwSpeed` |
 | +0x0C | `uint32` | `dwDirectionMask` |
 
+#### `FLuxMoveBank` (48 bytes)
+
+Per-character move-bank header at `chara+0x455C0`. Resolved by
+`LuxMoveVM_ResolveBankSlot @ 0x1402FC400` and read by every
+`LuxMoveVM_TransitionToMove` / `SetActiveMoveSlot` /
+`TickHitResolutionAndBodyCollision` site.
+
+| Offset | Size | Type | Field | Notes |
+|-------:|-----:|------|-------|-------|
+| +0x00 | 8 | qword | header magic / unread | unread by hit pipeline |
+| +0x08 | 4 | dword | unknown | |
+| +0x0C | 2 | u16 | unknown | |
+| +0x0E | 2 | u16 | `wEventRecordCount` | count of records in event-record table |
+| +0x10 | 4 | u32 | `dwAttackCellArrayOffset` | offset to AttackCell array (`bank + bank[+0x10] + cellBone * 0x70`) |
+| +0x14 | 4 | u32 | `dwNonAttackDescTableOffset` | offset to non-attack 6-byte descr table (`bank + bank[+0x14] + (subIdx & ~0x10000) * 6`) |
+| +0x18 | 4 | u32 | `dwEventRecordTableOffset` | offset to event-record table (stride `0x30`, count = `wEventRecordCount`) |
+| +0x1C..+0x2B | 16 | `FLuxMoveBankBucket[4]` | bucket0..bucket3 `(StartIdx, Count)` | `ResolveBankSlot` uses `(packedAddr >> 12) & 3` to pick a bucket |
+| +0x2C | 4 | u32 | reserved / padding | |
+| +0x30 | … | array | slot table starts | stride `0x48`; `(BucketN.StartIdx + slotInBucket) * 0x48` |
+
+`FLuxMoveBankBucket` (4 bytes): `{ uint16 StartIdx; uint16 Count; }`.
+
+#### `FLuxMoveBankSlotView` (72 bytes)
+
+Returned by `LuxMoveVM_ResolveBankSlot` as
+`bank + (StartIdx + slot) * 0x48 + 0x30`. The `+0x30` is intentional —
+the structure straddles two adjacent slot records to let the engine read
+related fields with one dereference. **All offsets are relative to the
+returned pointer**, not the absolute slot start.
+
+| Offset | Size | Type | Field | Notes |
+|-------:|-----:|------|-------|-------|
+| +0x00 | 2 | i16 | `psVar22Base` | motion-init-loop base in `TransitionToMove` |
+| +0x04 | 2 | i16 | `wField_04` | motion arg |
+| +0x10 | 4 | u32 | `dwSubTableOffset_10` | per-slot offset into a sub-table |
+| +0x14 | 4 | u32 | `dwSubTableOffset_14` | per-slot offset into a sub-table |
+| +0x1C | 4 | u32 | bytecode offset (alt path) | added to bank base if `!= -1` |
+| +0x20 | 8 | u64 | `qwInputMask_20` | copied to `lane+0x448` at TransitionToMove |
+| +0x28 | 8 | u64 | `qwInputMask_28` | copied to `lane+0x450` |
+| +0x30 | 4 | f32 | `flAnimLength_30` | move's anim length (60Hz frames) |
+| +0x34 | 2 | i16 | `wAnimLengthFlag_34` | `-2` = use computed length from playback speed |
+| +0x36 | 2 | i16 | `wHitWindowStart` | hit-window start frame (cell.MasterWindowStart for primary cell) |
+| +0x38 | 2/4 | union | hit-window-end short OR bytecode-offset dword | `TransitionToMove` reads as short, `ExecuteBankSlotScript` reads as dword. UNION layout. |
+| +0x3C..+0x46 | 12 | i16[6] | `nCellBoneIndexPerVariant[6]` | Variant index → AttackCell index. `-1` = no attack. The lane's `+0x460 AnimVariantIndex` (default 0) selects which entry to use. See [Cell lifetime](hitbox-system.md#cell-lifetime-one-cell-per-move). |
+
+#### `FLuxMoveDefEntry` (16 bytes)
+
+One row in the per-character `FMoveDef` array at
+`g_LuxMoveSystem_MoveDefArrayPerSlot + CharaKindByte*0x3038`. Indexed by
+`CurrentMoveIdx`.
+
+| Offset | Size | Type | Field | Notes |
+|-------:|-----:|------|-------|-------|
+| +0x00 | 2 | u16 | `wField0` | move-id or flags (unread by `StartMoveForChara`) |
+| +0x02 | 2 | u16 | `wStartCellCursor` | initial value for `g_LuxMoveSystem_CellCursorPerSlot` (= bytecode entry point) |
+| +0x04..+0x0F | 12 | (opaque) | tail | unread by `StartMoveForChara` |
+
 #### `FLuxMoveBankCell` (112 bytes)
 
 One row in the per-character "move bank". This is the **attack-cell** the hit
@@ -1084,7 +1195,7 @@ Field offsets verified by tracing reads in `LuxBattleChara_ProcessHit @ 0x140342
 | +0x32 | `uint16` | `wAttackFlags` | bit 0x001 = block-high, 0x002 = block-low, 0x008 = LowAttack, 0x010 = MidAttack, 0x040 = CrouchOnly, 0x080 = HighAttack, 0x200 = Unblockable / GI-immune |
 | +0x34 | `uint16` | `wInputCond` | move-input precondition mask, fed to `LuxMoveVM_EvaluateMoveInputCondition` |
 | +0x36 | `int16` | `nMasterWindowStart` | hit-window start frame (60Hz). `ClassifyHitboxFrameState` writes `chara+0x1980 = 1` while `currentAnimFrame < this`, `2` while inside, `3` while past |
-| +0x38 | `int16` | `nMasterWindowEnd` | hit-window end frame |
+| +0x38 | `int16` | `nMasterWindowEnd` | hit-window end frame. **DUAL-USE**: also reused by `LuxMoveVM_EvaluateAttackRange @ 0x14035F670` as a signed-short reach ceiling — when `chara+0x44978` (projected reach scalar) > this value, the range gate returns out-of-range. The same numeric range serves both timing and reach because it's a 16-bit scalar |
 | +0x3A | `int16` | `nBaseDamage` | THE damage figure read by `ProcessHit`, added into `attacker+0x3FC`. **One value per cell** — same value for every shape that hits while this cell is active |
 | +0x3C | `int16` | `nStunRecoil` | hitstun bucket, written into `attacker+0x3E4` |
 | +0x3E | `uint16` | `wExtraStateFlags` | mirrored verbatim into `attacker+0x400` |
@@ -1099,8 +1210,22 @@ Field offsets verified by tracing reads in `LuxBattleChara_ProcessHit @ 0x140342
 | +0x5A | `uint16` | `wPassthroughTagA` | mirrored to `chara+0x210A` on slot transition |
 | +0x5E | `uint16` | `wHitboxGroupBitfield` | mirrored to `chara+0x20F6`. **bits 0..10** = group ID (0..63) selecting one of 4 banks of 16 hit-sub-window entries at `DAT_1448554E8 + 0x338 / 0x3B8 / 0x438 / 0x4B8`; **bits 11..13** mirrored to `chara+0x20F2`; **bits 14..15** mirrored to `chara+0x20F0`. See [Per-cell sub-window timing](hitbox-system.md#per-cell-sub-window-timing). |
 | +0x60 | `uint16` | `wPassthroughTagC` | mirrored to `chara+0x20FC` |
+| +0x62 | `int8`   | `cI8RangeStandMin` | per-cell stand-stance min reach (signed byte). `0x81` (-127) = "no constraint on this side". Read by `LuxMoveVM_EvaluateAttackRange` |
+| +0x63 | `int8`   | `cI8RangeStandMax` | per-cell stand-stance max reach (signed byte). `0x81` sentinel as above |
+| +0x64 | `int8`   | `cI8RangeCrouchMin` | per-cell crouch-stance min reach |
+| +0x65 | `int8`   | `cI8RangeCrouchMax` | per-cell crouch-stance max reach |
+| +0x66 | `int16`  | `nReachExtraGate` | per-cell extra reach gate (signed short). `-1` or `0` disables. Used in conjunction with the four byte bounds above to gate `EvaluateAttackRange` |
+| +0x68..+0x69 | (opaque) | | tail-padding |
 | +0x6A | `uint16` | `wRuntimePropagateField` | mutated at runtime by `LuxMoveVM_PropagateFieldToHitboxGroup @ 0x140303590` across the 8 cells of a hitbox-group entry. Only field on the cell known to change after move start. Semantics not yet identified |
-| (other +0x62..+0x6F) | (opaque) | | tail; not read by main hit pipeline |
+| +0x6C..+0x6F | (opaque) | | trailing pad |
+
+**`LuxMoveVM_EvaluateAttackRange @ 0x14035F670`** (the per-cell reach
+gate) is consulted ONLY by `LuxBattle_CheckYarareReactionGate` case
+0x72 (yarare-table reach predicate), NOT by the throw classifier
+itself. Returns: `0` = in range; `0xFFFFFFFD` = out of range; `0xFFFFFFFE`
+= cell has no range constraints (all four bytes are `0` or `0x81`,
+or `nReachExtraGate` is `-1`/`0`); `0xFFFFFFFF` = above-ceiling
+(`chara+0x44978` reach scalar > `nMasterWindowEnd` short).
 
 #### `FLuxMoveSchedState` (96 bytes)
 

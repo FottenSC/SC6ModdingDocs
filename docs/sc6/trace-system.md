@@ -18,8 +18,8 @@ otherwise independent.
 | Visual driver actor | `chara+0x458` | `ALuxTraceManager*` — owns particle slots + trail renderer. |
 | Trail renderer component | `chara+0x3A8` | `ULuxTraceComponent*` — lazy; created by `ActivateTrace`. |
 | Slot-tag hash | `chara+0x3B0/+0x3F0/+0x3F8` | `FActiveAttackSlot[]` keyed by `AttackTag` 1..9. |
-| Activate UFunction | `ALuxBattleChara::Active_Impl @ 0x1408CD940` | Opens slot tag. |
-| Deactivate UFunction | `ALuxBattleChara::Inactive_Impl @ 0x1408D1420` | Closes slot, fades trail. |
+| Activate UFunction | `ALuxTraceManager::Active_Impl @ 0x1408CD940` | Opens slot tag. Registered as a UFunction on `ALuxTraceManager` (not `ALuxBattleChara` — earlier docs got the class wrong). |
+| Deactivate UFunction | `ALuxTraceManager::Inactive_Impl @ 0x1408D1420` | Closes slot, fades trail. |
 | Capsule struct | `FLuxCapsule` (0x50 bytes) | Endpoint pair authored per-move. |
 | Native query (stale on this build) | `ALuxTraceManager::GetTracePosition_Impl @ 0x1408D0BB0` | Returns `false` for every real chara — `chara+0x388` is now `CharaMesh0`. |
 
@@ -74,20 +74,25 @@ that still encode the old `chara+0x388 → +0x30` walk are stale code paths:
 
 | Class | Purpose | Size |
 |-------|---------|-----:|
-| `ALuxBattleChara` | Fighter actor. Declares `Active` / `Inactive` / `GetTracePosition` UFunctions. | `0x568` |
+| `ALuxBattleChara` | Fighter actor; owns the `ALuxTraceManager*` at `+0x458`. | `0x568` |
+| `ALuxTraceManager` | Visual-only weapon-trail driver. **Hosts the `Active` / `Inactive` / `GetTracePosition` UFunctions** (registered via `Z_Construct_UClass_ALuxTraceManager_Properties @ 0x140C0BA90`). Earlier docs attributed these to `ALuxBattleChara` — that was wrong; the class header on the `_Impl` decompile and the UClass property registration both confirm `ALuxTraceManager`. | `0x408` |
 | `FLuxCapsule` | Capsule endpoint pair (visual). Layout known; container location uncertain on this build. | `0x50` |
 | `ALuxTraceManager` | Visual-only weapon-trail driver. | `0x408` |
 | `ULuxTraceComponent` | Visual ticking component, holds `ActiveTraces[]`. | `0x4B0` |
 | `ALuxTraceMeshActor` | Visual child actor, renders the trail. | — |
 | `ULuxTracePartsDataAsset` | Visual curves / material params. | — |
 
-## UFunctions on `ALuxBattleChara`
+## UFunctions on `ALuxTraceManager`
 
-Three reflected UFunctions:
+Three reflected UFunctions, registered via
+`Z_Construct_UClass_ALuxTraceManager_Properties @ 0x140C0BA90`. Earlier
+docs attributed these to `ALuxBattleChara` — that was wrong. Reflection
+callers wanting to invoke them on a chara have to walk
+`chara+0x458 → ALuxTraceManager*` first, or call the `_Impl` directly via RVA.
 
 | UFunction | `_Impl` | exec trampoline | Behaviour |
 |-----------|---------|-----------------|-----------|
-| `Active(FTraceActiveParam)` | `0x1408CD940` | `0x140C3DA20` | Opens an attack-slot tag (1..9) into `chara+0x3B0`. |
+| `Active(FTraceActiveParam)` | `0x1408CD940` | `0x140C3DA20` | Opens an attack-slot tag (1..9) into `traceMgr+0x3B0`. |
 | `Inactive(FTraceInactiveParam)` | `0x1408D1420` | `0x140C3FD00` | Closes the slot; starts trail fade. |
 | `GetTracePosition(byte, int32, out FVector, out FVector)` | `0x1408D0BB0` | `0x140C3F9B0` | **Stale** on this build — always returns `false`. |
 
