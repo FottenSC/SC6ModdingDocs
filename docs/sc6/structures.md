@@ -597,6 +597,7 @@ skip the RE chase. The real hit-detection geometry lives in the
 [Hitbox System (KHit linked lists)](hitbox-system.md), not on this UFunction. The
 weapon-tip query path the event was meant to feed —
 [`GetTracePosition_Impl`](trace-system.md#ufunctions-on-aluxtracemanager) — is itself
+
 stale on the shipping build.
 
 **UFunction registration**: `Z_Construct_UFunction_ALuxBattleWeaponEventHandler_ReceiveGetWeaponTip
@@ -926,7 +927,7 @@ flags. Several flag indices have side effects:
 - `flag 0x29` when CLEARED also clears flag 0x21 and sets flag 0x30.
 - `flag 0x2A` when SET copies a 4-byte attack-launch state.
 
-See [Block direction & ducking-while-guarding](hitbox-system.md#block-direction--ducking-while-guarding)
+See [Block direction & ducking-while-guarding](hitbox-system.md#block-direction-ducking-while-guarding)
 for how these flags drive the duck-under-high-attack mechanic.
 
 ### Hit-detection node structs (KHit)

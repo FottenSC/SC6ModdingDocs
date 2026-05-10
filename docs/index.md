@@ -18,6 +18,38 @@ readers but still readable to humans.
     This project is **not** affiliated with BANDAI NAMCO or the UE4SS maintainers.
     Mod at your own risk — never mod files online and keep clean backups of your game.
 
+## For AI agents — start here
+
+If you're an AI agent reading these docs to answer a specific question or
+make an edit, this is the navigation contract:
+
+1. **Have a symbol/address/offset?** Go to [Symbol Index](reference/symbol-index.md)
+   first — it has a "how to find a fact" cheat sheet plus the highest-frequency
+   lookups in one page.
+2. **Have a topic?** Use [the Pages table below](#what-youll-find-here), or
+   for SC6 internals specifically the [SC6 quick-find](sc6/index.md#quick-find-where-do-i-look-for-x).
+3. **Need to verify a claim before acting on it?** Re-check against Ghidra
+   via the `mcp__ghidra-mcp__*` tools. The `> source:` blockquote on each
+   claim points at the function whose decompile/plate is authoritative.
+   Pages note **verified** / **unverified** / **stale on this build** explicitly —
+   honour those markers.
+4. **Adding new info?** Match the structure of nearby content (tables, not
+   prose, where possible) and add a `> source:` line. See the
+   [Contributing rules of thumb](contributing.md#rules-of-thumb-for-ai-agents).
+
+### Search patterns that always work
+
+| Looking for ... | Grep this |
+|---|---|
+| A function address | `0x140xxxxxx` (image base = `0x140000000`) |
+| A `chara+0xN` use | `chara\+0x` or `+0xN` in the structures / topic page |
+| A `BM+0xN` slot | search [Battle Manager: BM subsystem layout](sc6/battle-manager.md#battlemanager-subsystem-layout) |
+| A `vmCtx+0xN` field | search [Move System: VM scratch layout](sc6/move-system.md#vm-opcode-scratch-layout-offsets-on-g_luxmovevm_commandplayerarrayslot) |
+| An opcode (`0x40002`, `0x50008`, ...) | [Move System: opcode quick reference](sc6/move-system.md#opcode-quick-reference) |
+| A KHit list head (`+0x44478`, `+0x44498`, `+0x444B8`) | [Hitbox System](sc6/hitbox-system.md) |
+| A struct's size or layout | [Game Structures](sc6/structures.md) is canonical |
+| A status word (`verified`, `unverified`, `stale on this build`) | grep `docs/sc6/*.md` |
+
 ## What you'll find here
 
 <div class="grid cards" markdown>

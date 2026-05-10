@@ -117,6 +117,7 @@ nav:
       - Custom Stage (new code): cookbook/custom-stage.md
   - Reference:
       - reference/index.md
+      - Symbol Index: reference/symbol-index.md
       - Glossary: reference/glossary.md
   - Contributing: contributing.md
 

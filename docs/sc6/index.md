@@ -60,7 +60,17 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 - `chara+0xNNN` always means relative to `ALuxBattleChara*`.
 - `vmCtx+0xNNN` always means relative to `FLuxMoveCommandPlayer*` (the per-chara VM slot).
 - `BM+0xNNN` always means relative to `ALuxBattleManager*`.
+- `InputLog+0xNNN` always means relative to `ALuxBattleFrameInputLog*`.
 - Struct sizes given as both decimal and `0x` hex where useful.
+- **Status markers** applied consistently:
+    - **verified** — read directly from Ghidra decompile or live UE4SS introspection. Trust.
+    - **unverified** — plausible but not directly confirmed. Don't build on without checking.
+    - **stale on this build** — present in the binary but not on the live codepath. Don't use.
+    - `> source:` blockquote — points at the authoritative Ghidra address/function.
+    - `!!! warning` admonition — known landmine, layout error, or correction.
+
+For cross-cutting lookups across all SC6 pages, see
+[Reference: Symbol Index](../reference/symbol-index.md).
 
 ## UE4SS reflection caveat
 
