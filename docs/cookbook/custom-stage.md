@@ -8,12 +8,12 @@ the runtime hook. Optional: UAssetGUI for editing data tables.
 
 ## Why this needs more than a `_P.pak`
 
-Asset *discovery* is free — UE4's AssetManager indexes any `.umap` mounted
-under `/Game/` as a `Map`-type primary asset. But the game's normal flow
-only ever asks the AssetManager to load codes that came out of the Blueprint
-stage picker, which validates against the static master enum table. So the
-question is: **how does your custom code reach `StageSetting.StageCode` in
-the LuxDataTable?** That's the actual hard part.
+Asset *discovery* is free: UE4's AssetManager indexes any `.umap` mounted
+under `/Game/` as a `Map`-type primary asset. The catch is that the game's
+normal flow only ever asks the AssetManager to load codes that came out of
+the Blueprint stage picker, and the picker validates against the static
+master enum table. So the real problem is: **how does your custom code reach
+`StageSetting.StageCode` in the LuxDataTable?**
 
 The C++ load chain itself does not care:
 
@@ -89,10 +89,10 @@ Pick any stock stage in the menu, then hook the BP path that writes
 `StageSetting.StageCode` and substitute your code. Concretely: hook
 `ApplyBattleSettingDataTableToBattleManager @ 0x140594eb0` near the
 `LuxDataTable_LookupByKey("StageSetting.StageCode", ...)` call (around
-RVA `+0x140595400` inside the function) and rewrite the resolved string
+RVA `+0x140595400` inside the function), and rewrite the resolved string
 to `"STGMOD"` before the preload kick.
 
-This needs zero UI work. Pick "Free Stage" → load STGMOD.
+This needs zero UI work: pick "Free Stage", and STGMOD loads.
 
 ### Option B: Add to the picker
 
@@ -103,13 +103,13 @@ picker UI reads from `g_LuxStage_MasterEnumStringTable @ 0x144149c50` so
 your code shows up.
 
 The DLC chunk filter (`GetStageCodesIfAvailable_FilterByDLCChunks`) only
-gates substrings of the DLC suffixes listed above, so a custom code with
-none of them auto-passes.
+gates substrings of the DLC suffixes listed above, so a custom code that
+contains none of them passes automatically.
 
-You'll also want a localised display string for the picker label —
-`GetStageLocIdByStageCode @ 0x140641680` returns the loc ID, so add
-your own row to the loc table or hook the function to special-case
-your code.
+You'll also want a localised display string for the picker label.
+`GetStageLocIdByStageCode @ 0x140641680` returns the loc ID, so either add
+your own row to the loc table or hook the function to special-case your
+code.
 
 ### Option C: Direct console / debug entry
 

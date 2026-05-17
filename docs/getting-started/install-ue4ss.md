@@ -17,12 +17,12 @@ The default Steam path looks like:
 ```
 
 `<SteamLibrary>` is wherever you installed the game — typically
-`C:\Program Files (x86)\Steam`, but Steam will happily install SoulCalibur VI on any drive
-you've added as a library (e.g. `D:\SteamLibrary` or `E:\SteamLibrary`). Right-click the game in
-Steam → **Manage → Browse local files** is the fastest way to get there.
+`C:\Program Files (x86)\Steam`, but Steam can install SoulCalibur VI on any drive
+you've added as a library (e.g. `D:\SteamLibrary` or `E:\SteamLibrary`). The fastest way to get
+there is to right-click the game in Steam and choose **Manage → Browse local files**.
 
-The casing on disk is `SOULCALIBUR VI` at the top level and `SoulcaliburVI` for the subfolder and
-executable — Windows is case-insensitive, but scripts that run under `mklink` / WSL / Git tooling
+On disk, the casing is `SOULCALIBUR VI` at the top level and `SoulcaliburVI` for the subfolder and
+executable. Windows is case-insensitive, but scripts run through `mklink`, WSL, or Git tooling
 are not.
 
 ## 3. Extract UE4SS

@@ -1,7 +1,7 @@
 # Move System (command-script bytecode VM)
 
-How SC6 stores and runs per-move data. Two layers split: a UE4 DataTable for UI text, and
-a native command-script bytecode for gameplay.
+How SC6 stores and runs per-move data. It splits into two layers: a UE4 DataTable for UI
+text, and a native command-script bytecode for gameplay.
 
 ## At a glance
 
@@ -88,8 +88,8 @@ Reflected via `Z_Construct_UScriptStruct_FLuxBattleMoveListTableRow @ 0x14094a91
 
 The `AttributeTag` and `EffectTag` strings are the join keys into
 `ELuxAttackTouchLevel` and `ELuxBattleMoveEffectType` respectively. They are
-human tags — not bit-packed — so the display layer is *descriptive*, not
-authoritative.
+human-readable tags, not bit-packed values, so the display layer is
+*descriptive* rather than authoritative.
 
 ---
 
@@ -125,9 +125,9 @@ at `0x140365900` — copy-paste reproduced below).
 
 ### Runtime payload: `FLuxBattleMovePlayParam` (~0x10 bytes)
 
-Small struct (only 2 × 8-byte slots, zero-initialised by
-`FLuxBattleMovePlayParam_DefaultCtor @ 0x140406F40`). It's the "handle" copied
-into a UFunction out-param so blueprint can reference a queued move without
+A small struct (just 2 × 8-byte slots, zero-initialised by
+`FLuxBattleMovePlayParam_DefaultCtor @ 0x140406F40`). It is the "handle" copied
+into a UFunction out-param so Blueprint can reference a queued move without
 owning its backing buffer.
 
 ---
@@ -135,7 +135,7 @@ owning its backing buffer.
 ## VM runtime layout — global static arrays (2026-04-20)
 
 `ALuxBattleMoveCommandPlayer` is **NOT** a heap-allocated UObject instance on
-this build. It's a fixed global static array indexed by the chara's
+this build. It is a fixed global static array indexed by the chara's
 `CharaKindByte` (`chara+0x23C`). This was discovered by following the xrefs
 into `LuxMoveVM_TickDriver`.
 
@@ -186,8 +186,8 @@ Auxiliary scratch / queue structs the VM maintains alongside the per-slot state:
 - [`FLuxMoveSubFrameRecord`](structures.md#fluxmovesubframerecord-72-bytes) — 72-byte
   60→120 Hz sub-frame interpolation record. `flRangeStart`/`flRangeEnd` gates which
   sub-frame samples this record applies to.
-- [`LuxMoveLaneState`](structures.md#luxmovelanestate-1128-bytes) — 1128-byte per-lane
-  VM state. **Three lane blocks live inline** in every chara at fixed offsets:
+- [`FLuxMoveLane`](structures.md#fluxmovelane-1128-bytes-was-luxmovelanestate) — 1128-byte per-lane
+  VM state (was named `LuxMoveLaneState`). **Three lane blocks live inline** in every chara at fixed offsets:
 
     | Offset | Lane | Role |
     |-------:|------|------|
@@ -216,11 +216,11 @@ Auxiliary scratch / queue structs the VM maintains alongside the per-slot state:
     | `+0x458` | `i32` | `TotalTickCounter` (monotonic across advances) |
     | `+0x460` | `u32` | `AnimVariantIndex` (`0..5` bank variant) |
 
-    For a "current move frame N / M" HUD overlay you read `Lane0+0x08` and `Lane0+0x10`
+    For a "current move frame N / M" HUD overlay, read `Lane0+0x08` and `Lane0+0x10`
     every tick — pure pointer arithmetic, no hooks required. `chara+0x1350` is the
-    `MoveStartCounter` bumped on each `TransitionToMove` call (handy for
-    "did the move change?" checks without diffing `PackedMoveAddr`); `chara+0x1360` is the
-    `LastHitAnimFrame` mirror written by `ProcessHit` for HUD consumers.
+    `MoveStartCounter`, bumped on each `TransitionToMove` call (handy for
+    "did the move change?" checks without diffing `PackedMoveAddr`). `chara+0x1360` is the
+    `LastHitAnimFrame` mirror, written by `ProcessHit` for HUD consumers.
 - [`FLuxBattleVMFreezeRecord`](structures.md#fluxbattlevmfreezerecord-64-bytes) —
   64-byte slow-motion / VM-freeze blend state. Three candidate alphas, two countdowns,
   blended output. The `flAlphaCandidate3_SlowMo` slot is the slow-mo source (e.g. the
@@ -258,11 +258,15 @@ when the VM needs to copy them out as a tuple.
 
 The ATK payload fields are the authoritative "current attack hitbox metadata".
 Hit detection for non-weapon attacks (kicks, throws) must read these during
-the active frame window. As of 2026-04-20 the specific reader is still TBD —
-but `LuxBattle_DispatchYarareReaction @ 0x1403521B0` is the downstream
-dispatcher that fires once a hit has been resolved (each yarare id maps to a
-per-reaction handler via its 80-case switch). Following xrefs upward from that
+the active frame window. As of 2026-04-20 the specific reader is still TBD.
+`LuxBattle_DispatchYarareReaction @ 0x1403521B0` is the downstream
+dispatcher that fires once a hit has been resolved (its 80-case switch maps
+each yarare id to a per-reaction handler). Following xrefs upward from that
 function is the shortest remaining path to the hit-test primitive.
+
+For the **post-hit pipeline** (pick → dispatch → per-id Tick advance), the
+yarare-id taxonomy, the 134 gate codes, and the knockdown camera, see the
+dedicated [Reaction System](reaction-system.md) page.
 
 ### VM tick call graph
 
@@ -300,19 +304,19 @@ Parallel, concurrent per-tick paths (not under TickDriver):
                    +0xACD (frame counter), +0xAB6 (duration)
 ```
 
-Hit detection sits *between* these two paths — the VM executor writes ATK
+Hit detection sits *between* these two paths: the VM executor writes ATK
 state, something (still TBD) consumes it and decides whether to fire a yarare
-reaction, and DispatchYarareReaction is the terminal step.
+reaction, and `DispatchYarareReaction` is the terminal step.
 
 ---
 
 ## Command-script format
 
 Source of truth: `LuxMoveVM_ExecuteAndDumpOpcode @ 0x140365900` (formerly
-`LuxBattleMoveCommandPlayer_DebugDumpCommand`). **It is the VM executor AND
-disassembler** — it walks one opcode at a time, mutates VM state, and also
+`LuxBattleMoveCommandPlayer_DebugDumpCommand`). **It is both the VM executor and
+the disassembler** — it walks one opcode at a time, mutates VM state, and also
 writes a human-readable line to `this+0x2A28`. Every opcode and every field
-we know about is visible in that function's string literals.
+documented here is visible in that function's string literals.
 
 ### Opcode dispatch (upper 16 bits of each uint32 cell)
 
@@ -360,9 +364,9 @@ we know about is visible in that function's string literals.
 | 0x2000 | `G` | Guard (+G sim-press) |
 
 A single ATK cell is **one hitbox pulse**, not the whole move. A multi-hit
-string is encoded as `ATK, timegap, ATK, timegap, …` (the BTN+TIME pair after an
-ATK is its active-phase window). That's where frame data is hiding —
-**startup/active/recovery is the sum of the `BTN+TIME` cells between ATKs**.
+string is encoded as `ATK, timegap, ATK, timegap, …`, where the BTN+TIME pair
+after an ATK is its active-phase window. That is where the frame data hides:
+**startup / active / recovery is the sum of the `BTN+TIME` cells between ATKs**.
 
 ### Literal encoding (packed float args)
 
@@ -379,20 +383,44 @@ FP16 format. `LuxMoveVM_DecodeLiteralArg @ 0x1402FC560` does the decode:
 - the literal `0x0000` is a short-circuit for `0.0f` (otherwise the decoder
   would emit `0x38000000` ≈ `7.63e-6f`).
 
-Denormals / Inf / NaN are NOT specially handled — the shipping bytecode
-only uses finite values. Authoring new bytecode: if you want to emit a
-float literal `x` from a packing tool, pack as `pack_fp16(abs(x))` then
+Denormals, Inf, and NaN are not handled specially — the shipping bytecode
+only uses finite values. When authoring new bytecode, to emit a float
+literal `x` from a packing tool, pack `pack_fp16(abs(x))` and then
 negate the resulting short if `x < 0`.
 
 ### BTN+TIME pair (the "hold this input for N frames" primitive)
 
-First cell: `op_high = 0x1xxxx`. Low bits encode the button-mask. The bits map
-to these mnemonics (`_W _1.._9 _A _B _K _G _C _NOGUARD`) — exact bit layout
-visible in the `strncat_s` sequence inside the VM dumper.
+First cell: `op_high = 0x1xxxx`. Low 16 bits encode the button-mask using
+**numpad-style direction notation** + the three attack buttons + Guard:
+
+| Bit | Mask | Token | Meaning |
+|---:|------:|-------|---------|
+| 0  | 0x0001 | `_W` | Walking (held-direction modifier) |
+| 1  | 0x0002 | `_1` | Down-back |
+| 2  | 0x0004 | `_2` | Down (crouch) |
+| 3  | 0x0008 | `_3` | Down-forward |
+| 4  | 0x0010 | `_4` | Back |
+| 5  | 0x0020 | `_5` | Neutral (no direction) |
+| 6  | 0x0040 | `_6` | Forward |
+| 7  | 0x0080 | `_7` | Up-back |
+| 8  | 0x0100 | `_8` | Up |
+| 9  | 0x0200 | `_9` | Up-forward |
+| 10 | 0x0400 | `_A` | A (horizontal slash) |
+| 11 | 0x0800 | `_B` | B (vertical slash) |
+| 12 | 0x1000 | `_K` | K (kick) |
+| 13 | 0x2000 | `_G` | G (guard) |
+| 14 | 0x4000 | `_NOGUARD` | Unblockable-attack marker |
+| 15 | 0x8000 | `_C` | Charge / Critical Edge |
+
+So a BTN+TIME mask of `0x0840` = `_6 | _B` = numpad notation **6B** (Mitsurugi's
+canonical mid). `0x2400` = `_A | _G` = `AG` (Guard Impact attempt).
+
+Source: emitting code at `LuxMoveVM_ExecuteAndDumpOpcode @ 0x140365900` (the
+`strncat_s` sequence verifies each bit's mnemonic).
 
 Second cell: time value (reinterpreted as float; stored at `this+0x26B0`).
 
-The unit is *game frames*, 1.0f = 1 frame. (Scaled by
+The unit is *game frames* — `1.0f` = 1 frame. (It is scaled by
 `g_LuxMoveVM_UnitsPerInt @ 0x143E89FD4` where int comparisons happen in the IF
 subject branch.)
 
@@ -403,9 +431,9 @@ belong to the same ATB. The ATB terminates when the next cell has a `0x4xxxx`
 upper half that isn't `0x40001`.
 
 Each yarare cell is an **id** into the per-character yarare table. The yarare
-id tells the engine *which hit-reaction animation* the opponent plays — and that
+id tells the engine *which hit-reaction animation* the opponent plays, and that
 is exactly what determines **on-hit** and **on-counter-hit** frame advantage.
-In SC6, frame advantage isn't stored on the attacker's move — it's stored on
+In SC6, frame advantage is not stored on the attacker's move — it is stored on
 the *defender's hit-reaction*, so `ATK.yarare_onhit` → `Yarare[id].Recovery -
 Attacker.Recovery`. For a website, either export the computed delta per yarare
 id or expose both raw numbers.
@@ -430,10 +458,10 @@ per-character tuning tables.
 
 ### Condition-flag ring (on the chara, not the command player)
 
-Each IF subject in `0x60007..0x60058` reads one `uint32`/`int32`/`float` slot
+Each IF subject in `0x60007..0x60058` reads one `uint32` / `int32` / `float` slot
 inside `chara+0x19F0 .. chara+0x1A64`. The full subject → chara-offset map is
-in the plate comment on `0x140365900`. The ring is zeroed by the `start!`
-opcode of every move, so these are **per-move transient flags** (e.g.
+in the plate comment on `0x140365900`. The `start!` opcode of every move zeroes
+the ring, so these are **per-move transient flags** (e.g.
 "opponent has been hit by this move's first attack", "we are in a stance").
 
 ### IF predicate families — the six test kinds
@@ -441,7 +469,7 @@ opcode of every move, so these are **per-move transient flags** (e.g.
 The `class` cell in an IF opcode selects one of six native predicate
 functions. The first three are near-identical state-id lookups in
 `g_LuxMoveStateTable @ 0x1440F4750`; the last three pull real game
-state (range, geometry, move-class pair) from the chara and its
+state — range, geometry, move-class pair — from the chara and its
 opponent.
 
 | Class | Predicate | RVA | Shape |
@@ -468,10 +496,10 @@ before falling back to the linear scan:
 | family C | row 28 | `0x1440F4980` | `0x1C` |
 
 If neither the fast-path row nor the linear scan finds the state id, the
-predicate substitutes the sentinel state-id `0x2A` (reserved "not found"
-marker) so the chara-state compare can't accidentally match. Modders
-repointing state-table entries should preserve row order for the fast
-paths to keep working.
+predicate substitutes the sentinel state-id `0x2A` (the reserved "not found"
+marker) so the chara-state compare cannot accidentally match. Modders
+repointing state-table entries should preserve row order to keep the fast
+paths working.
 
 ### Move-class pair descriptor (IF class F)
 
@@ -501,16 +529,16 @@ The bucket rule (same for self and opp):
 | 5      | — | (in-range but bucket stays 0; it's the "mutual-horizontal" probe key) |
 
 `ClassifyMovePairKind @ 0x140394BB0` maps the (self, opp) MoveClass pair
-to a small integer kind (0..7) used for yarare/frame-data lookups —
+to a small integer kind (0..7) used for yarare / frame-data lookups —
 `horizontal vs horizontal → 7`, `kick vs throw → 2`, etc. When invoked
 in `nMode == 2` (combat resolution) it additionally refines the kind by
-`bCounterHit` (CH inverts certain kind-7 pairings to 0/6). The full map
+`bCounterHit` (a CH inverts certain kind-7 pairings to 0/6). The full map
 is in the Ghidra plate comment on that function.
 
 ### IF class-F token cases (`LuxMoveVM_CompareMoveClassName`)
 
 `LuxMoveVM_CompareMoveClassName @ 0x140394E30` takes the 7-u32 pair
-descriptor plus a **class-name token** from bytecode in `[1..18]` and
+descriptor plus a **class-name token** (from bytecode, in `[1..18]`) and
 dispatches on `token - 1`:
 
 | Token | Checks |
@@ -535,7 +563,7 @@ by `chara+0x23C`).
 ### Opponent & self position access (runtime-verified chara offsets)
 
 Reverse-engineering `LuxMoveVM_CheckRangeOrDistance` at `0x140365140`
-confirmed several chara-class field locations that weren't previously
+confirmed several chara-class field locations that were not previously
 documented:
 
 | Chara offset | Type | Purpose |
@@ -588,17 +616,17 @@ documented:
 
 The **opponent pointer at `chara+0x973E8`** is the critical correction.
 Earlier versions of this page and of `structures.md` described
-`chara+0x390` as the opponent pointer (on the basis of Ghidra
-annotations that turned out to be wrong for this build). Runtime
+`chara+0x390` as the opponent pointer, on the basis of Ghidra
+annotations that turned out to be wrong for this build. Runtime
 class-name introspection shows `chara+0x390` is actually
-`WeaponMesh0` (a `USkeletalMeshComponent*`), and `LuxMoveVM_CheckRangeOrDistance`
-dereferences `chara+0x973E8 → +0xA0/+0xA8` to read opponent
+`WeaponMesh0` (a `USkeletalMeshComponent*`); `LuxMoveVM_CheckRangeOrDistance`
+dereferences `chara+0x973E8 → +0xA0/+0xA8` to read the opponent's
 world-space position for range checks.
 
 ### Spatial acceleration chain (call graph underneath predicates D and E)
 
 Predicates D (`CheckRangeOrDistance`) and E (`CheckAngleOrGeometry`) are the only
-two families that actually touch the arena geometry. They both fan out through
+two families that actually touch the arena geometry. Both fan out through
 the same helpers into a single shared acceleration grid:
 
 ```
@@ -631,21 +659,22 @@ Key globals on the shared layer (see `structures.md` §
   edge-cross-product scratch for the point-in-triangle step. **NOT thread safe.**
 
 The triangle entries the grid holds are **arena frame walls and floor tris**,
-not character hitboxes. That's why these two predicates flag moves like "are you
-close enough to the ring-out edge to use this ring-throw" or "is there a wall
-behind the opponent for this wall-splat". They do **not** resolve move hit detection.
+not character hitboxes. That is why these two predicates answer questions like
+"is the chara close enough to the ring-out edge to use this ring-throw" or "is
+there a wall behind the opponent for this wall-splat". They do **not** resolve
+move hit detection.
 
-> If you're instrumenting the geometry chain, the cheapest single-detour point
-> is `LuxBattle_TryTraceSegmentAgainstBounds` (0x140314BC0) — it's called by
-> both predicates and its parameters are the fully-baked segment + filter tags.
+> If you are instrumenting the geometry chain, the cheapest single-detour point
+> is `LuxBattle_TryTraceSegmentAgainstBounds` (0x140314BC0) — both predicates
+> call it, and its parameters are the fully-baked segment plus filter tags.
 
 ---
 
 ## Stances
 
-Stances are **not** a separate type — in SC6 they're just moves tagged with
+Stances are **not** a separate type. In SC6 they are just moves tagged with
 `ELuxBattleMoveCategory::SpecialStance` and/or `ELuxBattleMoveEffectType::SpecialStance`,
-whose command-script doesn't terminate after the animation. While the stance
+whose command-script does not terminate after the animation. While the stance
 move is queued, the command player keeps its condition-flag ring alive, and
 follow-up inputs dispatch into *different* moves via the IF branches.
 
@@ -670,8 +699,8 @@ each stance's entry move — the "tree" is implicit in the bytecode.
 Crucial point for a frame-data website: SC6 does **not** store
 `{on_hit, on_ch, on_block}` as three integers on the move. It stores:
 
-1. Per ATK cell: `(power, range, speed, dir_mask)`. `speed` is the attack's
-   startup/active window.
+1. Per ATK cell: `(power, range, speed, dir_mask)`, where `speed` is the
+   attack's startup/active window.
 2. Per ATB cell: a set of **yarare ids** — which reaction the opponent plays.
    These include separate ids for on-hit vs counter-hit vs low-parry etc.
 3. In the character-attribute tables (`g_LuxCharaAttrTable_*`): the actual
@@ -700,7 +729,7 @@ the bytecode.
 The "yarare" (やられ — defender's hit-reaction) pipeline runs on the
 defender side, parallel to but distinct from the attacker's move-VM. It
 decides which hit-reaction animation the defender plays, when to chain
-into follow-up reactions, and when to commit damage.
+into a follow-up reaction, and when to commit damage.
 
 ### Pipeline
 
@@ -718,11 +747,11 @@ into follow-up reactions, and when to commit damage.
 ### `LuxMoveVM_TickPickAndDispatchReaction @ 0x1402DEF50`
 
 Per-tick reaction picker. Reads the opponent's yarare table at
-`opp+0x10 + idx*0x12` (entries 0x12 bytes apart) and walks it looking for the
+`opp+0x10 + idx*0x12` (entries 0x12 bytes apart) and walks it for the
 first entry whose `LuxBattle_CheckYarareReactionGate @ 0x140362E70` returns
-non-zero. If no gate matches, falls through to a probabilistic roll picking
-between yarare `0x21` (default) and yarare `0x42` (back-breaker / crit, ~1/3).
-Output is `vmCtx->dwPostEffectYarareId` + `dwPostEffectBodyPart`, then it
+non-zero. If no gate matches, it falls through to a probabilistic roll between
+yarare `0x21` (default) and yarare `0x42` (back-breaker / crit, ~1/3).
+The output is `vmCtx->dwPostEffectYarareId` + `dwPostEffectBodyPart`; it then
 calls the dispatcher.
 
 Side effects beyond the obvious:
@@ -796,7 +825,7 @@ Output side effects (vmCtx writes):
 | `+0x2B68 / +0x2B74 / +0x2B8C / +0x2BC0 / +0x2BD0 / +0x2C44 / +0x2C5C` | per-handler sub-mode flags | values 4/8/9 etc. |
 | `+0x2BD0..+0x2BD8` → `+0x2BE8..+0x2BF0` | epilogue mirror | |
 
-Per-character variation enters via `chara+0x23C` (CharaKindByte) only —
+Per-character variation enters via `chara+0x23C` (CharaKindByte) only,
 **not** `chara+0x250`. Two per-character tables drive most tuning:
 
 - `DAT_14470E330` stride `0x180`, indexed by CharaKindByte. Holds 32 entries
@@ -815,7 +844,7 @@ Plus the lazy-allocated per-intensity scratch block:
 
 The gate function. Takes (ctx, self chara, gate id `1..0x87`) and returns
 `1` if the candidate yarare entry is valid for the current battle context.
-Some 135 cases, but they group into roughly:
+There are some 135 cases, but they group roughly as:
 
 - **Direct state checks** (cases `1..2`, `0x27..0x2C`, `0x73..0x82`,
   `0x85..0x86`) — read a single chara state byte/short.
@@ -831,9 +860,9 @@ Some 135 cases, but they group into roughly:
   `0x6A..0x6D`, `0x83..0x84`) — terrain/category/perfect-guard wiring.
 - **Battle-phase / round gates** (`0x75..0x76`).
 
-Modders adding new yarare entries author them in pairs of `{yarareId,
-weight, bodyPart}` at `chara+0x10 + idx*0x12`, then pick a gate id from
-`1..0x87` to filter when the entry applies. The first match wins.
+Modders adding new yarare entries author them as `{yarareId, weight,
+bodyPart}` triples at `chara+0x10 + idx*0x12`, then pick a gate id from
+`1..0x87` to control when the entry applies. The first match wins.
 
 ### `LuxMoveVM_TickActiveYarareReaction @ 0x14035EF30`
 
@@ -843,8 +872,8 @@ functions named `LuxMoveVM_TickYarare_<id>`. Returns 0 (continue) or
 non-zero (signal pick-and-dispatch to abort and re-evaluate next tick).
 
 The per-id tickers handle stagger windups, launch-arc trajectories,
-ring-out fall, wall-bounce, get-up, parry recovery, etc. — each is a
-short state-machine that mutates lane state and ring-history. They share
+ring-out fall, wall-bounce, get-up, parry recovery, and so on — each is a
+short state machine that mutates lane state and ring-history. They share
 two helper tickers:
 
 - `LuxMoveVM_TickWithAirStageTracking` — for reactions that need airdance
@@ -856,8 +885,8 @@ two helper tickers:
 
 ## Per-character move bank layout
 
-Every chara has a single binary blob of bytecode + cell + event data
-hanging off `chara+0x455C0`. Resolved by `LuxMoveVM_ResolveBankSlot @
+Every chara has a single binary blob of bytecode, cell, and event data
+hanging off `chara+0x455C0`. It is resolved by `LuxMoveVM_ResolveBankSlot @
 0x1402FC400`.
 
 ### `FLuxMoveBank` (header, 48 bytes at `chara+0x455C0`)
@@ -880,10 +909,10 @@ hanging off `chara+0x455C0`. Resolved by `LuxMoveVM_ResolveBankSlot @
 
 ### `FLuxMoveBankSlotView` (slot record view, 0x48 bytes; offset 0x30 into the actual slot)
 
-`ResolveBankSlot` returns `bank + (StartIdx + slot) * 0x48 + 0x30` —
-note the `+0x30` is intentional: the structure straddles two adjacent
-slot records to let the engine read related fields with one dereference.
-**All offsets below are relative to the returned pointer**, not the
+`ResolveBankSlot` returns `bank + (StartIdx + slot) * 0x48 + 0x30`. The
+`+0x30` is intentional: the structure straddles two adjacent slot records
+so the engine can read related fields with one dereference.
+**All offsets below are relative to the returned pointer**, not to the
 absolute slot start.
 
 | Offset | Size | Type | Field | Notes |
@@ -904,8 +933,8 @@ absolute slot start.
 The variant table at `+0x3C` is the per-variant cell-bone-id picker:
 calling `LuxMoveVM_SetActiveMoveSlot(chara, variantIdx)` from
 script-side reflection re-resolves `chara+0x44058` to a different
-`AttackCell`. (See [Cell lifetime](hitbox-system.md#cell-lifetime-one-cell-per-move)
-for why this is rarely exercised at runtime.)
+`AttackCell`. See [Cell lifetime](hitbox-system.md#cell-lifetime-one-cell-per-move)
+for why this is rarely exercised at runtime.
 
 ### Sub-table inventory
 
@@ -933,41 +962,74 @@ for why this is rarely exercised at runtime.)
 ## Inner stack-based predicate VM
 
 Distinct from the outer move-script VM at `LuxMoveVM_ExecuteAndDumpOpcode`,
-SC6 also has a tiny **stack-based predicate interpreter** at
-`LuxMoveVM_ExecuteBytecode @ 0x1402E5A30`. It evaluates predicate /
-calc-expression bytecode embedded in move scripts, called via
-`LuxMoveVM_RunBytecodeScript @ 0x1402E67B0` and behind opcode `0x25
-CALLCOND` in its own bytecode.
+SC6 also has a tiny **stack-based interpreter** at
+`LuxMoveVM_ExecuteBytecode @ 0x1402E5A30`. Despite the historic "predicate VM"
+label, it is the **authoring engine for per-move scripts**: it evaluates
+predicates AND fires side effects — it registers effect ops onto the lane's
+effect-op table, reads and writes per-player and per-script variable banks,
+calls nested bank-slot scripts, and **schedules move-to-move transitions** by
+writing `lane[+0x5A]`. The "predicate" label fits only the read-only sub-opcodes
+inside `CALLCOND funcIdx=0x00/0x01`; the dispatch table is much wider.
 
-Encoding: 1-byte opcodes with optional 2-byte operands; high bit (`0x80`)
-of opcode terminates the inner loop and pushes the accumulator.
+### Three call sites
 
-VM globals (all int16):
+The interpreter is wrapped by `LuxMoveVM_RunBytecodeScript @ 0x1402E67B0`, which
+in turn is called from three concrete places:
+
+| Caller | Address | When |
+|---|---|---|
+| `LuxMoveVM_TransitionToMove` | `0x1402FE350` | Once at move start (the slot's `dwBytecodeOffset_38` script — registers effect ops, sets up state, may schedule transitions) |
+| `LuxMoveVM_ExecuteOpStream` | `0x1402FDEA0` | Per-tick on each lane (re-runs the same `dwBytecodeOffset_38`); also dispatches the effect-op table at `lane+500` |
+| `LuxMoveVM_RunSecondaryLaneScript` | `0x1402FE1C0` | When swapping the secondary lane during a primary-lane transition |
+
+Plus an indirect call site:
+
+- `LuxMoveVM_ExecuteBankSlotScript @ 0x1402FCC30` — invoked via CALLCOND
+  funcIdx=0x0D from inside another script; lets one script chain into another
+  bank slot's bytecode. **The single most common opcode in shipping bytecode**
+  (Cervantes 3B's slot 0x13C alone calls 8 sub-scripts through it).
+
+### Encoding
+
+1-byte opcodes with optional 2-byte operands. Setting bit `0x80` on the opcode
+also pushes ACC (the result of the just-executed op) onto the stack after it
+runs. The function **returns** only on opcodes 0x02 / 0x05 / 0x06 / 0x07 / 0x08
+— the high bit alone does not exit.
+
+### VM globals (all int16, per-player or per-bytecode)
 
 | Address | Name |
 |---|---|
-| `0x14470D5C0` | global var array (0xF0 int16 slots, indices 0..0xEF) |
-| `0x14470D5D0` | current ACC value (current top-of-stack) |
+| `0x14470D5C0` | per-player global var bank base — set per-call by RunBytecodeScript to `&g_LuxBattle_CharaKindStatureTable + chara[+0x23C]*0xF0` |
+| `0x14470D5D0` | current ACC value (also "current stack top" used by stack reads) |
 | `0x14470D5D2` | stack pointer (ring index) |
 | `0x14470D5D4` | stack mask (e.g. `0x0F` for 16-entry ring) |
 | `0x14470D5D8` | stack buffer base |
 | `0x14470DDE0` | break/interrupt flag (set by `0x07 RETBRK` / `0x08 BRK`) |
+| `0x14470DE68` | `g_LuxMoveVM_DeferredTransitionScheduleFrame` (set by OpcodeIf_15) |
+| `0x14470DE6C` | `g_LuxMoveVM_DeferredTransitionScheduleFlag` (set by OpcodeIf_15) |
+| `0x14470DEC0` | `g_LuxMoveVM_DeferredTransitionCommitFlag` |
+| `0x14470DEA0..0xDEB8` | per-call save/restore window for VM context fields (used so that DecodeVariadicStreamArgs can reach the active lane without clobbering the outer caller's context) |
 
-Variable addressing:
+### Variable addressing
 
-- `varIdx 0x00..0xEF` → globals at `0x14470D5C0`
-- `varIdx 0xF0..0xFF` → local frame (16 int16 slots, passed as `param_4`)
-- `varIdx 0x100+` → stack-relative (`ring[(idx - 0x100 + SP) & mask]`)
+- `varIdx 0x00..0xEF` → per-player globals at `g_LuxBattle_CharaKindStatureTable + chara[+0x23C]*0xF0 + varIdx*2`
+- `varIdx 0xF0..0xFF` → local frame (16 int16 slots, copied from caller args via memcpy in RunBytecodeScript)
+- `varIdx 0x100..0x10F+` → stack-relative ring (`ring[(idx - 0x100 + ACC_idx) & mask]`) — these are **persistent across CALLCONDs** and the primary slot helpers use to pass computed move-ids between scripts (see Cervantes 3B example below)
 
-Opcode reference (op & 0x7F):
+### Opcode reference (op & 0x7F)
 
 | Op | Mnemonic | Operand | Effect |
 |---:|---|---|---|
-| `0x01` | `PUSH_IMM` | u16 | push 16-bit literal |
+| `0x00` | `NOP` / pad | — | no-op |
+| `0x01` | `PUSH_IMM` | u16 | push 16-bit literal (only if non-zero) |
+| `0x02` | `RET2` | — | return ACC (also routes to caseD_2 epilog) |
 | `0x05/06` | `RET` | — | pop and return stack top |
 | `0x07` | `RETBRK` | — | pop+return, set break flag = -1 |
 | `0x08` | `BRK` | — | set break flag = -1 |
+| `0x09` | `SET_ACC_U16` | u16 | ACC = u16 (variant) |
 | `0x0A` | `LOAD` | u16 varIdx | load var → ACC |
+| `0x0B` | `SET_ACC_U16` | u16 | ACC = u16 (variant; **most-used** authoring op — pairs with `+0x80 push` to push immediates onto the stack before a CALLCOND) |
 | `0x0C..0x10` | `ADD/SUB/MUL/DIV/MOD` | — | top two stack values |
 | `0x11` | `NEG` | — | -stack[sp] |
 | `0x12/0x13` | `POSTINC / POSTDEC` | u16 varIdx | var ± 1; ACC = old |
@@ -975,14 +1037,151 @@ Opcode reference (op & 0x7F):
 | `0x19` | `STORE` | u16 varIdx | pop → var |
 | `0x1A..0x1E` | `ADD/SUB/MUL/DIV/MOD_ASSIGN` | u16 varIdx | var op= top |
 | `0x1F..0x24` | `EQ/NE/LT/LE/GT/GE` | — | int comparisons |
-| `0x25` | `CALLCOND` | u8 funcIdx, u8 argc | call into `PTR_LuxMoveVM_EvaluateIfOpcode_143E83A90[funcIdx]` |
+| `0x25` | `CALLCOND` | u8 funcIdx, u8 argc | pop `argc` shorts into `local_68[argc-1..0]` (REVERSE order: `local_68[0]` = oldest pushed, `local_68[argc-1]` = top of stack); call `g_LuxMoveVM_OpcodeIfDispatchTable[funcIdx](pVM, argc, local_68)`; ACC = return |
 | `0x26/0x27` | `PUSH_ACC / POP_ACC` | — | accumulator/stack swap |
-| `0x28/0x29` | `JNZ / JZ` | u16 PC | conditional branch |
+| `0x28/0x29` | `JNZ / JZ` | u16 PC | conditional branch (pops top) |
+| `0x2A` | `JMP` | u16 PC | unconditional jump |
 
-This VM is invoked indirectly by the outer VM's IF arm — but only via
-`CALLCOND`. The IF predicate dispatch table at
-`PTR_LuxMoveVM_EvaluateIfOpcode_143E83A90` indexes ~120 native predicate
-functions; `0x25` is the bridge between the two interpreters.
+### CALLCOND dispatch table (`g_LuxMoveVM_OpcodeIfDispatchTable @ 143E83A90`)
+
+A 38-entry array of native function pointers, indexed by the `funcIdx` byte of
+the CALLCOND opcode. This is where the inner VM "escapes" into native code to
+read state, schedule transitions, register effect ops, and call nested scripts.
+
+| `funcIdx` | Function | Address | Role |
+|---:|---|---|---|
+| `0x00`, `0x01` | `LuxMoveVM_EvaluateIfOpcode` | `0x1403732F0` | Master predicate dispatcher (~250 sub-opcodes — `local_68[0]` is the sub-op id, `[1..]` are args). Read-only. See [Predicate sub-opcodes](#callcond-predicate-sub-opcodes-funcidx-0x000x01) below. |
+| `0x02`, `0x03` | `LuxMoveVM_DispatchEffectOp` | `0x140376B20` | Outer effect VM (~60 opcodes — VFX spawn, palette swap, anchor probes). |
+| `0x04`, `0x19`, `0x1A` | `LuxMoveVM_OpcodeIf_RegisterEffectOpDedup_04` | `0x1402FD4A0` | Inserts `(triggerFrame, funcId, args[])` into the active lane's [16-slot `aEffectOpTable_1F4`](structures.md#fluxmovelane_effectop-36-bytes); deduplicates duplicates. |
+| `0x05`, `0x06`, `0x07`, `0x08` | `LuxMoveVM_DecodeVariadicStreamArgs` (TransitionAuthor) | `0x1402FC930` | **The lane-transition writer.** Writes `lane[+0x5A] = NextMoveID` (immediate path) or `lane[+0xB4]` (deferred path when OpcodeIf_15 has set the schedule flag). First popped arg = move id; second = timing index; third = threshold index; rest = motion args. |
+| `0x09` | `LuxMoveVM_OpcodeIf_09_LatchCharaStateFlag` | `0x1402FD720` | Latches a chara state flag (paired with OpcodeIf_0A). |
+| `0x0A` | `LuxMoveVM_OpcodeIf_0A` | `0x1402FD7D0` | Companion to 0x09. |
+| `0x0C` | `LuxMoveVM_OpcodeIf_0C` | `0x1402FDA50` | (TBD) |
+| `0x0D` | `LuxMoveVM_ExecuteBankSlotScript` | `0x1402FCC30` | **Nested-script call.** First popped arg = bank slot id (packed `(bank<<12)\|slot`); remaining args become the called script's `LOAD_VAR 0xF0..0xFF` local frame. Used pervasively by character scripts to chain into shared bank-3 helpers. |
+| `0x0E`/`0x0F`/`0x10`/`0x11`/`0x14` | `LuxMoveVM_OpcodeIf_*` | `0x1402FD3A0` etc | small accessor helpers |
+| `0x15` | `LuxMoveVM_OpcodeIf_15_ScheduleTransitionScript` | `0x1402FCD30` | **Deferred-transition wrapper.** Sets `g_LuxMoveVM_DeferredTransitionScheduleFlag = 1`, then calls ExecuteBankSlotScript; any TransitionAuthor inside writes `lane[+0xB4]` (deferred) instead of `lane[+0x5A]` (immediate). Drained by OpcodeIf_16 next tick. |
+| `0x16` | `LuxMoveVM_OpcodeIf_16_DrainPendingTransition` | `0x1402FCDE0` | **Drains** `lane[+0xB4]` and calls `LuxMoveVM_TransitionToMove` (clears `chara[+0x16EB]` multi-hit lockout as a side-effect). |
+| `0x17`/`0x18` | `LuxMoveVM_OpcodeIf_17/18` | `0x1402FCF10`/`0x1402FCF60` | Save/restore deferred-transition staging. |
+| `0x1A..0x1E` | `LuxMoveVM_OpcodeIf_1A..1E` | `0x1402FCDC0..1402FD480` | Misc lane-state mutators. |
+| `0x25` | `LuxMoveVM_EvaluateIfOpcodeWithHeader` | `0x1402E5830` | Calls `EvaluateIfOpcode` with sub-op `0x0008` prepended (i.e. invokes the "frame-window match" predicate of family 8 with the script's argc as the rest). |
+
+### CALLCOND predicate sub-opcodes (funcIdx 0x00/0x01)
+
+Inside `LuxMoveVM_EvaluateIfOpcode`, `local_68[0]` selects which of the ~250
+sub-opcodes runs. Highlights for instrumentation:
+
+| Sub-op | Reads | Args | Returns |
+|---:|---|---|---|
+| `0x05` | `chara->dwGuardControlWord` + motion-history ring at `chara+0x2190` | `[1]=motion mask, [2]=min match count, [3]=scan depth` | 1 if motion sequence matched in window |
+| `0x06` | `chara+0x2192` motion ring (OR-fold) | `[1]=motion mask, [2]=ring depth` | flag-check result |
+| `0x08` | `lane+0x1C` (signed frame counter), `LuxMoveVM_CheckFrameInTimingWindow` | `[1..]=window samples` | 1 if any sample matches |
+| `0x09` | `*((*chara->field_0x455a0)+0x24)` (active-move scratch) | none | raw u16 |
+| `0x0A` | walks `+0xD8/+0xE0` prior-attack history slots | none | "did my last attack land?" |
+| `0x0B`/`0x0C` | `(&chara->field_0x16d0)[(short)args[1]]` (chara byte-flag table indexed by `+0x16D0..+0x170F`) | `[1]=flag idx` | byte (0x0C is the negation) |
+| `0x0E` | `*(ushort*)(lane+2)` | `[1]=move id` | **`opcodeArgs[1] == lane.moveId`** ("am I in move X?") |
+| `0x0F` | `lane+0` (low 16) | `[1]=class`/2 | move bank/category match |
+| `0x10` | `*((*chara->field_0x455a0)+0x26)` | none | raw u16 (active-move flag) |
+| `0x11` | `chara->field_0x24c` | `[1]` | self stance/sub-state == arg |
+| `0x14` | **`chara->flLeanForward` (chara+0x159C, the cached XZ self↔opp distance)** | `[1]=MIN, [2]=MAX, sentinel 0x7FFF disables a side` | 1 when MIN ≤ distance ≤ MAX (after dividing through `g_LuxMoveVM_AtkRangeDivisor`) — **the horizontal range-band check used by auto-extension scripts** |
+| `0x18` | `chara->bCharaKindByte` | `[1]` | character-id match |
+| `0x1E` | calls `LuxBattleChara_QueryHeightAboveTerrain` | `[1]` | "am I far enough above floor" |
+| `0x35` | `pOppChara->nDefenseModeAtLastHit` | `[1..N]` | OR of equality checks (not move id) |
+| `0x54` | `*((*chara->field_0x455a0)+0x28)` | none | raw u16 (active-move flag) |
+| `0x9C` | `chara->flAngleScratch15A0` | `[1]=MIN, [2]=MAX, 0x7FFF sentinel` | vertical Y-axis variant of 0x14 |
+| `0x13B3` | `chara->field_0x444F2 + opcodeArgs[1]*0x468` | `[1]=lane idx 0..2` | per-opponent ushort flag |
+| `0x13B8`/`0x13BA` | `chara->dwAtkRangeRaw1/2 * AtkRangeDivisor` | none | raw range value |
+| `0x13BD` | `pOppChara->field_0x43E08` | `[1]=threshold` | scaled-compare |
+| `0x13CF` | generic 5-arg comparator (selects one of 5 chara floats, with comparator op + threshold) | `[1]=field, [2]=unit-flag, [3]=cmp-op, [4]=threshold` | result of compare |
+
+`LuxMoveVM_EvaluateIfOpcode` itself **never** writes `chara->dwCurrentMoveID`
+or `lane[+0x5A]`, and never calls `TransitionToMove` — it is purely a predicate
+evaluator. Side effects (transitions, effect-op registration, nested-script
+call) come from the OTHER funcIdx slots in the dispatch table.
+
+### How transitions actually fire
+
+1. A move-start or per-tick script runs `CALLCOND 0x07/0x05/0x08 (TransitionAuthor)`,
+   pushing a target move-id (literal or via `LOAD_VAR` from a stack/local var).
+   `DecodeVariadicStreamArgs` writes `pLane->nNextMoveID_5A` and a threshold
+   frame at `pLane->flTransitionThreshold_68`.
+2. On each subsequent tick, `LuxMoveVM_ExecuteOpStream` calls
+   `LuxMoveVM_CheckMoveTransitionTiming @ 0x1402FDD70`, which checks if
+   `pLane->flTransitionThreshold_68 <= other_lane.CurrentAnimFrame`. When the
+   threshold is met, it calls `LuxMoveVM_TransitionToMove(chara, laneIdx, nNextMoveID_5A, ...)`.
+3. The deferred path (via `OpcodeIf_15` wrapping a sub-script that contains a
+   TransitionAuthor) writes `pLane->nDeferredMoveID_B4` instead, and is drained
+   on the next tick by `OpcodeIf_16` calling `TransitionToMove` directly.
+
+The lane[+0x5A] override chain (priority high → low, all in `FLuxMoveLane`):
+
+| Field | Override condition |
+|---|---|
+| `nMoveIDOverrideMode2_60` | `chara+0x973E8 + 0x132C > 1` (mode-2 gate) |
+| `nMoveIDOverride16EB_5E` | `chara+0x16EB != 0` (multi-hit lockout) |
+| `nMoveIDOverride16FE_5C` | `chara+0x16FE != 0` |
+| `nNextMoveID_5A` | default — set by `DecodeVariadicStreamArgs` |
+
+### Indirect transitions (move id from a variable)
+
+Move ids passed to TransitionAuthor do not have to be literals. The bytecode
+pattern `LOAD_VAR 0x010N + CALLCOND 0x07 argc=N` reads a 16-bit move id from
+the **stack-relative variable bank** (vars `0x0100..` map to ring slots
+relative to the current stack pointer) and uses it as the transition target.
+This is the workhorse pattern for auto-extension moves: a helper script
+authors a move id into `STACK[0x0100]` based on some predicate result, then an
+ancestor or sibling script reads `STACK[0x0100]` back and transitions to it.
+
+In a 1 MB shipping move-bank file, expect ~1200 TransitionAuthor calls, of
+which ~57 are indirect (LOAD_VAR-driven) and the rest are literals.
+
+### Cervantes 3B (move 0x013C → 0x013D auto-extension) — worked example
+
+The 3B move slot pair is a textbook case of the indirect-transition pattern:
+
+- **Slot 0x013C** (cellBoneIndex `[0,0,0,0,0,0]` → cell 0 with the
+  non-attack-mask `0x0100000000000000`) is the **wind-up** that always plays
+  first.
+- **Slot 0x013D** (cellBoneIndex `[81, 82, -1, ...]` → real attack cells with
+  mask `0x0300000006000010`) is the **extended** version with the actual
+  damage windows.
+
+Slots 0x13C and 0x13D **share bytecode**: 0x13D's `dwBytecodeOffset_38` is
+exactly 0x9B bytes after 0x13C's, and 0x13C's bytecode terminates with a
+`RET2` at offset +0x9A — so the second half of 0x13C's bytecode IS slot 0x13D's
+per-tick script. Only the first 0x9B bytes — slot 0x13C's "extra" intro —
+distinguish the two.
+
+In that intro, slot 0x13C runs:
+
+```
+CALLCOND ExecBankSlotScript(0x305C, args=(0xFFFE, 0x7FFF, 0xFFFF, 0,0,0,0))
+```
+
+Helper slot 0x305C (file +0xC991B) at offset +0x0231 contains:
+
+```
+SET_ACC 0x0014   ; sub-opcode 0x14 (HORIZONTAL XZ band check)
+SET_ACC 0x7FFF   ; MAX = sentinel "no upper bound"
+SET_ACC_9 0x01F4 ; MIN = 500
+CALLCOND EvalIf argc=3
+```
+
+This is the range gate. When `chara->flLeanForward >= 500`, the script
+ORs `1` into a boolean and writes the caller's args F4-F6 (the long-range
+move-id triple) into STACK vars `0x0100/0x0101/0x0102`. When it fails, F0-F2
+(the close-range fallback `0xFFFE, 0x7FFF, 0xFFFF`) are written instead.
+
+A subsequent ancestor script reads `STACK[0x0100]` via `LOAD_VAR 0x0100` and
+issues `CALLCOND 0x07 TransitionAuthor argc=N`, which writes
+`pLane->nNextMoveID_5A = 0x013D`. `CheckMoveTransitionTiming` fires the
+transition once the wind-up animation reaches the threshold, and the user
+sees the move id flip from 0x13C to 0x13D mid-animation.
+
+The literal `0x013D` never appears in any TransitionAuthor push throughout the
+entire bank — only as `STORE var 0x0104` writes (file +0xC765D in slot 0x304E)
+and as `EvalIfWithHeader` predicate args. **Grepping for `8B 01 3D + CALLCOND
+TransitionAuthor` returns 0 hits.** Always trace through the indirect
+LOAD_VAR path when investigating "why does this move morph".
 
 ---
 
@@ -1006,6 +1205,22 @@ functions; `0x25` is the bridge between the two interpreters.
 | `0x1403732F0` | `LuxMoveVM_EvaluateIfOpcode` | ~120-arm switch evaluating a single IF-opcode subject token; NOT hit detection |
 | `0x140307BD0` | `LuxMoveVM_ResolveRangeAndAngleOffset` | decodes 3-short (range, angle, angle) into a world-space offset at chara+0x130; reads opponent position for direction-snap path |
 | `0x140344FC0` | `LuxMoveVM_ApplyMoveOffsetToChara` | wrapper around ResolveRangeAndAngleOffset that pulls overrides from opp+0x1D90 ring + applies per-axis scales |
+| `0x1402E5A30` | `LuxMoveVM_ExecuteBytecode` | inner stack-based interpreter — see [Inner stack-based predicate VM](#inner-stack-based-predicate-vm) |
+| `0x1402E67B0` | `LuxMoveVM_RunBytecodeScript` | wrapper that selects per-player var bank + copies args to the local frame, then calls ExecuteBytecode |
+| `0x1402E5830` | `LuxMoveVM_EvaluateIfOpcodeWithHeader` | dispatch slot 0x25 — calls EvaluateIfOpcode with sub-op 0x0008 prepended |
+| `0x1402FC400` | `LuxMoveVM_ResolveBankSlot` | resolves a packed `(bank<<12)\|slot` address into an `FLuxMoveBankSlotView*` |
+| `0x1402FC930` | `LuxMoveVM_DecodeVariadicStreamArgs` | dispatch slots 0x05/06/07/08 — **lane[+0x5A] writer** (immediate path) / **lane[+0xB4] writer** (deferred path); the canonical "TransitionAuthor" |
+| `0x1402FCC30` | `LuxMoveVM_ExecuteBankSlotScript` | dispatch slot 0x0D — nested-script call (resolves a bank slot + runs its bytecode with caller args). Most-used CALLCOND. |
+| `0x1402FCD30` | `LuxMoveVM_OpcodeIf_15_ScheduleTransitionScript` | dispatch slot 0x15 — wraps a sub-script in deferred-transition mode (any TransitionAuthor inside writes `lane[+0xB4]`) |
+| `0x1402FCDE0` | `LuxMoveVM_OpcodeIf_16_DrainPendingTransition` | dispatch slot 0x16 — drains `lane[+0xB4]`, calls TransitionToMove (clears `chara+0x16EB` multi-hit lockout) |
+| `0x1402FD4A0` | `LuxMoveVM_OpcodeIf_RegisterEffectOpDedup_04` | dispatch slots 0x04/0x19/0x1A — inserts an effect-op tuple into `lane->aEffectOpTable_1F4[16]` |
+| `0x1402FDD70` | `LuxMoveVM_CheckMoveTransitionTiming` | per-tick gate that fires `TransitionToMove` when `lane->flTransitionThreshold_68 <= other_lane.CurrentAnimFrame` |
+| `0x1402FDEA0` | `LuxMoveVM_ExecuteOpStream` | per-tick lane driver — runs CheckMoveTransitionTiming, walks the effect-op table, calls RunBytecodeScript, advances the lane frame |
+| `0x1402FE1C0` | `LuxMoveVM_RunSecondaryLaneScript` | runs the secondary lane's bytecode when the primary lane transitions |
+| `0x1402FCC10` | `LuxMoveVM_OpcodeIf_07_TransitionAuthor` | thin wrapper → `DecodeVariadicStreamArgs` (dispatch slot 0x07) |
+| `0x1402FCC20` | `LuxMoveVM_OpcodeIf_08_TransitionAuthor` | thin wrapper → `DecodeVariadicStreamArgs` (dispatch slot 0x08) |
+| `0x1402FCB80` | `LuxMoveVM_OpcodeIf_05_TransitionAuthor` | thin wrapper → `DecodeVariadicStreamArgs` (dispatch slot 0x05) |
+| `0x1402FCB90` | `LuxMoveVM_OpcodeIf_06_TransitionAuthor` | thin wrapper → `DecodeVariadicStreamArgs` (dispatch slot 0x06) |
 | `0x14031C610` | `LuxMoveSystem_StartMoveForChara` | seeds the chara's global VM slot with a new move + ticks once to fire the first opcode |
 | `0x14031C740` | `LuxMoveSystem_TickMoveAndAutoAdvance` | per-frame tick with auto-advance to the next-queued move on move-end |
 | `0x140367EE0` | `LuxMoveSystem_TickMove` | plain per-frame tick wrapper (no auto-advance) |
@@ -1052,11 +1267,18 @@ Tuning constants:
 | `0x144100820` | `g_LuxMoveVM_AnchorBitsetTable` | 0x14-byte rows of 97-bit anchor bitsets; row index = `(token - 0x58)` |
 | `0x1440F4750` | `g_LuxMoveStateTable` | 0x29 rows × 0x14 stride; state-id at row+0 |
 | `0x1440F3C98` | `g_LuxMoveStateTable_NotFoundSentinel` | address compared against the scan-result pointer; miss remaps to state-id `0x2A` |
+| `0x143E83A90` | `g_LuxMoveVM_OpcodeIfDispatchTable` | 38 × 8-byte function pointers — the inner-VM CALLCOND dispatch table (full map in [Inner stack VM](#callcond-dispatch-table-g_luxmovevm_opcodeifdispatchtable-143e83a90)) |
+| `0x143E8A504` | `g_LuxMoveVM_AtkRangeDivisor` | divides ATK range_raw to metres; also divides EvalIf sub-opcode 0x14 / 0x9C MIN/MAX inputs |
+| `0x14470DEA0` | `g_LuxMoveVM_DecodeStreamSavedActiveLane` | `DecodeVariadicStreamArgs` save/restore window for the active-lane pointer |
+| `0x14470DE6C` | `g_LuxMoveVM_DeferredTransitionScheduleFlag` | set by `OpcodeIf_15_ScheduleTransitionScript`; routes the next TransitionAuthor write to `lane[+0xB4]` instead of `lane[+0x5A]` |
+| `0x14470DE68` | `g_LuxMoveVM_DeferredTransitionScheduleFrame` | scheduled frame for the deferred transition |
+| `0x14470DEC0` | `g_LuxMoveVM_DeferredTransitionCommitFlag` | "commit immediately" flag for OpcodeIf_15 (set when `arg[2] == -2`) |
+| `0x14470DDE0` | `g_LuxMoveVM_TransitionThresholdNowFlag` | set by `DecodeVariadicStreamArgs` when threshold == current frame; triggers a re-check of CheckMoveTransitionTiming in the same tick |
 
 ### Effect-dispatcher opcode clusters (`LuxMoveVM_DispatchEffectOp`)
 
-The effect dispatcher is a ~60-opcode switch consumed once per move tick
-after the main VM loop decides to emit VFX / system-level effects. The
+The effect dispatcher is a ~60-opcode switch, consumed once per move tick
+after the main VM loop decides to emit VFX or system-level effects. The
 opcodes group into six clusters; anything outside these ranges falls
 through to the generic default path.
 
@@ -1086,7 +1308,7 @@ The dispatcher's relevant globals (useful hooks for VFX / palette mods):
 | `g_LuxBattle_BlockInteractiveOps` | — | byte flag; non-zero disables interactive-tier opcodes |
 | `g_LuxBattle_SystemBusy` | — | byte flag gating `0x2328..0x2337` engine ops |
 
-The dispatcher is the canonical entry point to add custom VFX: hook
+The dispatcher is the canonical entry point for adding custom VFX: hook
 `LuxMoveVM_DispatchEffectOp @ 0x140376B20` on opcode entry to intercept
 `(chara, opcode, args)` before the spawn happens, or add a new opcode by
 extending `g_LuxMoveVM_OpcodeExpansionTable` and the inner switch.
@@ -1148,14 +1370,14 @@ HUD/network hit-event struct.
 
 ### Recommended path (fastest to get to a website)
 
-1. **Dump the UE4 pak chunks**. Unreal 4.21-era cooked paks; use UnrealPak /
-   FModel. The `DA_MoveListTable_<StyleId>.uasset` files give you the Training-
-   Mode display text for every move (CommandTextID → localised move name →
-   AttributeTag/EffectTag). That alone is enough to stand up a browsable
-   move-list with categories.
-2. **Dump the command-script blob**. It ships as either an additional uasset
-   per style or a flat binary inside the battle-data pak (needs confirming —
-   follow loader at `ALuxBattleManager_PlayMove_Impl @ 0x140429840` → provider
+1. **Dump the UE4 pak chunks.** These are Unreal 4.21-era cooked paks; use
+   UnrealPak or FModel. The `DA_MoveListTable_<StyleId>.uasset` files give you
+   the Training-Mode display text for every move (CommandTextID → localised
+   move name → AttributeTag/EffectTag). That alone is enough to stand up a
+   browsable move list with categories.
+2. **Dump the command-script blob.** It ships either as an additional uasset
+   per style or as a flat binary inside the battle-data pak (needs confirming —
+   follow the loader at `ALuxBattleManager_PlayMove_Impl @ 0x140429840` → provider
    fetch).
 3. **Write a bytecode parser** that implements the opcode dispatch above. Emit
    one JSON blob per move with:
@@ -1170,15 +1392,15 @@ HUD/network hit-event struct.
 
 ### Minimum viable v0 (display-only)
 
-Just step 1 + localisation strings. This gets you a "move list per character"
-site with no frame data. It's still useful (no one has a clean SC6 notation
+Just step 1 plus localisation strings. This gets you a "move list per character"
+site with no frame data. It is still useful (no one has a clean SC6 notation
 reference online) and requires zero reverse-engineering beyond reading
 `FLuxBattleMoveListTableRow`.
 
 ### Risk / anti-tamper
 
 The move-list DataTables are **not** gated — they load at startup with no
-signature check. Editing them on disk requires pak-injection but reading them
+signature check. Editing them on disk requires pak injection, but reading them
 does not. The command-script blob loader has not been audited for checksums
 yet; read-only export should be safe.
 

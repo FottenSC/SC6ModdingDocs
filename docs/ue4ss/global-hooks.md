@@ -1,11 +1,11 @@
 # Global Hooks (ProcessEvent / Tick / LoadMap / …)
 
-UE4SS lets a C++ mod install engine-level callbacks that fire for every invocation of a
-named entry point — `UObject::ProcessEvent`, `UEngine::Tick`, `LoadMap`, etc. Unlike the
-per-UFunction script hooks you register with [`RegisterHook`](hooks.md), these sit below
-the VM and see *every* call. They're invaluable for diagnostics ("which UFunctions fire
-during this one game action?") and for intercepting BP-implementable events whose
-per-UFunction post-callback doesn't run.
+UE4SS lets a C++ mod install engine-level callbacks that fire on every invocation of a
+named entry point — `UObject::ProcessEvent`, `UEngine::Tick`, `LoadMap`, and the like.
+Unlike the per-UFunction script hooks you register with [`RegisterHook`](hooks.md), these
+sit below the VM and see *every* call. They're invaluable for diagnostics ("which
+UFunctions fire during this one game action?") and for intercepting BP-implementable
+events whose per-UFunction post-callback never runs.
 
 This page covers the pattern, the API, and the lifecycle gotcha that makes "Restart All
 Mods" crash in practice.
@@ -23,8 +23,8 @@ Mods" crash in practice.
 !!! note "Per-UFunction post-hooks silently fail for BlueprintImplementableEvents"
     When the game calls a `Receive*`-style event, UE4SS's BP-event path fires the *pre*
     callback but skips the *post*. A global `ProcessEvent` post-hook intercepts at the
-    engine level and **does** fire for BP events — reads the `parms` block after
-    dispatch, sees whatever the BP body wrote. See the ReceiveGetWeaponTip case in
+    engine level and **does** fire for BP events — it reads the `parms` block after
+    dispatch and sees whatever the BP body wrote. See the ReceiveGetWeaponTip case in
     [Trace System](../sc6/trace-system.md#receivegetweapontip-promising-looking-dead-end)
     for a concrete SC6 example — even though the hook works, the BP side is never
     implemented, so captured data is always zero.
@@ -64,17 +64,17 @@ so UE4SS can parallel-invoke other callbacks without extra sync.
 
 !!! warning "Don't use the deprecated overloads"
     There's a one-argument overload (`RegisterProcessEventPreCallback(ProcessEventCallback)`)
-    that returns `void`. It's tagged deprecated for a reason: **there's no returned ID, so
-    you can't unregister it**. On "Restart All Mods" your callback stays wired to the
-    engine and fires into freed memory. Always use the two-argument form with
-    `FCallbackOptions`.
+    that returns `void`. It's deprecated for a reason: **it returns no ID, so you can't
+    unregister it**. On "Restart All Mods" the callback stays wired to the engine and
+    fires into freed memory. Always use the two-argument form with `FCallbackOptions`.
 
 ## The "Restart All Mods" lifecycle gotcha
 
 UE4SS destroys and re-constructs C++ mods when the user invokes "Restart All Mods". If
-your mod registered global hooks with the deprecated API — or forgot to unregister them
-on the non-deprecated API — the old lambdas keep running, capturing `this` into the
-now-freed mod instance. Next `ProcessEvent` → access violation.
+your mod registered global hooks with the deprecated API — or used the non-deprecated API
+but forgot to unregister them — the old lambdas keep running, with `this` still captured
+into the now-freed mod instance. The next `ProcessEvent` then faults with an access
+violation.
 
 ### Symptoms
 
@@ -89,9 +89,9 @@ now-freed mod instance. Next `ProcessEvent` → access violation.
    `Register*Callback` in a member.
 2. **Add an `uninstall()` method.** Idempotent; called from the mod's destructor *before*
    any members it uses are destroyed.
-3. **Never capture `this` in the callback lambda.** Capture is lexically simple but it
-   puts the lifetime guarantee on *you*, and you can't guarantee it against reload. Use
-   a static `std::atomic<Self*>` instead.
+3. **Never capture `this` in the callback lambda.** Capturing it is lexically simple, but
+   it makes the lifetime *your* responsibility — and you can't guarantee that lifetime
+   against a reload. Use a static `std::atomic<Self*>` instead.
 4. **Order operations carefully in `uninstall()`.** Clear the static pointer first so any
    in-flight callback sees null and no-ops; then call `UnregisterCallback`.
 
@@ -148,9 +148,9 @@ void MyGlobalPeObserver::uninstall() {
 
 ## Pattern: the "ProcessEvent spy" (diagnostic)
 
-When you don't know *which* UFunction a game action is routing through, arm a global PE
-pre-hook that logs each **unique** `(UClass, UFunction)` pair it sees exactly once. Do
-the action, grep the log.
+When you don't know *which* UFunction a game action routes through, arm a global PE
+pre-hook that logs each **unique** `(UClass, UFunction)` pair exactly once. Perform the
+action, then grep the log.
 
 Cheap dedup key — XOR the class pointer and function pointer, both stable for their
 lifetimes:
@@ -166,17 +166,17 @@ Workflow:
 
 1. Arm the spy (hotkey, ImGui checkbox — anything).
 2. Stand idle 1–2 seconds while the log fills with "baseline" calls.
-3. Disarm, then arm again **without clearing** (the dedup set persists).
+3. Disarm, then arm again **without clearing** — the dedup set persists.
 4. Perform the game action you're investigating.
 5. Any fresh `[spy]` lines between the second arm and disarm are UFunctions **unique to
    that action** — breadcrumbs pointing at the right native code.
 
 ## Pattern: post-hook for BP events with out-params
 
-BlueprintImplementableEvents show up in your global post-hook with `parms` pointing at
-the post-BP-execution param block. Cast to the known layout (check size from the
-UFunction's `Z_Construct_UFunction_…` in Ghidra), filter by function name on first match
-to cache the UFunction pointer, and accumulate samples.
+BlueprintImplementableEvents arrive at your global post-hook with `parms` pointing at the
+param block as it stands after BP execution. Cast it to the known layout (get the size
+from the UFunction's `Z_Construct_UFunction_…` in Ghidra), filter by function name and
+cache the UFunction pointer on the first match, then accumulate samples.
 
 ```cpp
 struct ReceiveFooParams {
@@ -209,13 +209,14 @@ void on_pe_post(Hook::TCallbackIterationData<void>&,
 
 ## Performance considerations
 
-- When the spy's `m_active` flag is **false**, the callback is a single atomic load +
-  return. Negligible cost in a modern engine. Leave it installed; arm/disarm from UI.
+- When the spy's `m_active` flag is **false**, the callback is just an atomic load and a
+  return — negligible cost in a modern engine. Leave it installed and arm/disarm from UI.
 - When active, each callback takes a short mutex for the dedup set. UE4's `ProcessEvent`
-  traffic is in the tens of thousands of calls per second; you'll see a measurable
-  framerate dip while armed. That's fine for a diagnostic tool.
-- Filtered post-hooks (that do real work on a *specific* function only) bail with one
-  pointer comparison for the 99.99% of calls that don't match — effectively free.
+  traffic runs to tens of thousands of calls per second, so you'll see a measurable
+  framerate dip while armed. That's acceptable for a diagnostic tool.
+- Filtered post-hooks — those that do real work on one *specific* function — bail after a
+  single pointer comparison for the 99.99% of calls that don't match, so they're
+  effectively free.
 
 ## See also
 

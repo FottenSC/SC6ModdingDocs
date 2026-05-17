@@ -1,14 +1,14 @@
 # Trace System (weapon-trail VFX)
 
-The visual side of attacks. Drives the weapon-trail / sword-swoosh / particle effects you
-see whenever a weapon attack swings — sword arcs, axe sweeps, whip ribbons. **Not consulted
-by hit resolution.** The class names and the `FLuxCapsule` data type confused earlier
-documentation passes into thinking this was the hitbox system; it isn't.
+The visual side of attacks. This system drives the weapon-trail / sword-swoosh / particle
+effects you see whenever a weapon swings — sword arcs, axe sweeps, whip ribbons. **It is
+not consulted by hit resolution.** The class names and the `FLuxCapsule` data type led
+earlier documentation passes to mistake this for the hitbox system; it is not.
 
 For the actual hit detection — strikes, kicks, hurtboxes, pushboxes, grabs — see
-[Hitbox System (KHit linked lists)](hitbox-system.md). The two systems share an
-`AttackTag` coordination key (`FLuxCapsule.CapsuleType` here, `KHitBase.KindTag` over
-there) so a move script can open the trail and the hit window in lockstep, but they are
+[Hitbox System (KHit linked lists)](hitbox-system.md). The two systems share one
+coordination key, `AttackTag` (`FLuxCapsule.CapsuleType` here, `KHitBase.KindTag` over
+there), so a move script can open the trail and the hit window in lockstep. They are
 otherwise independent.
 
 ## At a glance
@@ -61,9 +61,9 @@ Sources: `ALuxCharaActorBase_Constructor @ 0x140440FB0`, `ALuxBattleChara_Constr
 
 ## Why `chara+0x388` no longer reaches a capsule container
 
-`ULuxBattleMoveProvider` is **absent** from the shipping binary — no
-`Z_Construct_UClass_ULuxBattleMoveProvider`, no string match for the class name. Functions
-that still encode the old `chara+0x388 → +0x30` walk are stale code paths:
+`ULuxBattleMoveProvider` is **absent** from the shipping binary — there is no
+`Z_Construct_UClass_ULuxBattleMoveProvider` and no string match for the class name. Any
+function that still encodes the old `chara+0x388 → +0x30` walk is a stale code path:
 
 - `ALuxTraceManager::GetTracePosition_Impl @ 0x1408D0BB0` — returns `false` for every real
   chara because `chara+0x388` is now `CharaMesh0`.
@@ -75,9 +75,8 @@ that still encode the old `chara+0x388 → +0x30` walk are stale code paths:
 | Class | Purpose | Size |
 |-------|---------|-----:|
 | `ALuxBattleChara` | Fighter actor; owns the `ALuxTraceManager*` at `+0x458`. | `0x568` |
-| `ALuxTraceManager` | Visual-only weapon-trail driver. **Hosts the `Active` / `Inactive` / `GetTracePosition` UFunctions** (registered via `Z_Construct_UClass_ALuxTraceManager_Properties @ 0x140C0BA90`). Earlier docs attributed these to `ALuxBattleChara` — that was wrong; the class header on the `_Impl` decompile and the UClass property registration both confirm `ALuxTraceManager`. | `0x408` |
+| `ALuxTraceManager` | Visual-only weapon-trail driver. **Hosts the `Active` / `Inactive` / `GetTracePosition` UFunctions** (registered via `Z_Construct_UClass_ALuxTraceManager_Properties @ 0x140C0BA90`). Earlier docs attributed these to `ALuxBattleChara`, which was wrong: both the class header on the `_Impl` decompile and the UClass property registration confirm `ALuxTraceManager`. | `0x408` |
 | `FLuxCapsule` | Capsule endpoint pair (visual). Layout known; container location uncertain on this build. | `0x50` |
-| `ALuxTraceManager` | Visual-only weapon-trail driver. | `0x408` |
 | `ULuxTraceComponent` | Visual ticking component, holds `ActiveTraces[]`. | `0x4B0` |
 | `ALuxTraceMeshActor` | Visual child actor, renders the trail. | — |
 | `ULuxTracePartsDataAsset` | Visual curves / material params. | — |
@@ -86,9 +85,9 @@ that still encode the old `chara+0x388 → +0x30` walk are stale code paths:
 
 Three reflected UFunctions, registered via
 `Z_Construct_UClass_ALuxTraceManager_Properties @ 0x140C0BA90`. Earlier
-docs attributed these to `ALuxBattleChara` — that was wrong. Reflection
-callers wanting to invoke them on a chara have to walk
-`chara+0x458 → ALuxTraceManager*` first, or call the `_Impl` directly via RVA.
+docs attributed these to `ALuxBattleChara`, which was wrong. To invoke them
+on a chara, a reflection caller must first walk
+`chara+0x458 → ALuxTraceManager*`, or else call the `_Impl` directly via RVA.
 
 | UFunction | `_Impl` | exec trampoline | Behaviour |
 |-----------|---------|-----------------|-----------|
@@ -96,8 +95,8 @@ callers wanting to invoke them on a chara have to walk
 | `Inactive(FTraceInactiveParam)` | `0x1408D1420` | `0x140C3FD00` | Closes the slot; starts trail fade. |
 | `GetTracePosition(byte, int32, out FVector, out FVector)` | `0x1408D0BB0` | `0x140C3F9B0` | **Stale** on this build — always returns `false`. |
 
-`Active` reads only the first byte of its 0x30-byte `FTraceActiveParam` for hit logic — that's
-the `AttackTag`. The remaining 47 bytes configure the visual trail.
+`Active` reads only the first byte of its 0x30-byte `FTraceActiveParam` for hit logic: the
+`AttackTag`. The remaining 47 bytes configure the visual trail.
 
 ```cpp
 struct FTraceActiveParam {  // sizeof == 0x30 (48 bytes)
@@ -137,8 +136,8 @@ World = M.rot * off + M.pos
 ```
 
 `g_LuxCmToUEScale @ 0x143E8A418` = `10.0f` (bit pattern `0x41200000`). Despite the symbol
-name, the factor is 10 — `LocalOffset` is stored in millimetres or a similar
-decimetre-scaled internal unit; multiplying by 10 lands the value in UE4 cm.
+name, the factor is 10: `LocalOffset` is stored in millimetres or a similar
+decimetre-scaled internal unit, and multiplying by 10 lands the value in UE4 cm.
 
 ## `FLuxCapsuleContainer` (0x40 bytes — legacy view)
 
@@ -151,16 +150,16 @@ decimetre-scaled internal unit; multiplying by 10 lands the value in UE4 cm.
 
 ## Where the live `FLuxCapsule` array is on this build
 
-Unconfirmed. The `FLuxCapsule` struct layout is correct, but the array of pointers is no
-longer reachable through `chara+0x388`. Best candidate is `ALuxBattleMoveCommandPlayer*` at
-`BattleManager+0x4C0` — registered name `"BattleMoveCommandPlayer"` via
-`Z_Construct_UClass_ALuxBattleMoveCommandPlayer @ 0x140953780`, exposes 5 UFunctions
+Unconfirmed. The `FLuxCapsule` struct layout is correct, but the pointer array is no
+longer reachable through `chara+0x388`. The best candidate is `ALuxBattleMoveCommandPlayer*`
+at `BattleManager+0x4C0` — registered name `"BattleMoveCommandPlayer"` via
+`Z_Construct_UClass_ALuxBattleMoveCommandPlayer @ 0x140953780`. It exposes 5 UFunctions
 (`GetMovePlayParam`, `IsPlaying`, `PlayMove`, `PlayMoveDirect`, `StopMove`) plus 5 reflected
 UPROPERTYs (`PlayData`, `Request`, `RequestInfo`, `PlayState`, `PlayStateInfo`) at
 `+0x390..+0x3D0`.
 
-Walk its fields for an 8-byte aligned pointer to a 0x40-byte container whose `+0x30..+0x3C`
-matches `FLuxCapsuleContainer` shape.
+Walk its fields for an 8-byte-aligned pointer to a 0x40-byte container whose `+0x30..+0x3C`
+matches the `FLuxCapsuleContainer` shape.
 
 ## `ELuxTraceKindId` (visual trail kinds)
 
@@ -183,40 +182,40 @@ matches `FLuxCapsuleContainer` shape.
 ## Empirical `CapsuleType` / `AttackTag` ranges
 
 The plate comment on `Z_Construct_UFunction_..._GetTracePosition` documents the valid range
-as 1..9 based on one caller's `SlotIdx + 1` usage. A training-mode scan iterating
+as 1..9, based on one caller's `SlotIdx + 1` usage. A training-mode scan iterating
 `InTracePartsId` from 1 to 64 sees many more types populated:
 
-- **Always-on (idle stance)**: 1, 2, 3, 15, 18, 21, 24, 27. Shared hilt points across 1/2/3
-  suggest body segments — likely **hurtboxes**.
-- **Active-frame only**: the actual attack capsules. Numeric values vary per character /
+- **Always-on (idle stance)**: 1, 2, 3, 15, 18, 21, 24, 27. The hilt points shared across
+  1/2/3 suggest body segments — likely **hurtboxes**.
+- **Active-frame only**: the actual attack capsules. Numeric values vary per character and
   per move.
 
-A mod that wants to visualise everything should scan at least 1..31, possibly 1..63.
+A mod that wants to visualise everything should scan at least 1..31, and possibly 1..63.
 
 ---
 
 ## Calling the trace UFunctions from Lua
 
-`ALuxBattleChara::Active` / `Inactive` / `GetTracePosition` cannot be called from UE4SS Lua
+`ALuxBattleChara::Active` / `Inactive` / `GetTracePosition` cannot be called via UE4SS Lua
 reflection in the current public UE4SS builds. The class was registered with the short
 `UE4_RegisterClass` variant (no `Ex`), so its UFunction parameter UProperty metadata is
 missing. UE4SS surfaces this as the misleading *"Tried calling a member function but the
 UObject instance is nullptr"* error on any call that takes arguments. Inherited AActor
-UFunctions like `K2_GetActorLocation` still work.
+UFunctions such as `K2_GetActorLocation` still work.
 
 See [UE4SS Reflection Gotchas](../ue4ss/reflection-gotchas.md) for the diagnosis.
 
 ## `ReceiveGetWeaponTip` — promising-looking dead end
 
 SC6 registers a `BlueprintImplementableEvent` named `ReceiveGetWeaponTip` on
-`ALuxBattleWeaponEventHandler`. It fires every frame during attacks (including ranged
-moves like Cervantes's gun) — looks like a universal weapon-endpoint query.
+`ALuxBattleWeaponEventHandler`. It fires every frame during attacks — including ranged
+moves like Cervantes's gun — so it looks like a universal weapon-endpoint query.
 
-It isn't useful: **no SC6 character's Blueprint subclass overrides the event.** Every
+It is not useful: **no SC6 character's Blueprint subclass overrides the event.** Every
 `ProcessEvent` post-hook arrives with `outRoot == outTip == (0,0,0)` and `bReturnValue == 0`.
 The native caller (`ALuxBattleManager::GetTracePositionForPlayer @ 0x1403F4960`) ignores
 the result and falls through to `GetTracePosition_Impl` unconditionally. The event is a BP
-extension point that no one shipped an implementation for.
+extension point that no one ever shipped an implementation for.
 
 Layout: see
 [`ALuxBattleWeaponEventHandler` in Structures](structures.md#aluxbattleweaponeventhandler).
@@ -245,15 +244,16 @@ hooks, see [Dev / Debug Hooks](dev-debug-hooks.md).
 
 ## What's still unfound
 
-- **Live `FLuxCapsule` container on this build.** Layout known (0x50); container address
-  uncertain since `chara+0x388` is now `CharaMesh0`. Best candidate: walk
+- **Live `FLuxCapsule` container on this build.** Layout is known (0x50); the container
+  address is uncertain since `chara+0x388` is now `CharaMesh0`. Best candidate: walk
   `ALuxBattleMoveCommandPlayer*` at `BattleManager+0x4C0`.
-- **`FLuxCapsule` radius.** The 80-byte struct holds two endpoints but no radius field;
-  likely lives on `TracePartsDataAsset` or a sibling struct the live container points at.
+- **`FLuxCapsule` radius.** The 80-byte struct holds two endpoints but no radius field. It
+  likely lives on `TracePartsDataAsset` or on a sibling struct that the live container
+  points at.
 - **Cross-reference with the hitbox system.** The visual `FLuxCapsule` system here and the
   KHit `KHitArea` subclass on the [Hitbox System](hitbox-system.md) page both encode
   bone-pair endpoints. Whether any move authoring tool emits both representations from a
-  single source isn't confirmed.
+  single source is not confirmed.
 
 ---
 

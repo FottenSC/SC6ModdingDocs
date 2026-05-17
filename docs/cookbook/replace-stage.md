@@ -22,7 +22,7 @@ in `ResolveStageCodeToAssetPath @ 0x140641840`.
 ## Build the level
 
 The level needs a specific actor hierarchy. Stub the SC6 classes in your UE4
-project (just inherit from `AActor` with the right names):
+project — just inherit from `AActor` and give them the right names:
 
 - `ALuxBattleStage` (root)
   - `ALuxBattleStageActorManager` (manages the 9 actor lists at `+0x388..+0x408`)
@@ -30,13 +30,13 @@ project (just inherit from `AActor` with the right names):
   - 4–8 `ALuxStageBreakableBarrierActor` — invisible boxes forming the ring boundary
   - 0+ `ALuxStageBreakableWallActor` — visible breakable walls (optional)
 
-The barrier boxes are the gameplay ring-out trigger — their box-component
-extents are what gets pushed into `g_scbattle_StageInfo_BarrierArray @ 0x144844070`
-at match start.
+The barrier boxes are the gameplay ring-out trigger — at match start their
+box-component extents are pushed into
+`g_scbattle_StageInfo_BarrierArray @ 0x144844070`.
 
-For visual collision (camera, particle, character proximity), give each
-`ALuxStageMeshActor.StaticMesh` a custom `BodySetup`. In Blender, name the
-collision meshes:
+For visual collision (camera, particles, character proximity), give each
+`ALuxStageMeshActor.StaticMesh` a custom `BodySetup`. Name the collision
+meshes in Blender as follows:
 
 | Prefix | UE4 import becomes |
 |---|---|
@@ -72,8 +72,8 @@ Drop the resulting `pakchunk999-WindowsNoEditor_P.pak` into:
 <Steam>/steamapps/common/SoulcaliburVI/SoulcaliburVI/Content/Paks/~mods/
 ```
 
-The `~mods/` subfolder is a community convention — UE4's pak system mounts
-recursively and the `_P` suffix gives your pak load priority over the stock
+The `~mods/` subfolder is a community convention: UE4's pak system mounts
+recursively, and the `_P` suffix gives your pak load priority over the stock
 asset.
 
 ## Verify
@@ -81,9 +81,9 @@ asset.
 1. Launch the game.
 2. Pick `STG004` in stage select. Your custom level should load instead of
    "Free Stage".
-3. Check the in-game ring-out boundary matches your `ALuxStageBreakableBarrierActor`
+3. Confirm the in-game ring-out boundary matches your `ALuxStageBreakableBarrierActor`
    placements. If characters fall through the floor, your `BodySetup` collision
-   isn't cooking — verify the `UCX_/UBX_` prefix names on import.
+   isn't cooking — verify the `UCX_`/`UBX_` prefix names on import.
 
 ## Related
 

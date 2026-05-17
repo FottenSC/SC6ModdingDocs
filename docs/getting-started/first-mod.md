@@ -1,6 +1,6 @@
 # Your First Mod
 
-Goal: get a Lua mod that prints a line to the UE4SS console every time the game reaches the main menu.
+Goal: build a Lua mod that prints a line to the UE4SS console every time the game reaches the main menu.
 
 ## 1. Scaffold the mod folder
 

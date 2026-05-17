@@ -11,8 +11,8 @@ RegisterHook("/Script/Engine.PlayerController:ClientRestart", function(PC)
 end)
 ```
 
-The callback receives the UObject arguments in order. Return values can be read via the hook API
-on post-call hooks (see [UE4SS docs](https://docs.ue4ss.com/)).
+The callback receives the UFunction's arguments in order. On post-call hooks, return values are
+readable through the hook API (see [UE4SS docs](https://docs.ue4ss.com/)).
 
 ## `NotifyOnNewObject`
 

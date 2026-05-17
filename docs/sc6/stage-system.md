@@ -1,6 +1,6 @@
 # Stage System
 
-How SC6 enumerates, gates, loads and configures stages — and the four pieces
+How SC6 enumerates, gates, loads, and configures stages — and the four pieces
 you need to ship a custom map.
 
 All addresses are absolute (image base `0x140000000`).
@@ -16,9 +16,9 @@ A stage in SC6 is the sum of four independent pieces:
 | **Level .umap** | `/Game/Stage/<code>/Maps/<code>.umap` (resolver: `ResolveStageCodeToAssetPath @ 0x140641840`) | Drop a `_P.pak` into `Content/Paks/~mods/` |
 | **Selected stage code** | `LuxDataTable` key `StageSetting.StageCode` set by stage-select UI | Blueprint hook on `ULuxUIBattleLauncher::SetStageCode` |
 
-The four are independent: replacing the .umap alone is enough to reskin a stock
-stage. Adding a wholly new stage requires touching the master enum (which is
-statically built — needs a DLL hook).
+The four pieces are independent: replacing the .umap alone is enough to reskin a
+stock stage. Adding a wholly new stage means touching the master enum, which is
+built statically and therefore needs a DLL hook.
 
 ## Key entry points
 
@@ -121,8 +121,8 @@ UScriptStruct registered by `Z_Construct_UScriptStruct_LuxBattleStageBasePositio
 
 ## Two-tier collision (gameplay vs visuals)
 
-A SC6 stage has two parallel collision representations. Both must exist for
-the stage to function but the gameplay engine only consults the second.
+A SC6 stage carries two parallel collision representations. Both must exist for
+the stage to function, but the gameplay engine consults only the second.
 
 **1. UE4 actor world** (visual + camera + particle physics):
 
@@ -161,10 +161,10 @@ Populated at match start by walking `BarrierActorList` + `BreakableWallActorList
 and pushing geometry through `scbattle_StageInfo_SetBarrierGeometry @ 0x1402d77c0`
 (StageInfoHandler vtable slot 21, vtable at `0x143269070`).
 
-The two systems coordinate at match start via event 0x19 dispatched by
+The two systems coordinate at match start through event 0x19, dispatched by
 `LuxStage_RegisterBarrierActor_BattleEvent0x19 @ 0x140427490` and
-`LuxStage_RegisterWallActor_BattleEvent0x19 @ 0x140428ee0` — fired per actor
-from `LuxActor_CollectActors_By8Classes_IntoTArrays @ 0x140417a70`.
+`LuxStage_RegisterWallActor_BattleEvent0x19 @ 0x140428ee0` — one event per actor,
+fired from `LuxActor_CollectActors_By8Classes_IntoTArrays @ 0x140417a70`.
 
 ## Adding a wholly new stage
 
@@ -176,10 +176,9 @@ the C++ load path.
 
 The C++ stage-load path is **agnostic to the master enum table**. The validation
 functions (`IsValidStageCodeStr_LookupInMasterEnum @ 0x140647230` and
-`ResolveStageCodeToAssetPath @ 0x140641840`) are only reachable via the
-Blueprint exec wrappers (`execIsValidStageCodeStr`, `execResolveStageCodeToAssetPath`)
-— the actual native load chain never calls them. Confirmed by single-caller
-xrefs.
+`ResolveStageCodeToAssetPath @ 0x140641840`) are reachable only through the
+Blueprint exec wrappers (`execIsValidStageCodeStr`, `execResolveStageCodeToAssetPath`);
+the native load chain never calls them. Confirmed by single-caller xrefs.
 
 The actual load chain is:
 
@@ -197,37 +196,36 @@ UAssetManager.RequestAsyncLoad(paths)
 ```
 
 So **any `.umap` mounted under `/Game/` is auto-discovered as a `Map` primary
-asset.** No native code patches are needed for asset discovery, validation,
-or path resolution. Drop a properly-built umap in a `_P.pak` and the
-AssetManager will find it.
+asset.** Asset discovery, validation, and path resolution need no native code
+patches. Drop a properly built umap in a `_P.pak` and the AssetManager will
+find it.
 
 The per-character `StageInfoTable` lookup
 (`LuxMoveProvider_LoadStageInfo_FromTable @ 0x1403e2370`) **fails gracefully**
-when the row is missing — it just doesn't override the move-provider's
-defaults at `+0x250..+0x2b0`. So you don't need to author table rows for
-custom stages unless you want character-specific corner / wall interactions.
+when the row is missing — it simply leaves the move-provider defaults at
+`+0x250..+0x2b0` unchanged. So you only need to author table rows for custom
+stages if you want character-specific corner or wall interactions.
 
 ### The actual hard part: getting your code into `StageSetting.StageCode`
 
 The string in `StageSetting.StageCode` becomes the `FPrimaryAssetId.AssetName`
-that the AssetManager looks up. The Blueprint stage-select UI writes this
-field; nothing else does in normal flow. To get a custom code there you have
-to either:
+that the AssetManager looks up. In normal flow the Blueprint stage-select UI is
+the only writer of this field. To get a custom code there, take one of these
+routes:
 
 1. **Override after the BP picks** — hook
    `ApplyBattleSettingDataTableToBattleManager @ 0x140594eb0` (or one of the
    `LuxDataTable_LookupByKey` calls inside it) and rewrite
    `StageSetting.StageCode` to your custom code before the preload kick. This
-   doesn't need any UI changes — pick "Free Stage" in the menu, get your
-   custom map.
-2. **Inject into the Blueprint picker** — UE4SS BP hook on
-   `ULuxUIBattleLauncher::SetStageCode` (or the picker widget's
-   construction) to add your code to the picker list. Validation in the
-   picker calls `execIsValidStageCodeStr`, which does check the master enum
-   — so you also need to:
+   needs no UI changes: pick "Free Stage" in the menu and get your custom map.
+2. **Inject into the Blueprint picker** — a UE4SS BP hook on
+   `ULuxUIBattleLauncher::SetStageCode` (or the picker widget's construction)
+   that adds your code to the picker list. The picker's validation calls
+   `execIsValidStageCodeStr`, which *does* check the master enum — so this
+   route also requires:
 3. **Append to the master enum** — hook
-   `InitGlobalLuxStageMasterEnumStringTable @ 0x140149720` (runs once at
-   startup; append `FBattleStageEnumEntry` rows to the TArray it builds).
+   `InitGlobalLuxStageMasterEnumStringTable @ 0x140149720` (it runs once at
+   startup) and append `FBattleStageEnumEntry` rows to the TArray it builds.
 
 Combinations:
 
@@ -240,8 +238,9 @@ Combinations:
 ### Required umap contents
 
 Whichever route you pick, the `.umap` must contain the correct actor
-hierarchy so the match-start collection (`LuxActor_CollectActors_By8Classes_IntoTArrays @ 0x140417a70`)
-finds geometry to register with the gameplay engine:
+hierarchy, so the match-start collection pass
+(`LuxActor_CollectActors_By8Classes_IntoTArrays @ 0x140417a70`) finds geometry
+to register with the gameplay engine:
 
 - `ALuxBattleStage` (root)
 - `ALuxBattleStageActorManager` (manages the 9 lists)
@@ -251,9 +250,9 @@ finds geometry to register with the gameplay engine:
   ring-out boundary
 - (Optional) `ALuxStageBreakableWallActor` — breakable walls
 
-Stub these classes in a UE4 4.18 project with the right `UClass` names and
-property layouts so the cooked package's class references resolve against
-the shipping `SoulcaliburVI.exe` `UClass*` lookup.
+Stub these classes in a UE4 4.18 project with the correct `UClass` names and
+property layouts, so the cooked package's class references resolve against the
+shipping `SoulcaliburVI.exe` `UClass*` lookup.
 
 ### Naming the stage code
 
@@ -270,21 +269,19 @@ load path doesn't use the resolver, but the BP picker may.
 
 ### Online play
 
-The custom-code mod needs to be **installed on both peers**. The host
-broadcasts the stage code via the LuxOnlineBattleSync "Stage" message; if
-the client's AssetManager can't resolve the code (no umap at the matching
-primary-asset path) the stream load fails and the match desyncs at level
-load time.
+The custom-code mod must be **installed on both peers**. The host broadcasts
+the stage code via the LuxOnlineBattleSync "Stage" message; if the client's
+AssetManager can't resolve the code — no umap at the matching primary-asset
+path — the stream load fails and the match desyncs at level-load time.
 
 ## Runtime collision overlay (collision-only mods)
 
-If you want to reshape ring-out / wall-break geometry without authoring a
-new umap, hook `scbattle_StageInfo_SetBarrierGeometry @ 0x1402d77c0` and
-rewrite the 192-byte buffer that gets copied to
-`g_scbattle_StageInfo_BarrierArray @ 0x144844070`. Visual stage stays the
-same; the deterministic ring boundary becomes whatever you supply. Online
-play needs the same hook on both peers — otherwise rollback snapshots
-disagree about ring-out events.
+To reshape ring-out or wall-break geometry without authoring a new umap, hook
+`scbattle_StageInfo_SetBarrierGeometry @ 0x1402d77c0` and rewrite the 192-byte
+buffer it copies into `g_scbattle_StageInfo_BarrierArray @ 0x144844070`. The
+visual stage stays the same; the deterministic ring boundary becomes whatever
+you supply. Online play needs the same hook on both peers — otherwise rollback
+snapshots disagree about ring-out events.
 
 ## Random-pool bias
 
@@ -308,8 +305,8 @@ Probabilities over the 24-stage filtered pool (uniform `RandHelper(24)`):
 - Singleton stages: 1/24 ≈ 4.2%
 
 This is the single largest cause of "some maps show up more often." A
-de-duplication mod that hooks `GetStageCodes_BuildMasterList` and folds
-`_R` / `_V` siblings into their base entry would flatten the distribution.
+de-duplication mod that hooks `GetStageCodes_BuildMasterList` and folds each
+`_R` / `_V` sibling back into its base entry would flatten the distribution.
 
 ## Stage-code packing
 
@@ -325,7 +322,7 @@ encodes the stage string into a packed int:
 | `"STGxxx_V"` | `0xxx \| 0x200` (bit 9 set = `_V`) |
 
 The packed int is written to `FBattleStageInfo+0x148` on the active
-MoveProvider. The is-anomaly bit (`_T` suffix) goes to `+0x14c`.
+MoveProvider; the is-anomaly bit (`_T` suffix) goes to `+0x14c`.
 
 ## Cross-references
 

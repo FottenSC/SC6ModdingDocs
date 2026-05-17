@@ -1,36 +1,98 @@
 # Replay System
 
-How SC6 records and plays back a match. Critically: **a "frozen" replay is not
-the same as a frozen training match** — replay viewing has at least seven
+How SC6 records and plays back a match. Critically, **a "frozen" replay is not
+the same as a frozen training match**: replay viewing has at least seven
 independent tick paths that keep advancing chara state, the round timer,
-recorded-input cursors, and animation. Stopping `LuxBattle_PerFrameTick`
-alone (the simulation-core entry point) leaves all of them running.
+recorded-input cursors, and animation. Stopping `LuxBattle_PerFrameTick` alone
+(the simulation-core entry point) leaves all of them running.
 
 All addresses absolute (image base `0x140000000`).
+
+## Two replay subsystems
+
+SC6 ships **two distinct replay backends**. They share many of the same
+chara/InputLog field offsets, which makes them easy to confuse:
+
+| Subsystem | Where used | What records | What plays |
+|-----------|------------|--------------|------------|
+| **Custom Lux input replay** | Training replays, online catch-up | Per-round chara checkpoints + per-frame inputs (LPD format, "REPLAY/" path prefix) | The deterministic input pipeline below — `pBM->pReplayDataBlock_at0x460`, Stage 2 packet drain, chara-side `vtable[0x6A8]/[0x6C8]` |
+| **UE4 `UDemoNetDriver`** | Match-replay viewing (in-game "Replay" menu) | Replicated property updates from every networked actor (UE4 `.demo` format) | Standard UE4 demo netdriver — replication packets directly write actor properties; SC6 has no custom per-frame consumer for this path |
+
+Evidence the match-replay menu path uses `UDemoNetDriver`:
+
+- Strings `UGameInstance::PlayReplay: GetWorld() is null` @ `0x1438cdf00`,
+  `PlayReplay: Attempting to play demo %s` @ `0x1438ce490`,
+  `PlayReplay: failed to create demo net driver!` @ `0x1438ce5f0`
+- 156 `DemoNet*` strings sourced from
+  `D:\dev\sc6\UE4_Steam\Engine\Source\Runtime\Engine\Private\DemoNetDriver.cpp`
+- `RecordReplay: failed to create demo net driver!` @ `0x1438cc410` — match
+  recording also goes through `UDemoNetDriver`
+
+This distinction matters because the chara fields documented as
+**replay-relevant** below (`+0x4400 dwReplayEnableFlag`, `+0x4424 bCharaMode`)
+are populated by the **custom** subsystem only. Observed during match-replay
+viewing: both bytes read as nondeterministic values (e.g. `mode=14/197/63`,
+never `2` or `5`), because the UDemoNetDriver path never writes them — in that
+mode they overlap unrelated VFX state. Mods that key off these fields to detect
+"are we in replay" will misbehave during match-replay viewing. The robust
+signals are a non-null `DemoNetDriver` on the world, or an
+`ALuxBattleReplayPlayer` present at `BM+0x488`.
+
+## Scrubbing a match replay (`UDemoNetDriver::GotoTimeInSeconds`)
+
+UE4 4.21 ships built-in scrub for demo replays. SC6 keeps it intact:
+
+| Symbol | Address | Role |
+|---|---|---|
+| `UDemoNetDriver_GotoTimeInSeconds` | `0x141E0ECA0` | `void(UDemoNetDriver* this, float TimeInSeconds, FOnGotoTimeDelegate* del)`. Queues an `FGotoTimeInSecondsTask` on `NetDriver+0x7E0`; UE4 loads the nearest checkpoint and plays demo packets forward to the target time. |
+| `RegisterCVar_DemoGotoTimeInSeconds` | `0x140255B00` | Registers the CVar `demo.GotoTimeInSeconds`. Writing a float to that CVar at runtime invokes the same task path. |
+
+To seek a match-replay session from a mod:
+
+1. Get the active `UWorld*` (UE4SS exposes it as `GUWorld`).
+2. Read `UWorld->DemoNetDriver` (a `UDemoNetDriver*` field on `UWorld`; UE4 4.21
+   stores it as a UProperty, so UE4SS reflection finds it by name).
+3. Call `UDemoNetDriver_GotoTimeInSeconds(driver, targetSeconds, nullptr)` —
+   the delegate parameter accepts null for fire-and-forget.
+
+The scrub is **asynchronous**. Don't hold any per-actor pointers across the
+call: the netdriver tears down actors and re-spawns them from the checkpoint.
+
+> source: `FUN_141E0ECA0` (renamed `UDemoNetDriver_GotoTimeInSeconds`),
+> task-vtable at `0x1438B9B88`, CVar registration at `FUN_140255B00`,
+> error strings cited above.
+
+!!! warning "This does not freeze the demo driver"
+    `GotoTimeInSeconds` only seeks. To **pause** a match replay use UE4's
+    standard pause path (`AWorldSettings::Pauser != nullptr` /
+    `bGamePaused`). `UDemoNetDriver::TickFlush` early-returns when the world
+    is paused, halting demo packet dispatch at the source. The seven
+    custom-Lux Actor::Tick gates below pin chara/BM/InputLog state but
+    don't stop the demo driver.
 
 ## At a glance
 
 ### The replay master clock and what advances it
 
-`ALuxBattleFrameInputLog +0x3A4` is the per-match **master clock** — a
-plain `int32` that increments once per UE4 frame in a normal match.
+`ALuxBattleFrameInputLog +0x3A4` is the per-match **master clock**: a plain
+`int32` that increments once per UE4 frame in a normal match.
 `ALuxBattleManager`'s simulation loop reads it as `delta = master - lastApplied`
 and runs `delta` iterations of input/round-state catch-up. Two sibling
-functions write to it with identical semantics; both must be gated to
-truly pin the clock:
+functions write to it with identical semantics; both must be gated to truly
+pin the clock:
 
 | Site | Function | INC at | Dispatcher | What it does |
 |------|----------|--------|------------|---------------|
 | **R1** | `LuxBattleChara_VTable648_TickAndAdvanceReplayClock` | `+0x2A` | unconditional | `inc dword [rbx+0x3A4]` after three vtable sub-tick calls |
 | **R2** | `LuxBattleChara_VTable648_TickAndAdvanceReplayClock_GatedBy4404` | `+0x33` | `cmp byte [rcx+0x4404], 0` then unconditional INC | live-tick path for the same clock |
 
-The two functions exist because they sit on different vtable slots and
-fire from different parents. The INC instruction is identical in both:
-`FF 83 A4 03 00 00` (`inc dword [rbx+0x3A4]`).
+The two functions exist as separate copies because they sit on different
+vtable slots and fire from different parents. The INC instruction is identical
+in both: `FF 83 A4 03 00 00` (`inc dword [rbx+0x3A4]`).
 
 ### The seven tick paths to halt for a frozen replay
 
-Verified in HorseMod's gate stack. Each is a separate Actor::Tick chain
+Verified against HorseMod's gate stack. Each is a separate Actor::Tick chain
 that drives chara/replay/round state independently of `PerFrameTick`:
 
 | Site | Function | RVA | Drives |
@@ -49,19 +111,19 @@ that drives chara/replay/round state independently of `PerFrameTick`:
 `g_LuxBattle_VMFreezeRecord.bVMFreezeByte` (the canonical "hitstop" lever
 documented in [movement.md](movement.md#timedilation-system-verified)) is
 **bypassed** by `LuxMoveVM_GetTimeDilationScalar @ 0x14030A8C0` for normal-play
-characters in replay viewing — see
+characters during replay viewing — see
 [TimeDilation fall-through paths](#timedilation-fall-through-paths-bypasses-vmfreezebyte) below.
 A complete replay freeze needs an entry-RET on `GetTimeDilationScalar` that
-returns 0.0 unconditionally, *plus* the seven Actor::Tick gates above.
+unconditionally returns 0.0, *plus* the seven Actor::Tick gates above.
 
 ---
 
 ## Per-frame chain (replay viewing)
 
 Once per UE4 frame, replay-watching state advances along **all** of these
-paths in parallel. Numbers are not strict ordering — UE4 dispatches actor
-ticks based on tick-group / depends-on; what matters is that each one is
-reached *every* frame regardless of `PerFrameTick`.
+paths in parallel. The numbers below are labels, not a strict order — UE4
+dispatches actor ticks by tick-group and depends-on relationships. What matters
+is that each path is reached *every* frame regardless of `PerFrameTick`.
 
 ```text
 UE4 World tick
@@ -94,15 +156,15 @@ UE4 World tick
               └── BattleTime / BattleSystemTime FName timers (TickTimerHandle)
 ```
 
-Both R1 (`0x1403E1FC0`) and R2 (`0x1403E2000`) — the master-clock INC
-functions — are reached as sub-ticks under one of the above. R2's prologue
-checks `cmp byte [rcx+0x4404], 0` (the InputLog double-tick guard) before
-running its body; R1 is unconditional.
+Both master-clock INC functions — R1 (`0x1403E1FC0`) and R2 (`0x1403E2000`) —
+are reached as sub-ticks under one of the paths above. R2's prologue checks
+`cmp byte [rcx+0x4404], 0` (the InputLog double-tick guard) before running its
+body; R1 is unconditional.
 
 ## `ALuxBattleFrameInputLog` field map (replay-relevant)
 
 Verified offsets used by the replay tick chain. Full struct in
-[Game Structures](structures.md#aluxbattleframeinputlog-17428-bytes).
+[Game Structures](structures.md#aluxbattleframeinputlog-17616-bytes).
 
 | Offset | Type | Name | Set/read by |
 |-------:|------|------|-------------|
@@ -115,10 +177,10 @@ Verified offsets used by the replay tick chain. Full struct in
 | **`+0x4404`** | `bool` | **`bDoubleTickGuard`** | **Per-frame re-entrancy gate.** R2 checks this; Site 11 also gates on `cmp dword [rcx+0x4400], 0` (a wider guard at +0x4400). |
 | `+0x4410` | `int32` | `nDrainCursor` | |
 
-The ring at `+0x3A8 → FLuxRecordedFrame[]` is sized for ~90 frames
-(17 KB / 192 B ≈ 90.7). At 60 fps that's ≈ 1.5 s of recorded input —
-enough to bridge a tick-rate hiccup without dropping frames, not enough
-to seek arbitrarily far into the past in a single drain.
+The ring at `+0x3A8 → FLuxRecordedFrame[]` holds ~90 frames
+(17 KB / 192 B ≈ 90.7). At 60 fps that is ≈ 1.5 s of recorded input — enough
+to bridge a tick-rate hiccup without dropping frames, but not enough to seek
+arbitrarily far into the past in a single drain.
 
 ## SimulationLoop catch-up
 
@@ -134,21 +196,21 @@ while (delta-- > 0):
     drain one InputLog frame entry
 ```
 
-This is why a naive freeze that pauses `PerFrameTick` but lets the master
-clock advance produces a **fast-forward burst** on unfreeze: the master
-clock has been climbing the whole time, `delta` accumulates, and on
-unfreeze the loop runs `delta` iterations *in a single BM tick*.
+This is why a naive freeze — one that pauses `PerFrameTick` but lets the master
+clock advance — produces a **fast-forward burst** on unfreeze: the master clock
+keeps climbing throughout the freeze, `delta` accumulates, and on unfreeze the
+loop runs all `delta` iterations *in a single BM tick*.
 
-The HorseMod fix is to pin `nMasterClock` itself via the R1/R2 INC gates
-([`Horse::ReplayClockGate`](#horsemod-gate-stack-summary) below), so
-`delta` cannot grow during freeze and the catch-up loop stays a no-op.
+The HorseMod fix pins `nMasterClock` itself via the R1/R2 INC gates
+([`Horse::ReplayClockGate`](#horsemod-gate-stack-summary) below), so `delta`
+cannot grow during freeze and the catch-up loop stays a no-op.
 
 ## TimeDilation fall-through paths (bypasses `VMFreezeByte`)
 
 `LuxMoveVM_GetTimeDilationScalar @ 0x14030A8C0` is the per-chara time-scale
 multiplier consulted by every dt-scaled integrator (position, MoveVM advance,
-anim montage, hit detection, etc.). It has **four return paths**, only one
-of which honours `bVMFreezeByte`:
+anim montage, hit detection, etc.). It has **four return paths**, and only one
+of them honours `bVMFreezeByte`:
 
 ```c
 float LuxMoveVM_GetTimeDilationScalar(LuxBattleChara* chara) {
@@ -192,24 +254,23 @@ float LuxMoveVM_GetTimeDilationScalar(LuxBattleChara* chara) {
 
 ### Why this matters for replay viewing
 
-In replay watching the chara's match-state byte at `+0x19EC` is **2**
-(normal play) — even though inputs come from a recorded file, the state
-byte stays 2 the entire time. For P1 (`charaKindByte == 0`), the entry
-gate evaluates to `(2 != 2) || (0 != 0 && ...)` = `FALSE`, so Path A/B
-is skipped and the function falls through to `chara+0x3500` (normally
-`1.0f`). Setting `bVMFreezeByte = 1` does **nothing** for P1 in this
-state — UE4 anim instances scale by the engine's tick dilation, so the
-replay continues advancing.
+During replay viewing the chara's match-state byte at `+0x19EC` is **2**
+(normal play): even though inputs come from a recorded file, the state byte
+stays 2 the whole time. For P1 (`charaKindByte == 0`), the entry gate evaluates
+to `(2 != 2) || (0 != 0 && ...)` = `FALSE`, so Path A/B is skipped and the
+function falls through to `chara+0x3500` (normally `1.0f`). Setting
+`bVMFreezeByte = 1` therefore does **nothing** for P1 in this state — UE4 anim
+instances scale by the engine's tick dilation, so the replay keeps advancing.
 
-The HorseMod fix is an entry-RET trampoline that returns `0.0f` whenever
-the freeze policy slot is 0, irrespective of the chara's match-state
-byte ([`Horse::TimeDilationGate`](#horsemod-gate-stack-summary)).
+The HorseMod fix is an entry-RET trampoline that returns `0.0f` whenever the
+freeze policy slot is 0, regardless of the chara's match-state byte
+([`Horse::TimeDilationGate`](#horsemod-gate-stack-summary)).
 
 > **Why hit-stop / super-freeze still work in stock SC6**: the engine
-> writes `chara+0x3510` to a negative value during super-flash (Path A)
+> writes `chara+0x3510` to a negative value during super-flash (Path A),
 > or transitions chara state out of `2` during cinematics (Path B), so
 > the VMFreezeByte path actually executes. Plain `bVMFreezeByte = 1` from
-> a mod, with the chara still in state==2 and `+0x3510` non-negative,
+> a mod — with the chara still in state==2 and `+0x3510` non-negative —
 > never reaches a path that consults the byte.
 
 ## Stage 2/3 input pipeline (vtable[0x6A8] / [0x6C8])
@@ -222,15 +283,14 @@ two vtable slots in REPLAY mode:
 | `vtable[0x6A8]` | Stage 2/3 input pipeline | Walks the InputLog frame buffer and pushes the next recorded input bitmask into the chara's input ring |
 | `vtable[0x6C8]` | Chara replay-state writer | Writes recorded chara state into `+0x39C/+0x3A0/+0x3A8/etc.` (the per-chara replay-state fields) |
 
-`LuxBattleChara_ReplayPlayback_PushInputsToActiveSlots @ 0x1403F6600` is
-the actual Stage-3 push function. It drains the InputLog ring into
-`chara+0x3C0..` (active-input slot), one entry per UE4 frame.
+`LuxBattleChara_ReplayPlayback_PushInputsToActiveSlots @ 0x1403F6600` is the
+actual Stage-3 push function. It drains the InputLog ring into `chara+0x3C0..`
+(the active-input slot), one entry per UE4 frame.
 
-This is the path that produces the visible "stepping shows held inputs"
-symptom: if the master clock keeps advancing during freeze, the InputLog
-ring fills with buffered inputs, then on unfreeze the push function
-empties the entire ring in one tick — visible as the chara mashing
-buttons.
+This is the path behind the visible "stepping shows held inputs" symptom: if
+the master clock keeps advancing during freeze, the InputLog ring fills with
+buffered inputs; then on unfreeze the push function empties the entire ring in
+one tick — seen on screen as the chara mashing buttons.
 
 ## HorseMod gate stack summary
 
@@ -249,12 +309,13 @@ The four gates share a single `int32_t` policy slot:
 | `> 0`      | Step credits — gated paths run; PerFrameTick consumes one credit per observed run. |
 | `< 0`      | Treated as "always run" (defensive equivalent of native; sibling gates never write negative). |
 
-Only `WorldTickGate` decrements credits — sibling gates read the slot
-and never modify it. This avoids tick-order off-by-one bugs (e.g. if
-sibling A ran first and dec'd 1→0, sibling B in the same UE4 frame
-would see 0 and bail, even though the credit was for "this frame").
+Only `WorldTickGate` decrements credits; the sibling gates read the slot and
+never modify it. This avoids tick-order off-by-one bugs — e.g. if a
+decrementing sibling ran first and took the slot 1→0, another sibling in the
+same UE4 frame would see 0 and bail even though the credit was meant for that
+frame.
 
-The "Native" mode (mod disabled) is achieved by leaving every BytePatch
+"Native" mode (mod disabled) is achieved simply by leaving every BytePatch
 disabled — there is no policy-slot-driven "always run" mode in normal
 operation.
 
@@ -276,6 +337,8 @@ operation.
 | `LuxBattleChara_ReplayPlayback_PushInputsToActiveSlots` | `0x1403F6600` | Stage-3 push: drains InputLog ring into chara active-input slot. |
 | `LuxMoveVM_GetTimeDilationScalar` | `0x14030A8C0` | Per-chara time scale. Four return paths; only Path B honours `bVMFreezeByte`. |
 | `g_LuxBattle_VMFreezeRecord` | `0x1448462D0` | 64-byte record. `bVMFreezeByte` at `+0x00`, `flBaseAlpha` at `+0x04`. |
+| `UDemoNetDriver_GotoTimeInSeconds` | `0x141E0ECA0` | UE4 native match-replay scrub. `(UDemoNetDriver*, float, FOnGotoTimeDelegate*)`. |
+| `RegisterCVar_DemoGotoTimeInSeconds` | `0x140255B00` | Registers CVar `demo.GotoTimeInSeconds` — writing the CVar triggers the same task path. |
 
 ## Practical notes for mods
 
@@ -289,10 +352,10 @@ operation.
   pause path *intentionally* keeps the replay-cursor handler alive.
 - **The seven Actor::Tick sites are not exhaustive** for every conceivable
   freeze use case. They cover the paths that drive *gameplay-relevant*
-  state. UMG widget Tick, particle/Niagara render time, audio, and
-  non-battle actors continue regardless. For full pause semantics
+  state; UMG widget Tick, particle/Niagara render time, audio, and
+  non-battle actors keep ticking regardless. For full pause semantics
   including UI, use UE4's `bGamePaused`.
 - **Step credits drain one per `PerFrameTick` run, not per UE4 frame.**
-  If a UE4 frame fires multiple gated paths in any order, all of them
-  see the same policy value for the entire frame — no off-by-one drift.
-  This is why decrement is owned exclusively by Site 9.
+  When a UE4 frame fires multiple gated paths in any order, all of them
+  see the same policy value for the whole frame — no off-by-one drift.
+  This is why the decrement is owned exclusively by Site 9.

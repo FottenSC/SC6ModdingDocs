@@ -1,14 +1,14 @@
 # Movement System
 
 What the SC6 binary actually contains for chara movement, with each claim
-tied to a specific Ghidra address. All addresses absolute (image base
+tied to a specific Ghidra address. All addresses are absolute (image base
 `0x140000000`).
 
 !!! warning "Earlier drafts retracted"
     Earlier versions of this page mixed binary-verified facts with
-    fighting-game general knowledge. This rewrite includes only what's
-    been read directly from Ghidra. Anything I haven't been able to
-    verify is flagged "**unverified**" rather than asserted.
+    general fighting-game knowledge. This rewrite includes only what has
+    been read directly from Ghidra. Anything that could not be
+    verified is flagged "**unverified**" rather than asserted.
 
 ## The per-tick chara update flow
 
@@ -27,8 +27,8 @@ battle tick. The movement-relevant calls it makes, in order:
 10. `LuxBattle_TickCharaTerrainContactBlend(chara)`
 11. `LuxBattleChara_FinalizeTickPoseAndState(chara)`
 
-The position update is in step 7. Steps 1-3 (the move VM) run **before**
-the integrator, so opcodes that write velocity have already executed by
+The position update is step 7. Steps 1-3 (the move VM) run **before**
+the integrator, so any opcode that writes velocity has already executed by
 the time integration happens.
 
 ## What `IntegratePhysics_PerTick` actually does
@@ -78,43 +78,43 @@ chara+0xa8 += TimeDilation * chara+0x138
 ```
 
 `TimeDilation` comes from `LuxMoveVM_GetTimeDilationScalar @ 0x14030a8c0`
-and gates the whole thing — when `g_LuxBattle_VMFreezeRecord.bVMFreezeByte`
-is 0, the scalar returns 0 and no position change happens. That's how
+and gates the whole thing: when `g_LuxBattle_VMFreezeRecord.bVMFreezeByte`
+is 0, the scalar returns 0 and no position change happens. That is how
 hitstop / super-freeze pauses movement.
 
 ## The MoveVelocity field is unverified in source
 
-I have not yet found a function that writes `chara+0x130` during a
-*normal* walking move. I can only confirm:
+No function that writes `chara+0x130` during a *normal* walking move
+has been found yet. What is confirmed:
 
-- It's *read* by `IntegratePhysics_PerTick` and added to position
-- It's *written* by `LuxMoveVM_ApplyMoveOffsetToChara @ 0x140344fc0` for
-  attacks that include forward lunges (decoded from a 3-int16 cell payload)
-- It's *decayed* by the damped-mode path inside `IntegratePhysics_PerTick`
-  itself (when `+0x16fb` is set)
+- It is *read* by `IntegratePhysics_PerTick` and added to position.
+- It is *written* by `LuxMoveVM_ApplyMoveOffsetToChara @ 0x140344fc0` for
+  attacks that include forward lunges (decoded from a 3-int16 cell payload).
+- It is *decayed* by the damped-mode path inside `IntegratePhysics_PerTick`
+  itself (when `+0x16fb` is set).
 
-What I claimed earlier (that animation root motion drives `chara+0x130`)
-is **plausible** because `ULuxRootMotionComponent @ chara+0x3b0` exists
+The earlier claim — that animation root motion drives `chara+0x130` —
+is **plausible**, because `ULuxRootMotionComponent @ chara+0x3b0` exists
 and `LuxBattleChara_ApplyHitCueRootMotion_DirectPositionWrite @ 0x140306530`
-does process pose-derived motion — but that hit-cue path **bypasses
-`+0x130` entirely** and writes directly to `chara+0xa0/+0xa8`. So I
-cannot assert that animation root motion drives the `+0x130` value used
-by the integrator.
+does process pose-derived motion. But that hit-cue path **bypasses
+`+0x130` entirely** and writes directly to `chara+0xa0/+0xa8`, so it
+cannot be asserted that animation root motion drives the `+0x130` value
+used by the integrator.
 
-A definitive answer needs either:
-- Tracing every writer of `chara+0x130` (would require finding all stores
-  to that offset across the binary)
-- Or finding the move VM opcode that writes velocity (the docs I have
-  list 0x40002 ATK and a few others but not a "velocity write" opcode
-  by name)
+A definitive answer needs one of:
+- Tracing every writer of `chara+0x130` (which would mean finding all
+  stores to that offset across the binary).
+- Finding the move VM opcode that writes velocity (the available docs
+  list 0x40002 ATK and a few others, but no "velocity write" opcode
+  by name).
 
 Until then, **the source of normal-walking velocity is unverified.**
 
 ## What's verified about `ApplyHitCueRootMotion_DirectPositionWrite`
 
 `LuxBattleChara_ApplyHitCueRootMotion_DirectPositionWrite @ 0x140306530`
-applies pose-driven motion to the chara by reading per-slot hit-cue data
-(4 slots, indexed by the `slotIdx` parameter) and writing **directly** to
+applies pose-driven motion to the chara: it reads per-slot hit-cue data
+(4 slots, indexed by the `slotIdx` parameter) and writes **directly** to
 `chara+0xa0/+0xa8`. It does NOT go through the velocity field.
 
 Slot data (one per slotIdx in 0..3):
@@ -142,7 +142,7 @@ Algorithm:
 8. Also adds to `chara+0x1c0/+0x1c8` (residual velocity for next frame's
    `ApplyResidualVelocity_PostTick`)
 
-So this is the **post-hit follow-through** path — when a hit-reaction
+So this is the **post-hit follow-through** path: when a hit-reaction
 animation pulls the chara through space, this is where the per-frame
 displacement comes from. It does NOT handle normal walking.
 
@@ -168,10 +168,10 @@ disables auto-rotation toward opponent):
 `+0x16d3`, `+0x16d4`, `+0x16d8`, `+0x16db`, `+0x16df`,
 `+0x16e5`, `+0x16e6`, `+0x16e9`, `+0x16ec`, `+0x16fe`
 
-These are the flags whose semantics I have NOT individually verified.
+The semantics of these flags have NOT been individually verified.
 Their names ("hit-reaction", "step-state", "movement-commit") are
 guesses based on which other systems gate on them. The precise
-semantic of each individual byte is **unverified**.
+meaning of each individual byte is **unverified**.
 
 ## TimeDilation system (verified)
 
@@ -191,7 +191,7 @@ multiplier. Verified inputs:
 
 ### The four return paths
 
-The function has **four** distinct returns, only one of which honours
+The function has **four** distinct returns, and only one of them honours
 `bVMFreezeByte`:
 
 ```c
@@ -244,11 +244,11 @@ float LuxMoveVM_GetTimeDilationScalar(LuxBattleChara* chara) {
 ### Why `bVMFreezeByte = 1` alone fails replay viewing
 
 In replay watching, the chara's match-state byte at `+0x19EC` stays at
-**2** (normal play) — even though inputs come from a recorded file. For
+**2** (normal play), even though inputs come from a recorded file. For
 P1 (`charaKindByte == 0`) the entry gate evaluates
 `(2 != 2) || (0 != 0 && ...)` = `FALSE`, so Path A/B is skipped and the
 function falls through to `chara+0x3500` (≈ 1.0). Setting `bVMFreezeByte`
-does nothing — UE4 anim instances scale by the engine's tick dilation,
+does nothing: UE4 anim instances scale by the engine's tick dilation,
 the BM round timer keeps draining, and the replay auto-advances.
 
 Hit-stop / super-freeze still work in stock SC6 because the engine writes
@@ -280,8 +280,8 @@ Anything that runs off UE4's `World::DeltaTime` rather than the VM scalar. Notab
 - The animation root-motion blender as it samples per-frame poses for non-battle actors
 
 Practical consequence: a freeze mod that uses only VMFreezeByte will halt the gameplay
-loop cleanly, but display-rate widgets reading chara state at render rate (input
-history overlays etc.) will keep polling and may visually decouple from the simulation.
+loop cleanly, but display-rate widgets reading chara state at render rate (input-history
+overlays, etc.) keep polling and may visually decouple from the simulation.
 For full pause semantics including UI, use UE4's `bGamePaused`; for simulation-only
 freeze, VMFreezeByte is enough.
 
@@ -299,11 +299,11 @@ Run_RightStep     (0x1433b0200)
 Run_LeftStep      (0x1433b0250)
 ```
 
-These are **dummy behaviors** — telling the training dummy to perform
-that motion. They're labels, not input commands. The `Run_` prefix
-suggests they all execute out of a "run" state, but the binary doesn't
+These are **dummy behaviors** — they tell the training dummy to perform
+that motion. They are labels, not input commands. The `Run_` prefix
+suggests they all execute out of a "run" state, but the binary does not
 spell out what input the player presses to trigger each one — that
-mapping lives in per-character move-bank bytecode I have not decoded.
+mapping lives in per-character move-bank bytecode that has not been decoded.
 
 The CPU AI has matching action classes for these too: `HgCpuDirectRightStep`,
 `HgCpuDirectLeftStep`, `HgCpuDirectFrontStep`, `HgCpuDirectBackStep` (RTTI
@@ -311,17 +311,17 @@ strings at `0x144141918` etc.).
 
 `ELuxBattleMoveCategory` (the move-class enum) has separate entries:
 `HorizontalAttacks`, `VerticalAttacks`, `Kicks`, `EightWayRunMoves`,
-`Throws`, etc. The category `EightWayRunMoves` covers attacks that
+`Throws`, etc. The `EightWayRunMoves` category covers attacks that
 come *out of* 8WR, not the 8WR movement itself.
 
 ## Counter-hit messages
 
 `ELuxBattleMessage::EMS_RunCounter` exists at `0x1432712e8`. It sits in
-the same enum next to `EMS_AttackCounter`, `EMS_BreakCounter`,
-`EMS_ImpactCounter`. Where it's *fired* I haven't traced — there are no
+the same enum, next to `EMS_AttackCounter`, `EMS_BreakCounter`, and
+`EMS_ImpactCounter`. Where it is *fired* has not been traced — there are no
 xrefs to the string itself in static code, only references in the
 reflection enum table. So the *existence* of a "RunCounter" category
-is verified, but the *trigger conditions* aren't.
+is verified, but the *trigger conditions* are not.
 
 ## What CHANGES movement (verified levers only)
 
@@ -337,31 +337,31 @@ is verified, but the *trigger conditions* aren't.
 
 The cluster of flags at `chara+0x16d0..+0x170f` collectively gates
 auto-rotation via `CanTrackOpponentLookAt`. **What individually toggles
-each one is unverified** — they're written by `SetMotionInputFlag` from
-move bytecode, but I haven't traced which moves write which flags.
+each one is unverified** — they are written by `SetMotionInputFlag` from
+move bytecode, but which moves write which flags has not been traced.
 
 ## Things I claimed earlier and now retract
 
 - **"Per-character step distance lives in animation `.uasset` files."**
   Plausible but unverified. `chara+0x130` is read by the integrator;
-  whether it's written by anim root motion or by VM bytecode is unknown
-  from what I've decoded.
+  whether it is written by anim root motion or by VM bytecode is not known
+  from what has been decoded.
 - **"Soul Charge mode flag (`chara+0x170c`) doesn't affect normal stepping."**
-  Half-right: it doesn't appear in `IntegratePhysics_PerTick` or
-  `ApplyHitCueRootMotion`. But it could feed into VM bytecode that writes
+  Half-right: it does not appear in `IntegratePhysics_PerTick` or
+  `ApplyHitCueRootMotion`, but it could feed into VM bytecode that writes
   `chara+0x130`. **Unverified either way.**
 - **"Best stepping strategy" recommendations.** Those were extrapolated
   from the existence of `EMS_RunCounter` and the move-class enum, plus
-  general fighting-game knowledge. The binary confirms:
-  - `EMS_RunCounter` is a defined message category
-  - `Run_*` step types exist in the dummy enum
-  - `HorizontalAttacks` and `VerticalAttacks` are distinct move categories
+  general fighting-game knowledge. The binary confirms only that:
+  - `EMS_RunCounter` is a defined message category.
+  - `Run_*` step types exist in the dummy enum.
+  - `HorizontalAttacks` and `VerticalAttacks` are distinct move categories.
   
   Whether vertical attacks actually have narrower hitboxes than horizontal
   ones, whether RunCounter actually fires for steps mistimed against
   horizontals, and what frame ranges step-G covers — **none of those
-  are verified from the binary alone.** They're game-design conventions
-  consistent with the systems that exist, but consistency isn't proof.
+  are verified from the binary alone.** They are game-design conventions
+  consistent with the systems that exist, but consistency is not proof.
 
 ## Code references
 
@@ -385,10 +385,10 @@ move bytecode, but I haven't traced which moves write which flags.
 
 ## When moves retrack against the opponent — verified
 
-Retracking (the chara's body rotating to face the opponent during a move)
+Retracking — the chara's body rotating to face the opponent during a move —
 runs once per tick from `LuxBattle_TickCharaMainSimulation` step (J),
 which calls `LuxBattleChara_UpdateOpponentRelativeAngles_PerTick @ 0x140305e50`,
-which calls `LuxBattleChara_RetrackFacingTowardOpponent @ 0x140369450`.
+which in turn calls `LuxBattleChara_RetrackFacingTowardOpponent @ 0x140369450`.
 
 The retrack function is the gate. Verified read of `0x140369450`:
 
@@ -410,7 +410,7 @@ So a move retracks iff `chara+0x16e6 == 0` OR `chara+0x16e1 != 0`.
 > `chara+0x16e1` as a per-move "homing override" / "tracking flag". That
 > interpretation was wrong. Both `+0x16e6` and `+0x16e1` are entries in
 > the **64-element motion-input flag bank** at `chara+0x16D0..+0x170F`,
-> documented on `LuxBattleChara_SetMotionInputFlag @ 0x140304c00`.
+> documented under `LuxBattleChara_SetMotionInputFlag @ 0x140304c00`.
 >
 > - `chara+0x16e6` = motion-input flag `0x16` — set by various
 >   move-state transitions (acts as "in-some-non-walk-state" inside
@@ -450,8 +450,8 @@ sets `chara+0x16e6 = 1` at move start. It also:
 
 This is the "commit to the move's facing direction" function. Once it
 fires, retracking is suppressed for the rest of the move — **unless**
-the chara enters a fall-reaction state and `chara+0x16e1` (motion-input
-flag `0x11`) gets toggled by that path.
+the chara enters a fall-reaction state and that path toggles
+`chara+0x16e1` (motion-input flag `0x11`).
 
 **Verified consumer of `chara+0x16e1`:**
 `UpdateOpponentRelativeAngles_PerTick @ 0x140305e50` reads `chara+0x16e1`
@@ -469,7 +469,7 @@ else:
 So `chara+0x16e1` is read in two places: by the retrack gate (above)
 and by the animation-sector update (here). In both, the meaning is
 the same — when the chara is in a fall-reaction state, the engine
-re-allows aiming/animation alignment toward the opponent.
+re-allows aiming and animation alignment toward the opponent.
 
 **Per-frame rotation caps inside `RetrackFacingTowardOpponent`:**
 
@@ -492,20 +492,20 @@ before clamping. The weight system has four fields:
 | `chara+0x971b8` | Per-frame increment (added each tick while countdown active) |
 | `chara+0x971a8` | Mode selector: 0 = scale-then-clamp, 1 = clamp-by-weight, other = no rotation |
 
-Tracking moves that should retrack gradually (not snap) write to these
-fields to control the ramp-in. Move bytecode is the suspected writer
-but **the writer is unverified** — finding it would tell us how
+Tracking moves that should retrack gradually rather than snap write to these
+fields to control the ramp-in. Move bytecode is the suspected writer,
+but **the writer is unverified** — finding it would reveal how
 per-move tracking strength is encoded.
 
 **Bone-target retracking (secondary system):**
 
 When `chara+0x44dc2 != -1`, `RetrackFacingTowardOpponent` runs a second
 pass that aims at a specific opponent bone (read from a pose at
-`chara+0x35a0` vtable[8], offset `+0xc0` or `+0x300` based on
-`chara+0x971d0`). Uses `atan2` of the bone delta against cached
+`chara+0x35a0` vtable[8], offset `+0xc0` or `+0x300` depending on
+`chara+0x971d0`). It uses `atan2` of the bone delta against the cached
 opponent position at `chara+0x964a0/+0x964a8`, with its own SLERP
 weight system at `chara+0x971c0..+0x971cc`. This is what aligns
-attacks that need to hit a specific bone (likely throws/grabs).
+attacks that need to hit a specific bone (likely throws and grabs).
 
 ### Summary of "when does a move retrack"
 
@@ -519,9 +519,9 @@ attacks that need to hit a specific bone (likely throws/grabs).
 
 The third row is **not** a "homing move" path; it is the engine
 realigning the chara during a fall-reaction state mid-move. A move's
-"tracking / homing" attribute (in the gameplay sense — moves that
-track the opponent during their own active frames) is implemented
-through a different mechanism, likely via the SLERP-weight system at
+"tracking / homing" attribute — in the gameplay sense, moves that
+track the opponent during their own active frames — is implemented
+through a different mechanism, likely the SLERP-weight system at
 `chara+0x971ac..+0x971b8` configured at move-start, but that has
 **not yet been verified end-to-end**.
 
@@ -541,26 +541,26 @@ through a different mechanism, likely via the SLERP-weight system at
   weight preset at `chara+0x971b4` (loaded into `chara+0x971b0` when
   the countdown at `chara+0x971ac` reaches zero). Find the writer of
   `+0x971b4 / +0x971b8 / +0x971ac` to pin this down.
-- **All the writers of `chara+0x16e6`** at move end (so default
-  retracking resumes after the move). The lock-retrack writer at
+- **The writers of `chara+0x16e6`** at move end (the path that lets
+  default retracking resume after the move). The lock-retrack writer at
   move-start is found, but the cleanup path is not.
-- **All the writers of `chara+0x16e1`** beyond the verified case-0xd
+- **The writers of `chara+0x16e1`** beyond the verified case-0xd
   hit-reaction site. Other entry points to that flag are unmapped.
-- **What the values of `DAT_143e8a040` and `DAT_143e8a084`** actually
-  are (the restricted-stance per-frame angle caps).
+- **The actual values of `DAT_143e8a040` and `DAT_143e8a084`**
+  (the restricted-stance per-frame angle caps).
 
 ## What needs verification next
 
 - **Find the writer of `chara+0x130` during a non-attack move** (walking,
   8WR, sidestep). This is the central unanswered question.
-- **Find writers of the SLERP weight fields at `chara+0x971ac..+0x971b8`.**
+- **Find the writers of the SLERP weight fields at `chara+0x971ac..+0x971b8`.**
   That pins down the per-move "homing" / "tracking" attribute encoding.
-  (The flag-pair `+0x16e6` / `+0x16e1` is NOT how homing is encoded —
+  (The flag pair `+0x16e6` / `+0x16e1` is NOT how homing is encoded —
   see the correction note above.)
-- **Trace which motion-input flags get set by which moves.** Right now
-  I have the bank and the flag-clearing predicate, but not the per-flag
+- **Trace which motion-input flags get set by which moves.** The flag bank
+  and the flag-clearing predicate are known, but not the per-flag
   semantics.
 - **Find where `EMS_RunCounter` is actually fired.** The string has no
-  static xref but it gets emitted somewhere at runtime.
+  static xref, but it gets emitted somewhere at runtime.
 - **Confirm or refute the V-vs-H hitbox-width hypothesis** by inspecting
   KHit node geometry for representative moves of each category.

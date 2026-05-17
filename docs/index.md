@@ -10,9 +10,9 @@ knowledge base for AI coding agents working on mods via
 
 Pages are auto-generated from Ghidra analysis of the shipping Steam binary
 (class layouts, function RVAs, struct offsets, UFunction trampolines) and
-cross-checked against live UE4SS runtime introspection. Content is dense
-and offset-accurate with explicit source citations — optimised for machine
-readers but still readable to humans.
+cross-checked against live UE4SS runtime introspection. The content is dense,
+offset-accurate, and carries explicit source citations — optimised for machine
+readers but still readable by humans.
 
 !!! warning "Unofficial"
     This project is **not** affiliated with BANDAI NAMCO or the UE4SS maintainers.
@@ -28,11 +28,11 @@ make an edit, this is the navigation contract:
    lookups in one page.
 2. **Have a topic?** Use [the Pages table below](#what-youll-find-here), or
    for SC6 internals specifically the [SC6 quick-find](sc6/index.md#quick-find-where-do-i-look-for-x).
-3. **Need to verify a claim before acting on it?** Re-check against Ghidra
+3. **Need to verify a claim before acting on it?** Re-check it against Ghidra
    via the `mcp__ghidra-mcp__*` tools. The `> source:` blockquote on each
    claim points at the function whose decompile/plate is authoritative.
-   Pages note **verified** / **unverified** / **stale on this build** explicitly —
-   honour those markers.
+   Every claim is marked **verified**, **unverified**, or **stale on this
+   build** — honour those markers.
 4. **Adding new info?** Match the structure of nearby content (tables, not
    prose, where possible) and add a `> source:` line. See the
    [Contributing rules of thumb](contributing.md#rules-of-thumb-for-ai-agents).

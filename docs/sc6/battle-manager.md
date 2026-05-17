@@ -1,8 +1,8 @@
 # Battle Manager & DataTable Config Tree
 
-`ALuxBattleManager` is the authoritative per-match actor. Owns: player chara list, per-frame
-axis/input buffer, move-command pipeline, and a hierarchical `FLuxDataTable` config tree at
-`+0x50` (round rules, timer, per-player settings).
+`ALuxBattleManager` is the authoritative per-match actor. It owns the player chara list, the
+per-frame axis/input buffer, the move-command pipeline, and a hierarchical `FLuxDataTable`
+config tree at `+0x50` (round rules, timer, per-player settings).
 
 All addresses on this page are absolute (image base `0x140000000`).
 
@@ -46,9 +46,9 @@ Full subsystem map of all 43 slots in `+0x00..+0x800`: see
 
 ### Pause / inspection BP API — `ULuxBattleFunctionLibrary`
 
-CDO at `/Script/LuxorGame.Default__LuxBattleFunctionLibrary`. Reflection-callable. The
-breakthrough function: **`SetBattlePause(bPause, inType, WorldContext)`** is the same path
-the in-game pause menu uses — cleanly halts replay timer, replay cursor, round timer, and
+CDO at `/Script/LuxorGame.Default__LuxBattleFunctionLibrary`. Reflection-callable. The key
+function is **`SetBattlePause(bPause, inType, WorldContext)`**: it runs the same path the
+in-game pause menu uses, cleanly halting the replay timer, replay cursor, round timer, and
 chara hitstop in one call. Sibling UFunctions:
 
 | UFunction | Role |
@@ -91,12 +91,12 @@ chara hitstop in one call. Sibling UFunctions:
 
 ## BattleManager subsystem layout
 
-Runtime-verified map of UObject-pointer slots on `ALuxBattleManager`.
-Captured 2026-04-19 via UE4SS class-name introspection of every 8-byte
-slot in `BM+0x00..+0x800`. All 43 subsystem pointers that were live in
-a training match are listed. Addresses in the middle column are
-examples of one particular run; treat them as "this slot holds a
-pointer to an instance of class X" rather than fixed addresses.
+Runtime-verified map of UObject-pointer slots on `ALuxBattleManager`,
+captured 2026-04-19 via UE4SS class-name introspection of every 8-byte
+slot in `BM+0x00..+0x800`. The list covers all 43 subsystem pointers
+that were live in a training match. Addresses in the middle column are
+from one particular run; read them as "this slot holds a pointer to an
+instance of class X" rather than as fixed addresses.
 
 !!! warning "`ALuxBattleManager_GetMoveProviderPtr @ 0x140546600` is misnamed"
     The Ghidra symbol suggests the function reads `*(ALuxBattleManager* + 0x140)`.
@@ -124,14 +124,14 @@ pointer to an instance of class X" rather than fixed addresses.
     `Update_Impl`'s own lookup pattern), and `BattleManager+0x140` is not
     part of the move-provider chain at all on this build.
 
-    Runtime observation: `*(ULuxGameInstance + 0x140)` on a live training
-    match appears as the IEEE 754 value `0x3F800000` (float `1.0f`).
-    Either the slot is recycled as a tickrate / scale field in this
-    build, or the MoveProvider pointer was moved and this address is
-    stale. Downstream, `ALuxBattleChara::GetMoveProvider` caches that
-    non-pointer at `chara+0x1438` on first call, so subsequent calls
-    return whatever `1.0f` is treated as (currently "misinterpreted 8-byte
-    bit pattern" — not dereferenceable). See the
+    Runtime observation: on a live training match, `*(ULuxGameInstance + 0x140)`
+    reads as the IEEE 754 value `0x3F800000` (float `1.0f`). Either the slot
+    is recycled as a tickrate / scale field in this build, or the MoveProvider
+    pointer moved and this address is now stale. Downstream,
+    `ALuxBattleChara::GetMoveProvider` caches that non-pointer at
+    `chara+0x1438` on its first call, so every subsequent call returns
+    whatever `1.0f` decodes to as an 8-byte value — a misinterpreted bit
+    pattern, not a dereferenceable pointer. See the
     [`ALuxBattleChara` runtime-layout note](structures.md#aluxbattlechara)
     for the downstream consequences.
 
@@ -155,7 +155,7 @@ pointer to an instance of class X" rather than fixed addresses.
 | +0x440 | `ULuxBattleCommonInput*`        | CommonInput |
 | +0x450 | `ULuxBattleFrameInput*`         | FrameInput |
 | +0x460 | `ULuxBattleFrameStream*`        | FrameStream |
-| +0x478 | `ALuxBattleFrameInputLog*`      | FrameInputLog — full layout in [Structures](structures.md#aluxbattleframeinputlog-17428-bytes); 17 KB ring buffer of `FLuxRecordedFrame` (192 bytes each ≈ 90-frame budget) plus a per-tick double-tick guard at `+0x4404` |
+| +0x478 | `ALuxBattleFrameInputLog*`      | FrameInputLog — full layout in [Structures](structures.md#aluxbattleframeinputlog-17616-bytes); recorded-frame buffer at `+0x3A8`, online drain's per-slot input cache at `+0x3C0`, inbound-packet deque at `+0x4480`, double-tick guard at `+0x4404` |
 | +0x480 | `ULuxBattleReplayRecorder*`     | ReplayRecorder |
 | +0x488 | `ALuxBattleReplayPlayer*`       | ReplayPlayer — see [Structures](structures.md#aluxbattlereplayplayer-977-bytes) for layout (round + time + state-reset blob + recording stream) |
 
@@ -209,7 +209,7 @@ pointer to an instance of class X" rather than fixed addresses.
 | Offset | Type | Name |
 |-------:|------|------|
 | +0x1420 | `UMaterialParameterCollection*` | BattleMPC |
-| +0x1450 | `UObject*` (TSharedPtr.Target)  | Target half of a TSharedPtr pair read by `LuxMoveProviderRef_Get @ 0x14045FC70` (vtable[0x10]=IsValid, [0x100]=GetDefaultSubProvider) and `LuxMoveProviderRef_GetSubProvider @ 0x140467FE0` (vtable[0xE0]=GetSubProviderByIndex). The same pointer appears to be consumed by `ALuxBattleChara` vtable slot 208 (`GetWeaponData`) and slots 210/211 (`GetBoneDataSharedPtr`), so the concrete class is ambiguous — it behaves like a unified provider rather than a pure MoveProvider. |
+| +0x1450 | `UObject*` (TSharedPtr.Target)  | Target half of a TSharedPtr pair, read by `LuxMoveProviderRef_Get @ 0x14045FC70` (vtable[0x10]=IsValid, [0x100]=GetDefaultSubProvider) and `LuxMoveProviderRef_GetSubProvider @ 0x140467FE0` (vtable[0xE0]=GetSubProviderByIndex). `ALuxBattleChara` vtable slot 208 (`GetWeaponData`) and slots 210/211 (`GetBoneDataSharedPtr`) appear to consume the same pointer, so the concrete class is ambiguous: it behaves like a unified provider, not a pure MoveProvider. |
 | +0x1458 | `void*` (TSharedPtr.Ctrl)       | Refcount control block for the `+0x1450` pair (classic TSharedPtr layout: weak-count at +0x8, strong-count at +0xC). |
 | +0x1463 | `uint8`                         | Global match move-state byte (`5 = playing`, `6 = stopping`) — written by `ALuxBattleManager_SetMoveState @ 0x1403F8370` |
 
@@ -244,9 +244,9 @@ chara+0x458 ALuxTraceManager* TraceManager   (see trace-system.md)
 
 ## Per-frame `Update_Impl`
 
-The game's per-match tick. Instead of polling UE4's input system, the BattleManager
-fetches axis values from a first-party **input processor** it holds a weak ref to
-on the GameState:
+The game's per-match tick. Rather than polling UE4's input system, the BattleManager
+reads axis values from a first-party **input processor**, which it reaches through a
+weak ref on the GameState:
 
 ```text
 GameState+0x1420   UObject*  MoveCommandPlayer     (FName timer handles live here)
@@ -254,8 +254,8 @@ GameState+0x1450   UObject*  InputProcessor
 GameState+0x1458   UObject*  InputProcessorRef     (refcount twin)
 ```
 
-Each tick it calls the processor vtable (primary Y axis via `[+0x18]`, per-player
-via `[+0xE0]`, axis accessor `[+0xB0]`) for up to 4 players, rolls min/max into
+Each tick, for up to 4 players, it calls the processor vtable (primary Y axis via
+`[+0x18]`, per-player via `[+0xE0]`, axis accessor `[+0xB0]`), rolls min/max into
 `AxisValues[]`, and:
 
 - Pushes `(DeltaTime, AxisValues[p+2])` into each player's `ALuxTraceManager::Update_Impl`
@@ -274,9 +274,9 @@ zeroed regardless of the per-axis flag.
 ## Lux DataTable path tree
 
 The `ConfigTable` at `BattleManager+0x50` is not a standard `UDataTable`. It's a
-hierarchical refcounted key-value tree addressed by string/int path segments.
-All `ChangeBattle*` UFunctions are thin shims that build a path cursor, walk to
-a leaf, and assign a value node into it.
+hierarchical, refcounted key-value tree addressed by string/int path segments.
+Every `ChangeBattle*` UFunction is a thin shim: build a path cursor, walk it to
+a leaf, and assign a value node into that leaf.
 
 ### `FLuxDataTablePath` (24 bytes)
 
@@ -319,16 +319,16 @@ LuxDataTable_Commit          (&this->ConfigTable, &resolved);
 // Dtor on every stack path releases the refs.
 ```
 
-`LuxDataTable_Commit` is **both** a path copy-assign and the commit step — a
+`LuxDataTable_Commit` is **both** a path copy-assign and the commit step: a
 path is a refcounted cursor, and rebinding a cursor onto the table's root
-slot is how writes publish. The helper has a fast path when the source is a
-type-5 or type-6 node (adopts the refcount box in place instead of allocating
-a fresh handle + box pair).
+slot is how a write publishes. The helper takes a fast path when the source is
+a type-5 or type-6 node — it adopts the refcount box in place instead of
+allocating a fresh handle + box pair.
 
-`LuxDataTablePath_AppendFloat` is **not** a key-append — the tree doesn't use
-float keys. It's the leaf-value constructor ("make the RHS of `path = value`"
-for a float). Use `LuxDataTable_AddFloatRow` instead when you want
-`path[key] = float`.
+`LuxDataTablePath_AppendFloat` is **not** a key-append; the tree doesn't use
+float keys. It's the leaf-value constructor — it builds the RHS of
+`path = value` for a float. When you want `path[key] = float`, use
+`LuxDataTable_AddFloatRow` instead.
 
 ### Known leaf paths
 
@@ -379,9 +379,9 @@ An unknown enum value is dropped silently (no-op commit).
 | `LuxBattleRule_BuildTrainingModeDataTablePath` | `0x5D6F40` | builds the full training-mode rule tree in one shot; mod entry point for "boot straight into Training" |
 
 A C++ plugin can reach any leaf by replaying `Ctor → AppendString*/AppendInt → Resolve`
-against `BattleManager+0x50`, then `Commit` a freshly-built value node with
+against `BattleManager+0x50`, then `Commit`-ing a freshly-built value node via
 `AssignValue`. Writes to enum-typed slots need a wide-string enum literal built
-via `MakeEnumStringW` — the parser matches on the literal text, not on a numeric
+with `MakeEnumStringW`: the parser matches on the literal text, not on a numeric
 enum value.
 
 ### Boot-straight-to-Training recipe
@@ -403,24 +403,25 @@ complete Training-mode rule tree in one call. The hard-coded leaves it writes
 
 Invoking this directly (or its caller `ULuxTrainingBattleSetupSceneScript`)
 after the Title scene is the cleanest way to skip MainMenu and land in a
-configured training match. Only `BattleTime` is parameterised — the rest are
-baked in, so if you need different rules you have to override the leaves after
-the builder returns.
+configured training match. Only `BattleTime` is parameterised; the rest are
+baked in, so for different rules you must override the leaves after the
+builder returns.
 
 ## Pausing the simulation: gates, not dt-multiply
 
 `ULuxBattleFunctionLibrary::SetBattlePause` (see [at-a-glance](#pause-inspection-bp-api-uluxbattlefunctionlibrary))
 is the clean way to pause for menu purposes. For per-frame freeze + step
 control (e.g. a frame-step debugger), the verified-correct approach is to
-gate the **entry prologues** of every tick driver with a shared "policy
-slot" — bare-RET when the slot is 0, run normally when it's not.
+gate the **entry prologue** of every tick driver with a shared "policy
+slot": bare-RET when the slot is 0, run normally otherwise.
 
-The dt-multiply approach used by earlier prototypes (replace `movss xmm0, [global]`
-loads at six sites with `[speedval]` and write `speedval = 0`) was abandoned
-because the affected functions still **execute their bodies** at `dt = 0`,
-and several MoveVM cell-init paths contaminate state when run with a 0
-delta (multi-hit moves break under frame-step). The gate model runs each
-frame fully or not at all — no fractional dt anywhere in the simulation.
+The dt-multiply approach used by earlier prototypes — replace the
+`movss xmm0, [global]` loads at six sites with `[speedval]` and write
+`speedval = 0` — was abandoned because the affected functions still
+**execute their bodies** at `dt = 0`, and several MoveVM cell-init paths
+corrupt state when run with a 0 delta (multi-hit moves break under
+frame-step). The gate model runs each frame fully or not at all, with no
+fractional dt anywhere in the simulation.
 
 ### Required gate set
 
@@ -432,17 +433,17 @@ frame fully or not at all — no fractional dt anywhere in the simulation.
 | **TimeDilationGate** | `LuxMoveVM_GetTimeDilationScalar @ 0x14030A8C0` entry | Force return `0.0f`. Bypasses the function's state==2 fall-through that returns `chara+0x3500` (≈ 1.0) and ignores `bVMFreezeByte` for normal-play characters during replay viewing — see [TimeDilation fall-through paths](replay-system.md#timedilation-fall-through-paths-bypasses-vmfreezebyte). |
 
 `g_LuxBattle_VMFreezeRecord.bVMFreezeByte @ 0x1448462D0` is the engine's
-own internal "VM paused" lever (read by `LuxMoveVM_GetTimeDilationScalar`
-on Path B only — the hit-stop / cinematic path). Useful as a second
-defence in depth for hit-stop / cinematic flows but **does not** freeze
-a normal-play replay on its own.
+own internal "VM paused" lever. `LuxMoveVM_GetTimeDilationScalar` reads it
+on Path B only — the hit-stop / cinematic path. It works as defence in
+depth for hit-stop / cinematic flows, but **does not** freeze a
+normal-play replay on its own.
 
 For the full per-frame chain and offset map of replay state, see
 [Replay System](replay-system.md).
 
 ### Legacy fields (still load-bearing for non-freeze flows)
 
-These slots are part of the simulation regardless of the gate model and
+These slots are part of the simulation regardless of the gate model, and
 remain useful for inspection or single-target overrides:
 
 | Slot | Role |
@@ -455,7 +456,7 @@ remain useful for inspection or single-target overrides:
 
 `SetBattlePause` does **not** stop everything. SC6 has a deliberate "tick during pause"
 delegate (signature class `OnBattleTickWhenPaused__DelegateSignature`, lazy-initialised
-in `FUN_140957D80`, stored in `DAT_14414D0B0`). The function
+in `FUN_140957D80`, stored in `DAT_14414D0B0`).
 `LuxBattleManager_RegisterOnTickWhenPaused_Delegates @ 0x1403F8E70` binds **six** handlers
 onto the world's PlayerController-equivalent (BM+0x410):
 
@@ -468,20 +469,20 @@ onto the world's PlayerController-equivalent (BM+0x410):
 | `BM+0x4E8` | `ALuxBattleTutorialManager` | tutorial state-machine ticks |
 | `BM+0x520` | `ALuxBattleSound`           | audio fades, ducking, ambience |
 
-These fire only when UE4's `bGamePaused == true` (i.e. when `SetBattlePause` is the
-pause path). They do **not** fire when freeze is driven by writing
+These fire only when UE4's `bGamePaused == true` — that is, when `SetBattlePause` is the
+pause path. They do **not** fire when the freeze is driven by writing
 `g_LuxBattle_VMFreezeRecord.bVMFreezeByte` (see
-[movement.md → TimeDilation system](movement.md#timedilation-system-verified)) — that
+[movement.md → TimeDilation system](movement.md#timedilation-system-verified)): that
 zeroes `LuxMoveVM_GetTimeDilationScalar` for all simulation callers but leaves UE4's
 pause flag untouched.
 
 Practical consequences for mods:
 
-- Any "pause everything including replay cursor" approach using `SetBattlePause` should
-  expect the replay-cursor handler at `BM+0x478` to keep the replay-side simulation
-  alive. If you want the replay to truly stop, you need an additional gate.
+- If you use `SetBattlePause` to "pause everything, including the replay cursor", expect
+  the replay-cursor handler at `BM+0x478` to keep the replay-side simulation alive.
+  Truly stopping the replay needs an additional gate.
 - Conversely, anything you want to keep responsive *during* pause (custom UI, your own
-  input dispatcher) can be bound through this same delegate without hand-rolling a
+  input dispatcher) can be bound through this same delegate, with no hand-rolled
   per-tick hook.
 - Sound fades during pause are intentional — don't try to halt audio by zeroing the VM
   scalar; use the audio module directly.

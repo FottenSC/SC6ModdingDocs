@@ -1,13 +1,13 @@
 # Contributing
 
-This site is deliberately easy to extend — it's just Markdown and one YAML file. That makes it
+This site is deliberately easy to extend — it's just Markdown plus one YAML file, which makes it
 friendly for both human contributors and AI agents.
 
 ## Add a new page (the 30-second version)
 
 1. Create a new `.md` file under `docs/` in the right folder (e.g. `docs/cookbook/swap-mesh.md`).
-2. Add it to the `nav:` list in `mkdocs.yml` (at the repo root) so it shows up in the sidebar.
-3. Open a PR. Cloudflare Pages builds and redeploys on merge to `main`; every other branch / PR gets its own preview URL.
+2. Add it to the `nav:` list in `mkdocs.yml` (at the repo root) so it appears in the sidebar.
+3. Open a PR. Cloudflare Pages builds and redeploys on merge to `main`; every other branch and PR gets its own preview URL.
 
 That's the whole workflow. You do **not** need to know JavaScript, React, Vue, or Astro.
 
@@ -20,7 +20,7 @@ Before adding or editing, an AI agent should know how to find existing content:
 - **Have a symbol or offset?** [Symbol Index](reference/symbol-index.md) is the cross-cutting cheat sheet.
 - **Have a topic?** Each domain has a landing page — see [SC6 internals index](sc6/index.md).
 - **Honour status markers**: `verified` is trustworthy; `unverified` is a hypothesis; `stale on this build` means the codepath exists but isn't reached. Don't promote `unverified` to fact without re-checking against Ghidra.
-- **`> source:` blockquotes** point at the Ghidra address whose plate-comment / decompile is authoritative. Disagreements between a topic page and the source-of-record should be resolved by re-reading the source.
+- **`> source:` blockquotes** point at the Ghidra address whose plate-comment or decompile is authoritative. When a topic page disagrees with its source-of-record, re-read the source to settle it.
 - **Conventions** for offset notation (`chara+0xN`, `BM+0xN`, `vmCtx+0xN`, `InputLog+0xN`) are listed in [SC6 index](sc6/index.md#conventions-used-on-these-pages).
 
 ### Editing the docs
@@ -28,7 +28,7 @@ Before adding or editing, an AI agent should know how to find existing content:
 When an AI agent is adding or editing pages, it should:
 
 - **Prefer Markdown primitives** — tables, fenced code blocks, bullet lists — over custom HTML.
-  Tables are easier for both humans and other AIs to extract data from than prose.
+  Data is easier to extract from a table than from prose, for both humans and other AIs.
 - **One fact per row** in tables — easier to grep, easier to update, easier to cross-reference.
 - **Use admonitions** for non-prose content:
   ```
@@ -44,7 +44,7 @@ When an AI agent is adding or editing pages, it should:
 - **Stub pages are fine**: add an `!!! info "Stub"` admonition and a TODO list so future passes know where to expand.
 - **Cite the source** of reversed info (dumper output, hook trace, disasm at address, etc.) in a `> source:` blockquote beneath the claim.
 - **Use status markers explicitly** when adding new claims: write "verified" or "unverified" — don't leave the reader (human or AI) to guess.
-- **Don't duplicate facts** — link to the canonical page. If the same offset is documented in two places, one will go stale.
+- **Don't duplicate facts** — link to the canonical page instead. If the same offset is documented in two places, one of them will go stale.
 - **Update [Symbol Index](reference/symbol-index.md)** when adding a high-traffic symbol (a function called from multiple pages, a struct cited in multiple places). Skip for one-off references — they're better left to grep.
 
 ## Local preview (optional)

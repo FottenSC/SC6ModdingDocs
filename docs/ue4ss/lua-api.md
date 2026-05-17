@@ -25,8 +25,8 @@ if pc:IsValid() and pc.Pawn:IsValid() then
 end
 ```
 
-Always null-check each link in the chain with `:IsValid()` before dereferencing — `pc.Pawn` can
-be `nil` during level transitions even when the PlayerController itself is alive. Don't try to
-test for a UFunction's existence with `pc.Pawn.K2_GetActorLocation and …`: UE4SS resolves
-UFunction accessors lazily via `__index`, so that field read never returns `nil` on a live
-wrapper, and the guard always passes.
+Null-check every link in the chain with `:IsValid()` before dereferencing — `pc.Pawn` can be
+`nil` during level transitions even while the PlayerController itself is alive. Don't try to test
+for a UFunction's existence with `pc.Pawn.K2_GetActorLocation and …` either: UE4SS resolves
+UFunction accessors lazily via `__index`, so on a live wrapper that field read never returns
+`nil` and the guard always passes.

@@ -1,7 +1,7 @@
 # Dev / Debug Hooks Left in Shipping
 
-Inventory of developer-facing debug code that survived into the SC6 Steam build, and which
-hooks still work vs. which are skeletons with bodies stripped.
+An inventory of the developer-facing debug code that survived into the SC6 Steam
+build — which hooks still work, and which are skeletons with their bodies stripped.
 
 ## At a glance
 
@@ -26,9 +26,9 @@ hooks still work vs. which are skeletons with bodies stripped.
 
 ## The `ULuxDev*Setting` classes
 
-Three UClasses with the `LuxDev` prefix are registered at startup. Two are under a `DevOnly`
-category — the third is a false positive (it's a regular user-facing setting that happens to
-share the naming convention).
+Three UClasses with the `LuxDev` prefix are registered at startup. Two sit under a `DevOnly`
+category; the third is a false positive — a regular user-facing setting that merely shares
+the naming convention.
 
 ### `ULuxDevBattleHUDSetting`  (category `DevOnly`)
 
@@ -64,17 +64,17 @@ share the naming convention).
 
 ### Are they live in shipping?
 
-No, but not in the sense that matters for a mod author. The UClasses themselves register and
-get a CDO. The *property names* (e.g. `WinningCountVisible`) appear exactly once in the binary —
-inside the `Z_Construct_UClass` function itself. That means **no native C++ code reads these
-flags** at runtime.
+Not in any sense that matters to a mod author. The UClasses themselves register and get a
+CDO, but each *property name* (e.g. `WinningCountVisible`) appears exactly once in the
+binary — inside its own `Z_Construct_UClass` function. That means **no native C++ code
+reads these flags** at runtime.
 
-If they do anything at all, it's through Blueprint graphs that live in the pak chunks and bind
-these properties to UMG widget visibility. Those graphs were not inlined into the shipping exe.
+If they do anything at all, it is through Blueprint graphs in the pak chunks that bind these
+properties to UMG widget visibility. Those graphs were not inlined into the shipping exe.
 
-Practical consequence for a mod: you can set the booleans via `GEngine->GetDefaultObject(UClass*)`
-all day and it will change nothing visible. The path to HUD element visibility is through the
-UMG widget tree, not through these settings.
+The practical consequence for a mod: you can set the booleans via
+`GEngine->GetDefaultObject(UClass*)` all day and nothing visible will change. HUD element
+visibility runs through the UMG widget tree, not through these settings.
 
 ## `ULuxTraceDataAsset::bDebugDrawTrace*`  — three dead bools
 
@@ -102,13 +102,13 @@ thunks are not bound:
 | `Z_Construct_UFunction_UKismetSystemLibrary_DrawDebugLine` | `0x142558090` | UFunction reflected, no `execDrawDebugLine` bound |
 | `Z_Construct_UFunction_DrawDebugBox` | `0x142552640` | Same — reflection only |
 
-Calling either from UE4SS reflection lands on an unbound exec slot — silent no-op at best,
-crash at worst. This is the universal result of building UE4 with `ENABLE_DRAW_DEBUG = 0`,
-which `UE_BUILD_SHIPPING` implies by default.
+Calling either through UE4SS reflection lands on an unbound exec slot — a silent no-op at
+best, a crash at worst. This is the universal result of building UE4 with
+`ENABLE_DRAW_DEBUG = 0`, which `UE_BUILD_SHIPPING` implies by default.
 
 The actionable workaround is [ULineBatchComponent](line-batching.md). Its rendering path is
 fully live in shipping, and `UWorld` hands you three ready-made instances — one of which
-draws without depth test, which is what you actually want for a hitbox overlay.
+draws with no depth test, exactly what a hitbox overlay needs.
 
 ## `AHUD::AddDebugText` — a live overlay pathway
 
@@ -119,9 +119,9 @@ Unlike the `DrawDebug*` helpers, the HUD's per-actor debug-text system is not st
   HUD canvas each frame.
 
 This is the fallback path for text-style overlays (damage numbers, frame advantage, move
-names, etc.) when you don't want to spawn your own UMG widget. It won't draw lines or boxes —
-only text anchored to an actor — but the plumbing is intact and the HUD already walks the
-array in its `DrawHUD` pass.
+names, and so on) when you don't want to spawn your own UMG widget. It draws only text
+anchored to an actor — no lines or boxes — but the plumbing is intact and the HUD already
+walks the array in its `DrawHUD` pass.
 
 ## `LuxMoveVM_ExecuteAndDumpOpcode` — the dead per-tick debug text
 
@@ -132,14 +132,14 @@ The move-execution VM writes a human-readable debug string to a 128-byte buffer 
 - Format strings found inline: `"ATK:power=%x range=%7.3fm"`, `"ATB:combo=%x yarare=%x"`,
   and similar opcode traces.
 
-The function *writes* the buffer on every move-VM tick in shipping. But an xref scan finds
-**no consumer** — nothing in the shipping binary reads the buffer and rasterises it to a
-surface. It's a dead pipe: the write side was kept, the display side was dropped.
+The function *writes* the buffer on every move-VM tick in shipping, but an xref scan finds
+**no consumer** — nothing in the shipping binary reads the buffer or rasterises it to a
+surface. It is a dead pipe: the write side was kept, the display side dropped.
 
-For a mod this is still useful as a **signal source**, not a display path. You can read the
-same buffer at `vmCtx + 0x2A28` via your own pointer and render it through your own overlay
-(UMG text or ULineBatchComponent-hosted billboard). You get the dev's pre-formatted frame
-trace without having to decode opcodes yourself.
+For a mod, this is still useful as a **signal source** rather than a display path. Read the
+same buffer at `vmCtx + 0x2A28` through your own pointer and render it via your own overlay
+(UMG text, or a billboard hosted on `ULineBatchComponent`). You get the developers'
+pre-formatted frame trace without having to decode opcodes yourself.
 
 ## The only `Lux.*` CVar in shipping
 

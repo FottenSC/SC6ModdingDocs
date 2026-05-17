@@ -1,6 +1,6 @@
 # Cookbook
 
-Short, copy-pasteable recipes. Each recipe should be self-contained: what it does, the code, and a
+Short, copy-pasteable recipes. Each one is self-contained: what it does, the code, and a
 "verify it works" step.
 
 !!! tip "Adding a recipe"

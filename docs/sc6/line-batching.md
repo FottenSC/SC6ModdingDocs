@@ -1,8 +1,8 @@
 # Drawing 3D Debug Lines (ULineBatchComponent)
 
-The one live debug-draw path in SC6 Shipping: `UWorld`'s three `ULineBatchComponent`
-instances. Append `FBatchedLine` entries to the `BatchedLines` `TArray` at component
-`+0x808` and the engine renders them every frame.
+The one debug-draw path still live in the SC6 shipping build is `UWorld`'s three
+`ULineBatchComponent` instances. Append `FBatchedLine` entries to the `BatchedLines`
+`TArray` at component `+0x808` and the engine renders them every frame.
 
 ## At a glance
 
@@ -38,18 +38,19 @@ Every `UWorld` owns three of them, all reachable via fixed offsets:
 | `+0x48` | `PersistentLineBatcher` | Depth-tested; entries persist until `FLUSHPERSISTENTDEBUGLINES` |
 | `+0x50` | `ForegroundLineBatcher` | **No depth test, always on top** |
 
-For an always-visible debug overlay, use `ForegroundLineBatcher`. The other two are useful
-if you explicitly want the lines to occlude or persist across frames.
+For an always-visible debug overlay, use `ForegroundLineBatcher`. The other two are only
+useful when you specifically want the lines to occlude behind geometry or persist across
+frames.
 
 !!! warning "Depth-tested batchers are mostly useless for hit-volume overlays"
     The two depth-tested slots (`+0x40` / `+0x48`) sound appealing — "draw the lines but
-    let geometry occlude them" — but in SC6 character meshes and stage geometry are
-    **always closer to the camera** than the bone-attached hit volumes you're trying to
-    draw. The result is that hitbox / hurtbox lines disappear behind characters,
-    weapons, and props for most of every match. HorseMod tried exposing the depth-tested
-    slot as a `Default` UI option and ended up hiding it again because the overlay was
-    only visible for the few frames per round when nothing was between the camera and
-    the chara. **`ForegroundLineBatcher` (`+0x50`) is the only practical choice** for an
+    let geometry occlude them" — but in SC6 the character meshes and stage geometry are
+    **always closer to the camera** than the bone-attached hit volumes you want to draw.
+    As a result, hitbox and hurtbox lines spend most of every match hidden behind
+    characters, weapons, and props. HorseMod tried exposing the depth-tested slot as a
+    `Default` UI option and ended up hiding it again, because the overlay was visible
+    only for the few frames per round when nothing stood between the camera and the
+    chara. **`ForegroundLineBatcher` (`+0x50`) is the only practical choice** for an
     always-visible hitbox overlay.
 
 ```cpp
@@ -154,8 +155,9 @@ at a known address and can be called directly.
 > call `MarkForNeededEndOfFrameRecreate @ 0x141d4e7b0`. Confirmed by the xref from
 > `USceneComponent::SetVisibility @ 0x141dad60a` which calls it unconditionally.
 
-If you append to `BatchedLines` but never mark dirty, the scene proxy keeps drawing
-stale data. Four workable mitigations, in roughly descending order of reliability:
+If you append to `BatchedLines` but never mark the component dirty, the scene proxy
+keeps drawing stale data. Four workable mitigations, in roughly descending order of
+reliability:
 
 1. **Direct call to `MarkRenderStateDirty` (recommended).** After your per-frame
    appends, call the function above on the batcher pointer. No UFunction lookup, no
@@ -170,20 +172,19 @@ stale data. Four workable mitigations, in roughly descending order of reliabilit
     MarkRenderStateDirty(foreground_batcher);
     ```
 
-2. **Short lifetime trick.** Append every line with `RemainingLifeTime = 0.05f ..
+2. **Short-lifetime trick.** Append every line with `RemainingLifeTime = 0.05f ..
    0.10f`. The component's own `TickComponent` runs the lifetime sweep every frame;
-   when a line expires it removes it and internally calls `MarkRenderStateDirty` (the
-   same function at `0x141d4e910`) via `Flush` at the end of the sweep. If you
-   re-append every frame you stay in a steady state where the proxy is being rebuilt
-   constantly and always has fresh data. One-to-three frame delay on overlay
-   toggle-off (lines finish their lifetime naturally). Works without any direct
-   function-pointer binding.
+   when a line expires the sweep removes it and, at its end, calls `MarkRenderStateDirty`
+   (the same function at `0x141d4e910`) via `Flush`. Re-appending every frame keeps the
+   proxy in a steady state — constantly rebuilt and always holding fresh data. The cost
+   is a one-to-three frame delay when the overlay is toggled off, while the last lines
+   finish their lifetime naturally. Works without binding any direct function pointer.
 3. **Toggle component visibility.** `USceneComponent::SetVisibility(bNewVisibility,
-   bPropagateToChildren)` is a UFunction that calls `MarkRenderStateDirty` as its
-   tail path (confirmed by the xref from `SetVisibility` to `0x141d4e910`). Slightly
-   hacky but UFunction-only.
-4. **Locate `MarkRenderStateDirty` via vtable pattern scan.** Engine-version-robust
-   fallback; not needed for SC6 since option 1 gives a direct address.
+   bPropagateToChildren)` is a UFunction that calls `MarkRenderStateDirty` on its tail
+   path (confirmed by the xref from `SetVisibility` to `0x141d4e910`). Slightly hacky,
+   but UFunction-only.
+4. **Locate `MarkRenderStateDirty` via vtable pattern scan.** An engine-version-robust
+   fallback; unnecessary for SC6 since option 1 gives a direct address.
 
 ## Minimal example
 

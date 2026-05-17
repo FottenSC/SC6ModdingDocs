@@ -1,13 +1,13 @@
 # Reflection Gotchas
 
-Things that look like UE4SS bugs but are actually the game binary doing something unusual. If you
-hit one of these on SC6, the symptoms match what's described here — don't keep fighting your Lua.
+Things that look like UE4SS bugs but are actually the game binary doing something unusual. If your
+symptoms on SC6 match one of the cases below, the cause is here — stop trying to fix your Lua.
 
 ## "Tried calling a member function but the UObject instance is nullptr"
 
-The single most misleading UE4SS error you'll see when modding SC6. The message suggests the
-receiver is dead, but in practice it's **emitted for any null pointer encountered inside the
-UFunction dispatch path** — including a null entry while UE4SS walks the UFunction's UProperty
+The single most misleading UE4SS error you'll see when modding SC6. The message implies the
+receiver is dead, but in practice UE4SS **emits it for any null pointer encountered inside the
+UFunction dispatch path** — including a null entry found while walking the UFunction's UProperty
 children list to marshal parameters.
 
 ### How to recognise it
@@ -23,9 +23,10 @@ UFunction's parameters**, not about the receiver.
 
 Epic's UE4 class registration macros emit a Z-constructor that calls `UE4_RegisterClassEx` — the
 extended form that wires up the class's properties callback. A game that hand-rolls its class
-registration can use the shorter `UE4_RegisterClass(ClassInfo, Name, Size, CRC)` variant, which
-skips the property callback entirely. The class still works for the game's own VM (exec trampolines
-are wired through a separate path) but has **no UProperty metadata for UE4SS to iterate**.
+registration can instead use the shorter `UE4_RegisterClass(ClassInfo, Name, Size, CRC)` variant,
+which skips the property callback entirely. The class still works for the game's own VM (exec
+trampolines are wired through a separate path), but it has **no UProperty metadata for UE4SS to
+iterate**.
 
 SC6's `ALuxBattleChara` is registered this way. Its three UFunctions (`Active`, `Inactive`,
 `GetTracePosition`) all take parameters, and all three fail from UE4SS Lua for this reason.
@@ -34,9 +35,9 @@ Inherited AActor UFunctions like `K2_GetActorLocation` keep working because Epic
 
 ### Diagnosing it
 
-Pick a UFunction that takes no params from the problem class and call it. If it works, it's
-almost certainly a metadata-missing issue rather than a live-object issue. In Ghidra, open the
-class's `__StaticClass` symbol and check which registrar it calls:
+Pick a parameterless UFunction from the problem class and call it. If it works, the cause is
+almost certainly missing metadata rather than a dead object. In Ghidra, open the class's
+`__StaticClass` symbol and check which registrar it calls:
 
 ```c
 // Good — full metadata, all UFunctions callable from Lua
@@ -79,13 +80,13 @@ Inherited UFunctions from parents registered with the extended form are still fi
 
 ## `FindFirstOf` vs `BattleCharaArray[i]`
 
-Both return a usable wrapper for a chara in most cases. But **TArray-element wrappers**
+In most cases both return a usable wrapper for a chara. But **TArray-element wrappers**
 (e.g. `bm.BattleCharaArray[i]`) and **`FindAllOf` / `FindFirstOf` results** reach the wrapped
-UObject through different UE4SS code paths, and those paths differ in how strictly they validate
-the object against `GUObjectArray` before you call anything on it. On class hierarchies with
-marginal reflection metadata (see above), the TArray-element path can trip checks that the
-global-iteration path quietly skips — you get the same `nullptr` error even though the object is
-alive.
+UObject through different UE4SS code paths, and those paths validate the object against
+`GUObjectArray` with different strictness before letting you call anything on it. On class
+hierarchies with marginal reflection metadata (see above), the TArray-element path can trip checks
+that the global-iteration path quietly skips, producing the same `nullptr` error even though the
+object is alive.
 
 If your UFunction call fails on `bm.BattleCharaArray[i]`, try `FindAllOf("LuxBattleChara")[i]`
 first before assuming it's a different problem. (UE4SS strips the `A` / `U` prefix from native
@@ -95,8 +96,8 @@ class names when matching, so the right string is `"LuxBattleChara"`, not `"ALux
 
 A surprising number of `ALuxBattleManager` UFunctions (e.g. `IsBattlePlaying`,
 `GetBattleManager`) are registered as **static with a `WorldContextObject` parameter**.
-Calling `bm:IsBattlePlaying()` on an instance receiver does *not* automatically bind the
-instance as the world context — UE4SS passes `nullptr` for that param, the Impl short-circuits
+Calling `bm:IsBattlePlaying()` on an instance receiver does *not* automatically bind that
+instance as the world context — UE4SS passes `nullptr` for the parameter, the Impl short-circuits
 to `false`, and the gate silently closes.
 
 Always pass an explicit world-context when the exec trampoline reads one:

@@ -42,7 +42,7 @@ Words used consistently across these docs:
 | `chara+0xN` | Offset on `ALuxBattleChara*` (size 0x568, runtime extension to ~0x97000). [Layout](../sc6/structures.md#aluxbattlechara). |
 | `BM+0xN` | Offset on `ALuxBattleManager*`. [Layout](../sc6/battle-manager.md#aluxbattlemanager-layout). |
 | `vmCtx+0xN` | Offset on `FLuxMoveCommandPlayer*` (per-chara VM slot, 0x302C bytes). [Layout](../sc6/structures.md#fluxmovecommandplayer-12332-bytes). |
-| `InputLog+0xN` | Offset on `ALuxBattleFrameInputLog*`. [Layout](../sc6/structures.md#aluxbattleframeinputlog-17428-bytes). |
+| `InputLog+0xN` | Offset on `ALuxBattleFrameInputLog*`. [Layout](../sc6/structures.md#aluxbattleframeinputlog-17616-bytes). |
 | RVA `0xN` | Image-relative; absolute address = `0x140000000 + RVA`. Some "Code references" tables use RVAs. |
 | `_Impl` suffix | The C++ body of a UFunction (e.g. `Active_Impl`). Game often calls these directly, bypassing the exec trampoline. |
 | `Z_Construct_*` | UE4 reflection registrar — runs at startup to register a UClass / UStruct / UFunction / UEnum. |
@@ -71,8 +71,10 @@ the page link for full context.
 | `ALuxBattleChara_TickActor` | `0x1403D0590` | [Replay System: Site 22](../sc6/replay-system.md#the-seven-tick-paths-to-halt-for-a-frozen-replay) |
 | `ALuxDemoHumanActor_TickActor` | `0x1404865B0` | [Replay System: Site 22b](../sc6/replay-system.md#the-seven-tick-paths-to-halt-for-a-frozen-replay) |
 | `APreviewHumanActor_TickActor` | `0x140486C60` | [Replay System: Site 22c](../sc6/replay-system.md#the-seven-tick-paths-to-halt-for-a-frozen-replay) |
+| `UDemoNetDriver_GotoTimeInSeconds` | `0x141E0ECA0` | [Replay System: scrubbing](../sc6/replay-system.md#scrubbing-a-match-replay-udemonetdrivergototimeinseconds) — UE4 native scrub for match replays |
+| `RegisterCVar_DemoGotoTimeInSeconds` | `0x140255B00` | [Replay System: scrubbing](../sc6/replay-system.md#scrubbing-a-match-replay-udemonetdrivergototimeinseconds) — CVar `demo.GotoTimeInSeconds` registrar |
 
-### Move VM
+### Move VM (outer command-script VM)
 
 | Symbol | Address | Page |
 |---|---|---|
@@ -82,11 +84,74 @@ the page link for full context.
 | `LuxMoveSystem_TickMove` | `0x140367EE0` | [Move System](../sc6/move-system.md#key-vm-entry-points) |
 | `LuxMoveSystem_TickMoveAndAutoAdvance` | `0x14031C740` | [Move System](../sc6/move-system.md#key-vm-entry-points) |
 | `LuxMoveVM_GetTimeDilationScalar` | `0x14030A8C0` | [Movement: TimeDilation](../sc6/movement.md#timedilation-system-verified) / [Replay: bypass](../sc6/replay-system.md#timedilation-fall-through-paths-bypasses-vmfreezebyte) |
-| `LuxMoveVM_TransitionToMove` | `0x1402FE350` | [Hitbox System](../sc6/hitbox-system.md) |
+| `LuxMoveVM_TransitionToMove` | `0x1402FE350` | [Hitbox System](../sc6/hitbox-system.md) / [Move System: lane transitions](../sc6/move-system.md#how-transitions-actually-fire) |
 | `LuxMoveVM_PostATKDelayGate` | `0x140365520` | [Move System](../sc6/move-system.md#key-vm-entry-points) |
 | `LuxMoveVM_OnMoveStart_SnapPositionAndFacing_LockRetrack` | `0x1402FF3E0` | [Movement: retrack](../sc6/movement.md#when-moves-retrack-against-the-opponent-verified) |
 | `LuxMoveVM_ApplyMoveOffsetToChara` | `0x140344FC0` | [Movement: code references](../sc6/movement.md#code-references) |
-| `LuxBattle_DispatchYarareReaction` | `0x1403521B0` | [Move System](../sc6/move-system.md#key-vm-entry-points) |
+| `LuxBattle_DispatchYarareReaction` | `0x1403521B0` | [Reaction System: pipeline](../sc6/reaction-system.md#at-a-glance) |
+
+### Reaction System (yarare)
+
+| Symbol | Address | Page |
+|---|---|---|
+| `LuxBattleChara_ProcessHitReactionState` | `0x140342FF0` | [Reaction System: pipeline](../sc6/reaction-system.md#at-a-glance) |
+| `LuxMoveVM_TickPickAndDispatchReaction` | `0x1402DEF50` | [Reaction System](../sc6/reaction-system.md) / [Hitbox: throw whiff](../sc6/hitbox-system.md#throw-connection-yarare-dispatch) |
+| `LuxMoveVM_TickActiveYarareReaction` | `0x14035EF30` | [Reaction System: per-id Tick index](../sc6/reaction-system.md#per-id-init-tick-handler-index) |
+| `LuxMoveVM_ProbeSpecialReactionOverride` | `0x1402DFD60` | [Reaction System: pipeline](../sc6/reaction-system.md#at-a-glance) |
+| `LuxMoveVM_RollComboExtensionReaction` | `0x1402E04A0` | [Reaction System: pipeline](../sc6/reaction-system.md#at-a-glance) |
+| `LuxBattle_YarareIdToReactionBitmask` | `0x14035F390` | [Reaction System: pipeline](../sc6/reaction-system.md#at-a-glance) |
+| `LuxBattle_CheckYarareReactionGate` | `0x140362E70` | [Reaction System: 134 gate codes](../sc6/reaction-system.md#checkyararereactiongate-134-gate-codes) |
+| `LuxBattle_CheckYarareGate_AttackCategoryGate` | `0x140362C30` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckYarareGate_AttackMotionGate` | `0x140362D30` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckYarareGate_StepRange` | `0x140360650` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckYarareGate_ReactionStateMatch` | `0x140360930` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckYarareGate_BackStepRange` | `0x1403607F0` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckYarareGate_AerialRange` | `0x140361240` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckYarareGate_GroundApproachRange` | `0x140361420` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckYarareGate_RingPositionAdvantage` | `0x1403615C0` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckYarareGate_HitStateRingAdvantage` | `0x140361740` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckYarareGate_OppHitRingAdvantage` | `0x140361820` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckYarareGate_OppAttackRingAdvantage` | `0x1403618F0` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckYarareGate_MutualGuardBreakRange` | `0x140362060` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckYarareGate_ApproachAngleRange` | `0x140362510` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckYarareGate_OppAttackHealthRange` | `0x1403626F0` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckYarareGate_SelfDistanceBucket` | `0x140362790` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
+| `LuxBattle_CheckReactionCancelClearance` | `0x140363D10` | [Reaction System: exit conditions](../sc6/reaction-system.md#exit-conditions) |
+| `LuxMoveVM_BuildReactionCandidateList` | `0x140363EF0` | [Reaction System: filter chain](../sc6/reaction-system.md#reaction-pick-filter-chain-not-documented-in-detail-see-ghidra) |
+| `LuxMoveVM_WeightedSelectReactionCandidate` | `0x1403647C0` | [Reaction System: filter chain](../sc6/reaction-system.md#reaction-pick-filter-chain-not-documented-in-detail-see-ghidra) |
+| `LuxMoveVM_SelectReactionSlot` | `0x140351BB0` | [Reaction System: filter chain](../sc6/reaction-system.md#reaction-pick-filter-chain-not-documented-in-detail-see-ghidra) |
+| `LuxBattle_PickRingoutReactionYarare` | `0x140353A00` | [Reaction System: pipeline](../sc6/reaction-system.md#at-a-glance) |
+| `LuxBattle_ComputeHitReactionParams` | `0x140343B90` | [Reaction System: pipeline](../sc6/reaction-system.md#at-a-glance) |
+| `LuxBattleChara_ApplyHitReactionMove` | `0x1403448A0` | [Reaction System: pipeline](../sc6/reaction-system.md#at-a-glance) |
+| `LuxBattleChara_DecayHitstunSlideVelocity` | `0x140309160` | [Reaction System: pipeline](../sc6/reaction-system.md#at-a-glance) |
+| `LuxMoveVM_AllocReactionParamBlock` | `0x1403306F0` | [Reaction System: FLuxBattleYarareReactionParamBlock](../sc6/reaction-system.md#fluxbattleyararereactionparamblock-1100-byte-global-param-table) |
+| `LuxMoveVM_InitReactionParamBlock` | `0x140330760` | [Reaction System: FLuxBattleYarareReactionParamBlock](../sc6/reaction-system.md#fluxbattleyararereactionparamblock-1100-byte-global-param-table) |
+| `LuxCameraAction_ActivateKnockdown` | `0x140327F20` | [Reaction System: Knockdown camera](../sc6/reaction-system.md#knockdown-camera-adjacent-state-machine) |
+| `LuxCameraAction_InitKnockdown` | `0x1403282F0` | [Reaction System: Knockdown camera](../sc6/reaction-system.md#knockdown-camera-adjacent-state-machine) |
+| `LuxCameraAction_TickKnockdown` | `0x14032B380` | [Reaction System: Knockdown camera](../sc6/reaction-system.md#knockdown-camera-adjacent-state-machine) |
+| `LuxEffectCamera_UpdateCameraFreezeDuringThrow` | `0x14031B760` | [Reaction System: Throw-react camera](../sc6/reaction-system.md#throw-react-state-machine-camera-side) |
+| `LuxEffectCamera_UpdateThrowCameraRotation` | `0x14031B880` | [Reaction System: Throw-react camera](../sc6/reaction-system.md#throw-react-state-machine-camera-side) |
+| `LuxBattleChara_UpdateHitVisualLean` | `0x140308310` | [Reaction System: Adjacent visual subsystem](../sc6/reaction-system.md#adjacent-visual-subsystem) |
+
+### Move VM (inner stack-based bytecode interpreter)
+
+| Symbol | Address | Page |
+|---|---|---|
+| `LuxMoveVM_ExecuteBytecode` | `0x1402E5A30` | [Move System: Inner stack VM](../sc6/move-system.md#inner-stack-based-predicate-vm) |
+| `LuxMoveVM_RunBytecodeScript` | `0x1402E67B0` | [Move System: Inner stack VM](../sc6/move-system.md#three-call-sites) |
+| `LuxMoveVM_EvaluateIfOpcode` | `0x1403732F0` | [Move System: predicate sub-opcodes](../sc6/move-system.md#callcond-predicate-sub-opcodes-funcidx-0x000x01) |
+| `LuxMoveVM_EvaluateIfOpcodeWithHeader` | `0x1402E5830` | [Move System: dispatch table](../sc6/move-system.md#callcond-dispatch-table-g_luxmovevm_opcodeifdispatchtable-143e83a90) |
+| `LuxMoveVM_DispatchEffectOp` | `0x140376B20` | [Move System: effect-dispatcher clusters](../sc6/move-system.md#effect-dispatcher-opcode-clusters-luxmovevm_dispatcheffectop) |
+| `LuxMoveVM_ResolveBankSlot` | `0x1402FC400` | [Move System: bank readers](../sc6/move-system.md#bank-readers) / [`FLuxMoveBankSlotView`](../sc6/structures.md#fluxmovebankslotview-72-bytes) |
+| `LuxMoveVM_ExecuteOpStream` | `0x1402FDEA0` | [Move System: per-tick lane driver](../sc6/move-system.md#three-call-sites) |
+| `LuxMoveVM_RunSecondaryLaneScript` | `0x1402FE1C0` | [Move System: per-tick lane driver](../sc6/move-system.md#three-call-sites) |
+| `LuxMoveVM_DecodeVariadicStreamArgs` (TransitionAuthor) | `0x1402FC930` | [Move System: how transitions fire](../sc6/move-system.md#how-transitions-actually-fire) |
+| `LuxMoveVM_ExecuteBankSlotScript` (CALLCOND 0x0D) | `0x1402FCC30` | [Move System: dispatch table](../sc6/move-system.md#callcond-dispatch-table-g_luxmovevm_opcodeifdispatchtable-143e83a90) |
+| `LuxMoveVM_OpcodeIf_15_ScheduleTransitionScript` | `0x1402FCD30` | [Move System: deferred transitions](../sc6/move-system.md#how-transitions-actually-fire) |
+| `LuxMoveVM_OpcodeIf_16_DrainPendingTransition` | `0x1402FCDE0` | [Move System: deferred transitions](../sc6/move-system.md#how-transitions-actually-fire) |
+| `LuxMoveVM_OpcodeIf_RegisterEffectOpDedup_04` | `0x1402FD4A0` | [`FLuxMoveLane_EffectOp`](../sc6/structures.md#fluxmovelane_effectop-36-bytes) |
+| `LuxMoveVM_CheckMoveTransitionTiming` | `0x1402FDD70` | [Move System: how transitions fire](../sc6/move-system.md#how-transitions-actually-fire) |
+| `LuxMoveVM_OpcodeIf_05/06/07/08_TransitionAuthor` | `0x1402FCB80..0x1402FCC20` | [Move System: dispatch table](../sc6/move-system.md#callcond-dispatch-table-g_luxmovevm_opcodeifdispatchtable-143e83a90) (thin wrappers around `DecodeVariadicStreamArgs`) |
 
 ### Physics integration
 
@@ -149,6 +214,61 @@ the page link for full context.
 | `LuxBattle_CreateStageInfoHandler` | `0x1403C3010` | [Stage System: key entry points](../sc6/stage-system.md#key-entry-points) |
 | `LuxActor_CollectActors_By8Classes_IntoTArrays` | `0x140417A70` | [Stage System: two-tier collision](../sc6/stage-system.md#two-tier-collision-gameplay-vs-visuals) |
 
+### Audio / Voice
+
+| Symbol | Address | Page |
+|---|---|---|
+| `LuxMoveVM_TriggerAudioPaletteCallback` | `0x1403693D0` | [Audio: Path A](../sc6/audio-system.md#path-a-audio-palette-tween-opcode-0x3a) |
+| `LuxMoveVM_TickCharaEventCueScheduler` | `0x14038BD60` | [Audio: Path B](../sc6/audio-system.md#path-b-sound-cue-submission-event-scheduler) |
+| `LuxAudio_PlayCueIdByByte` | `0x140550900` | [Audio: CRI middleware](../sc6/audio-system.md#cri-middleware-functions-the-playback-layer) |
+| `LuxAudio_RegisterActiveVoiceInstance` | `0x14054F8B0` | [Audio: CRI middleware](../sc6/audio-system.md#cri-middleware-functions-the-playback-layer) |
+| `LuxAudio_GetCriAtomManagerSingleton` | `0x140547D60` | [Audio: CRI middleware](../sc6/audio-system.md#cri-middleware-functions-the-playback-layer) |
+| `LuxAudio_ResolveCueSheetEntryByKey` | `0x140547210` | [Audio: CRI middleware](../sc6/audio-system.md#cri-middleware-functions-the-playback-layer) |
+| `LuxAudio_LookupVoiceCueIDConvTable` | `0x140425610` | [Audio: DataTable lookups](../sc6/audio-system.md#datatable-driven-config-lookups) |
+| `LuxAudio_LookupDramaticVoiceData` | `0x140422930` | [Audio: DataTable lookups](../sc6/audio-system.md#datatable-driven-config-lookups) |
+| `LuxAudio_LookupSoundBusDackingData` | `0x140423F40` | [Audio: DataTable lookups](../sc6/audio-system.md#datatable-driven-config-lookups) |
+| `LuxAudio_LookupStageMaterialSoundTable` | `0x1404247B0` | [Audio: DataTable lookups](../sc6/audio-system.md#datatable-driven-config-lookups) |
+| `LuxAudio_LookupWeaponBankIdTable` | `0x140425B80` | [Audio: DataTable lookups](../sc6/audio-system.md#datatable-driven-config-lookups) |
+| `LuxObject_GetWeaponBankId_BySoulChargeAndBone` | `0x140425D00` | [Audio: weapon SE routing](../sc6/audio-system.md#weapon-se-bank-routing) |
+| `LuxAudio_CreateAsyncLoader_WeaponSoundACB` | `0x14042C130` | [Audio: DLC ACB index map](../sc6/audio-system.md#dlc-weapon-acb-index-map) |
+| `ALuxBattleChara_SelectAndPlaySound_Ranked` | `0x1403C8950` | [Audio: ranked flavor voice](../sc6/audio-system.md#2-ranked-match-flavor-voice) |
+| `ResolveDramaticVoiceID_FromBattleSetting` | `0x1405F2910` | [Audio: DramaticVoice](../sc6/audio-system.md#3-dramaticvoice-story-persona) |
+| `RegisterCompiledInClass_ULuxDramaticVoiceDataAsset` | `0x140161AD0` | [Audio: DramaticVoice](../sc6/audio-system.md#3-dramaticvoice-story-persona) |
+| `LuxBattleChara_SyncAudioActiveState_FromBattleFlags` | `0x140438980` | [Audio: chara offsets](../sc6/audio-system.md#chara-offset-map-audio-state-on-aluxbattlechara) |
+| `LuxAudio_ResolveCharaAudioComponentSlot` | `0x1404265D0` | [Audio: UAtomComponent bridge](../sc6/audio-system.md#ue-side-uatomcomponent-bridge) |
+| `LuxAudio_FireSoundCue_ViaVfxDispatcher` | `0x1403110B0` | [Audio: VFX+Audio dispatcher](../sc6/audio-system.md#vfx-audio-dispatcher-g_pluxvfxdispatcher) — chokepoint for burst-playback mitigation |
+| `LuxAudio_InitVoiceAcbMap_Char060` | `0x14040EB40` | [Audio: per-character ACB maps](../sc6/audio-system.md#per-character-voice-acb-maps) |
+| `LuxAudio_OnCharaPartUnregister_RecordReplayIfActive` | `0x140427DF0` | [Audio System](../sc6/audio-system.md) — replay capture of audio state on chara teardown |
+| `ULuxCeBankManager_StaticClass` | `0x1409A59D0` / `0x1409A92C0` | [Audio: per-character ACB maps](../sc6/audio-system.md#per-character-voice-acb-maps) |
+| `LuxVoice_AddVoiceItemsForPose` | `0x14038D350` | [Audio: Enshutsu](../sc6/audio-system.md#enshutsu-cinematic-voice-subsystem) |
+| `LuxVoice_EnshutsuHeader_AddVoiceItem` | `0x14038BC40` | [Audio: Enshutsu](../sc6/audio-system.md#enshutsu-cinematic-voice-subsystem) |
+| `Audio_RandomTick` | `0x140399B70` | [Audio: determinism](../sc6/audio-system.md#replay-determinism) |
+
+### Online / netplay
+
+| Symbol | Address | Page |
+|---|---|---|
+| `ALuxBattleManager_CheckOnlineSessionActive` | `0x1403F2590` | [Leaderboards & Online: detection](../sc6/leaderboards.md#detection-is-this-match-online) — the canonical "are we online" gate |
+| `ALuxBattleManager_IsBattleOnline` | `0x1403F1A60` | [Leaderboards & Online: detection](../sc6/leaderboards.md#detection-is-this-match-online) — world-context-aware wrapper |
+| `GetLocalOnlineSession` | `0x1403F07A0` | [Leaderboards & Online: Steam interface accessors](../sc6/leaderboards.md#steam-interface-accessors) |
+| `LuxOnline_DrainRingBuffer_DecodeInputPackets_AndUpdateCache` | `0x1403F6770` | [Leaderboards & Online: per-frame input chain](../sc6/leaderboards.md#per-frame-input-chain-channel-5) |
+| `LuxOnline_PushToRingBuffer_WithCriticalSection` | `0x1403F4BE0` | [Leaderboards & Online: per-frame input chain](../sc6/leaderboards.md#per-frame-input-chain-channel-5) |
+| `LuxOnline_SendInputPacket_PerFrame_Opcode0` | `0x1403F84E0` | [Leaderboards & Online](../sc6/leaderboards.md#per-frame-input-chain-channel-5) — 3 B/slot/frame send |
+| `LuxOnline_SendInputPacket_BatchedRange_Opcode1` | `0x1403F8710` | [Leaderboards & Online](../sc6/leaderboards.md#per-frame-input-chain-channel-5) — re-send for catch-up |
+| `LuxOnline_DispatchNetMessage_ByKeyString` | `0x1403E0520` | [Leaderboards & Online: 3-channel protocol](../sc6/leaderboards.md#three-channel-protocol) — channel 7 (UI mirror) |
+| `LuxOnlineBattleSync_OnRecvBattleSync_Dispatcher` | `0x140511CF0` | [Leaderboards & Online: 3-channel protocol](../sc6/leaderboards.md#three-channel-protocol) — channel 6 (KV handshake) |
+| `LuxBattleManager_GetCachedRoundValue_ByIndex` | `0x1403F0720` | [Leaderboards & Online](../sc6/leaderboards.md#the-per-slot-input-cache-at-frameinputlog0x3c0) — cache reader |
+| `LuxBattleChara_UpdatePlayerInputData_FromRoundCache` | `0x1403FCD10` | [Leaderboards & Online](../sc6/leaderboards.md#per-frame-input-chain-channel-5) — game-tick consumer |
+| `LuxBattleChara_InitPlayerBitmask_FromOnlineSession` | `0x1403FA330` | [Leaderboards & Online: detection](../sc6/leaderboards.md#detection-is-this-match-online) — sets `dwOnlineActive` |
+| `LuxBattleManager_InitOnlineSession_SetFlag1640` | `0x1403FB400` | [Leaderboards & Online: lobby entry points](../sc6/leaderboards.md#lobby-matchmaking-entry-points) |
+| `LuxOnline_DisconnectAndClearSession` | `0x1403EDD00` | [Leaderboards & Online: lobby entry points](../sc6/leaderboards.md#lobby-matchmaking-entry-points) |
+| `LuxBattleManager_UpdateOnlineFrameSyncCounter_At1638` | `0x1403FDEC0` | [Leaderboards & Online: delay-based](../sc6/leaderboards.md#delay-based-no-rollback) — stall counter |
+| `LuxMatchLobby_RequestReady` | `0x1405EA160` | [Leaderboards & Online: lobby entry points](../sc6/leaderboards.md#lobby-matchmaking-entry-points) |
+| `LuxLobby_DispatchUICommand` | `0x1405E21E0` | [Leaderboards & Online: lobby entry points](../sc6/leaderboards.md#lobby-matchmaking-entry-points) |
+| `OnlineSubsystem_GetSubsystem_FromModule` | `0x1403BCFF0` | [Leaderboards & Online: Steam interface accessors](../sc6/leaderboards.md#steam-interface-accessors) — 64 callers |
+| `Steam_InitAllInterfaces` | `0x1404C3DD0` | [Leaderboards & Online: Steam interface accessors](../sc6/leaderboards.md#steam-interface-accessors) — 21-iface bootstrap |
+| `LuxOnline_GetPlayerProfileWriterInterface` | `0x140718540` | [Leaderboards & Online: Steam interface accessors](../sc6/leaderboards.md#steam-interface-accessors) — 53 callers |
+
 ### DataTable helpers (`FLuxDataTablePath`)
 
 | Symbol | RVA | Page |
@@ -167,8 +287,8 @@ the page link for full context.
 ## Structs (most-cited)
 
 Authoritative size + layout: [Game Structures](../sc6/structures.md). For
-the runtime-extension behaviour of `ALuxBattleChara` (where fields past
-`+0x1438` exist beyond the registered class size), see the chara entry's
+the runtime-extension behaviour of `ALuxBattleChara` — where fields past
+`+0x1438` exist beyond the registered class size — see the chara entry's
 note on lazy extensions.
 
 | Struct | Size | Page anchor |
@@ -176,7 +296,7 @@ note on lazy extensions.
 | `ALuxBattleManager` | (large; subsystem layout in topic page) | [structures](../sc6/structures.md#aluxbattlemanager) / [battle-manager](../sc6/battle-manager.md#battlemanager-subsystem-layout) |
 | `ALuxBattleChara` | `0x568` (registered) → ~`0x973F0` runtime | [structures](../sc6/structures.md#aluxbattlechara) |
 | `FLuxBattleChara` (Ghidra) | `0x973F0` | [structures](../sc6/structures.md#aluxbattlechara) |
-| `ALuxBattleFrameInputLog` | `0x4414` (17428) | [structures](../sc6/structures.md#aluxbattleframeinputlog-17428-bytes) |
+| `ALuxBattleFrameInputLog` | `~0x44D0` (17616) | [structures](../sc6/structures.md#aluxbattleframeinputlog-17616-bytes) |
 | `ALuxBattleReplayPlayer` | `0x3D1` (977) | [structures](../sc6/structures.md#aluxbattlereplayplayer-977-bytes) |
 | `ALuxBattleKeyRecorder` | `0x3BC` (956) | [structures](../sc6/structures.md#aluxbattlekeyrecorder-956-bytes) |
 | `ALuxTraceManager` | `0x408` | [structures](../sc6/structures.md#aluxtracemanager) |
@@ -188,8 +308,11 @@ note on lazy extensions.
 | `FLuxMoveBankSlotView` | `0x48` | [structures](../sc6/structures.md#fluxmovebankslotview-72-bytes) |
 | `FLuxMoveDefEntry` | `0x10` | [structures](../sc6/structures.md#fluxmovedefentry-16-bytes) |
 | `FLuxBattleMoveListTableRow` | `0x88` | [move-system](../sc6/move-system.md#fluxbattlemovelisttablerow-0x88-bytes) |
-| `LuxMoveLaneState` | `0x468` | [structures](../sc6/structures.md#luxmovelanestate-1128-bytes) |
+| `FLuxMoveLane` (was `LuxMoveLaneState`) | `0x468` | [structures](../sc6/structures.md#fluxmovelane-1128-bytes-was-luxmovelanestate) |
+| `FLuxMoveLane_EffectOp` | `0x24` | [structures](../sc6/structures.md#fluxmovelane_effectop-36-bytes) |
+| `LuxMoveLaneState_Motion` | `0x44` | [structures](../sc6/structures.md#luxmovelanestate_motion-68-bytes-the-small-motion-playback-record) |
 | `FLuxBattleMessageParam` | `0x0C` | [messages](../sc6/messages.md#fluxbattlemessageparam-verified-struct) |
+| `FLuxBattleYarareReactionParamBlock` | `0x44C` (1100) | [reaction-system](../sc6/reaction-system.md#fluxbattleyararereactionparamblock-1100-byte-global-param-table) |
 | `FLuxBattleVMFreezeRecord` | `0x40` | [structures](../sc6/structures.md#fluxbattlevmfreezerecord-64-bytes) |
 | `LuxBattleCharaMotionFlags` | `0x40` | [structures](../sc6/structures.md#luxbattlecharamotionflags-64-bytes) |
 | `FLuxDataTablePath` | `0x18` | [structures](../sc6/structures.md#fluxdatatablepath-24-bytes) |
@@ -262,6 +385,15 @@ High-traffic flags:
 | `+0x4400` | `dwReplayEnableFlag` (read by Site 11 prologue) | [Replay System: Site 11](../sc6/replay-system.md) |
 | `+0x4424` | `bCharaMode` | same |
 
+### Audio state
+
+| Offset | What | Page |
+|-------:|------|------|
+| `+0x394` | u32 audio active/mute bitfield (bit 0 should-play, bit 1 force-active, bit 2 force-mute, bit 3 always-active) | [Audio: chara offsets](../sc6/audio-system.md#chara-offset-map-audio-state-on-aluxbattlechara) |
+| `+0x95750` | Event cue scheduler struct (sound + anim-notify timing) | [Audio: Path B](../sc6/audio-system.md#path-b-sound-cue-submission-event-scheduler) |
+| `+0x95788` | Secondary action stack (sound-cue submit port) | [Audio: Path B](../sc6/audio-system.md#path-b-sound-cue-submission-event-scheduler) |
+| `+0x971A8..+0x971B8` | `FLuxAudioPaletteTween` (palette id, frames-left, current/target/delta-per-frame) | [Audio: Path A](../sc6/audio-system.md#path-a-audio-palette-tween-opcode-0x3a) |
+
 ### Other
 
 | Offset | What | Page |
@@ -273,17 +405,26 @@ High-traffic flags:
 
 ## InputLog offsets (most-cited)
 
-Layout source: [structures.md / ALuxBattleFrameInputLog](../sc6/structures.md#aluxbattleframeinputlog-17428-bytes).
+Layout source: [structures.md / ALuxBattleFrameInputLog](../sc6/structures.md#aluxbattleframeinputlog-17616-bytes).
 
 | Offset | What |
 |-------:|------|
-| `+0x39C` | `dwPlaybackCursor` |
+| `+0x398` | `bEnable` (nNumPlayerSlots) |
+| `+0x39C` | `dwPlaybackCursor` (bmActivePlayerSlots) |
 | `+0x3A0` | `nLastFrameID` |
 | **`+0x3A4`** | **`nMasterClock`** — INC'd by R1/R2 every UE4 frame; pinned by `Horse::ReplayClockGate` during freeze |
 | `+0x3A8` | `pRecordedFrameBuffer` (`FLuxRecordedFrame[]`, 192 B/entry) |
 | `+0x3AC` | sub-tick advance counter (INC'd via `vtable[0x5F8]` from Site 20) |
 | `+0x3B0` | `nTotalRecordedFrames` |
+| **`+0x3C0`** | **`pReplayInputCache`** (`FLuxReplayInputCacheEntry[1024]`, 16 KB) — `[2 slots][512 entries][16 B]`. Filled by the online drain; empty during offline / .replay viewing. |
+| **`+0x4400`** | **`dwOnlineActive`** — 0=offline/spectator, 1/2=local player side, 3=hidden lobby. Drain entry guard. |
 | `+0x4404` | `bDoubleTickGuard` (R2 prologue checks this) |
+| `+0x4414` | `nMinStoreFrameIndex` — drain watermark |
+| `+0x4424` | `bSessionShutdownState` — `5` = drain bails |
+| `+0x4428` | `pSentInputBitmap` (88 B dedupe) |
+| `+0x4480` | `pDequeStorage` — inbound-packet deque |
+| `+0x44A0` | `qwDequeCount` — capped at 100 (drop-oldest) |
+| `+0x44A8` | `DequeLock` (`CRITICAL_SECTION`, 40 B) |
 
 ---
 
@@ -300,6 +441,10 @@ Layout source: [structures.md / ALuxBattleFrameInputLog](../sc6/structures.md#al
 | `0x144149C50` | `g_LuxStage_MasterEnumStringTable` | `TArray<FBattleStageEnumEntry>` — 31 stock entries. | [Stage System: master enum table](../sc6/stage-system.md#master-enum-table) |
 | `0x143E87838` | `KHitBase_vftable` | Vtable for the `KHitBase` family. | [structures](../sc6/structures.md#hit-detection-node-structs-khit) |
 | `0x1448554E8` | `g_LuxBattle_HitReactionSlideTable` | Per-hit-type slide-decay curves. | [Movement: code references](../sc6/movement.md#code-references) |
+| `0x14470E018` | `g_LuxBattle_YarareReactionParamBlock` (lazy-malloc'd) | The 1100-byte `FLuxBattleYarareReactionParamBlock` (per-intensity reach/knockback/weight tables). | [Reaction System](../sc6/reaction-system.md#fluxbattleyararereactionparamblock-1100-byte-global-param-table) |
+| `0x14470E310` | per-charaKind ring-margin table | stride `0x8`, indexed by `chara+0x23C` `CharaKindByte`. Used by every "ring-advantage" gate. | [Reaction System: ring-margin formula](../sc6/reaction-system.md#ring-margin-formula) |
+| `0x14470E330` | per-charaKind reach-offset table | stride `0x180`, scanned linearly (`{u32, s16 oppMoveStateId, s16 reachOffset}`). Subtracted from dispatcher's `nScaledKnockbackReach`. | [Reaction System: ring-margin formula](../sc6/reaction-system.md#ring-margin-formula) |
+| `0x144711F88` | per-charaKind hit-intensity attribute table | stride `0xC0E`. First `int32` = base intensity for sub-handlers (0x42, 0x32, 0x1F). | [Reaction System: ring-margin formula](../sc6/reaction-system.md#ring-margin-formula) |
 
 ---
 

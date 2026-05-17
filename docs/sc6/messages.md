@@ -1,8 +1,8 @@
 # Battle Message System
 
-> **Verification status.** Everything below is what I have *directly verified* in
-> the Ghidra project against `SoulcaliburVI.exe` (image base `0x140000000`). Each
-> address in this page corresponds to a function or data symbol that has been
+> **Verification status.** Everything below is *directly verified* in the
+> Ghidra project against `SoulcaliburVI.exe` (image base `0x140000000`). Every
+> address on this page corresponds to a function or data symbol that has been
 > renamed and plate-commented in Ghidra. Items marked **Unverified** describe
 > what I have *not* found in the binary — read those sections as gaps, not
 > conclusions.
@@ -10,8 +10,8 @@
 > **Note on display strings.** The actual on-screen text ("Counter Hit",
 > "Back Escape", "Lethal Hit", etc.) is **localised via `Game.locres`** — none
 > of those user-visible strings appear in `SoulcaliburVI.exe` as ASCII or
-> UTF-16. So you will not be able to grep the binary for "Back Escape". The
-> binary contains only the enum *names* (e.g. `EMS_ThrowEscapeB`) and the
+> UTF-16, so grepping the binary for "Back Escape" turns up nothing. The
+> binary holds only the enum *names* (e.g. `EMS_ThrowEscapeB`) and the
 > reflection metadata that ties an enum value to its localisation key. The
 > mapping from `EMS_ThrowEscapeB` to "Back Escape" lives in `Game.locres`
 > inside the game pak — extract that file (e.g. with [UnrealLocres]) to read
@@ -35,26 +35,26 @@
 
 The "Battle Message" system is the on-screen banner that flashes during a fight
 when something noteworthy happens (e.g. *Counter Hit*, *Punish Attack*, *Wall
-Hit*, *Back Escape*, *Lethal Hit*, *Critical Edge*). The reflection layer for
-the system is split across three pieces:
+Hit*, *Back Escape*, *Lethal Hit*, *Critical Edge*). Its reflection layer is
+split across three pieces:
 
 1. **`ELuxBattleMessage`** — UEnum listing every message type the HUD can show.
-2. **`FLuxBattleMessageParam`** — UScriptStruct, the payload carried by a
+2. **`FLuxBattleMessageParam`** — UScriptStruct; the payload carried by a
    message (type id, owning player, an integer "Value").
 3. **`ULuxBattleMessageReceiverInterface`** — UInterface declaring the two
-   UFunctions used to deliver a message: `OnReceiveMessage` and
+   UFunctions that deliver a message: `OnReceiveMessage` and
    `SendMessageToOtherLevel`.
 
 Two C++ broadcast helpers walk the actor tree and call the interface UFunction
-on every receiver, and one Native UFunction wrapper exposes the broadcast to
+on every receiver; one Native UFunction wrapper exposes the broadcast to
 Blueprint.
 
 ---
 
 ## ELuxBattleMessage — verified enum values
 
-The enum is declared in `/Script/LuxorGame` with underlying type `uint8`. There
-are 39 named entries (numeric values `0..0x26`), extracted directly from
+The enum is declared in `/Script/LuxorGame` with underlying type `uint8`. It
+has 39 named entries (numeric values `0..0x26`), extracted directly from
 `UEnum_ELuxBattleMessage_RegisterValues @ 0x140984920`:
 
 | Value | Name | Value | Name |
@@ -81,12 +81,12 @@ are 39 named entries (numeric values `0..0x26`), extracted directly from
 | 0x13 | `EMS_ReverseImpact` | | |
 
 `ENUM_MAX` (the C++-side trailing entry) appears in the `.rdata` strings at
-`0x1432723d8` next to `ELuxBattleMessage_MAX` (the UEnum-style trailing entry at
-`0x14338f940`). Both are reflection bookkeeping; only `ELuxBattleMessage_MAX` is
-in the registered value list.
+`0x1432723d8`, next to `ELuxBattleMessage_MAX` (the UEnum-style trailing entry
+at `0x14338f940`). Both are reflection bookkeeping; only `ELuxBattleMessage_MAX`
+is in the registered value list.
 
 The string `"Torophy"` (sic) in the trophy-prefixed entries is a transliteration
-from Japanese (トロフィー) and is what shows up in the binary — that's the actual
+from the Japanese トロフィー. It is what appears in the binary and is the actual
 identifier used in the source.
 
 ### Where the enum lives in Ghidra
@@ -120,7 +120,7 @@ at `0x14097a860`):**
 
 **Field layout** — verified by reading
 `Z_Construct_UScriptStruct_LuxBattleMessageParam @ 0x140992430`. Properties are
-added to the reflection layer in declaration order; the struct size of `0xc`
+added to the reflection layer in declaration order, and the struct size of `0xc`
 with alignment `4` constrains the layout to:
 
 ```c
@@ -137,14 +137,14 @@ The Ghidra struct has been created as `FLuxBattleMessageParam` with these three
 fields (the trailing 3-byte pad is implicit from align(4)).
 
 **Caveat — what `Value` actually holds.** The reflection layer types it as
-`int32`, but I have *not* verified what callers stash in it. From the enum names
-it's plausible that:
+`int32`, but I have *not* verified what callers stash in it. From the enum
+names, plausible guesses are:
 
-- For `EMS_Combo` it is the combo hit count.
-- For `EMS_WallHit` / `EMS_LethalHit` etc. it is `0` or a flag.
-- For trophy-prefixed entries it is a counter.
+- For `EMS_Combo`, the combo hit count.
+- For `EMS_WallHit` / `EMS_LethalHit` etc., `0` or a flag.
+- For trophy-prefixed entries, a counter.
 
-That's a guess. Don't rely on it without checking the firing site for the
+These are guesses. Don't rely on them without checking the firing site for the
 specific message you care about.
 
 ### Where the struct lives in Ghidra
@@ -179,32 +179,31 @@ class ILuxBattleMessageReceiverInterface
 };
 ```
 
-The UFunction flag bits I read from
+The UFunction flag bits read from
 `Z_Construct_UFunction_OnReceiveMessage @ 0x140aa5050` (`0x8020800`) and
 `Z_Construct_UFunction_SendMessageToOtherLevel @ 0x140aa5270` (`0x4020401`) are
 consistent with **BlueprintNativeEvent** and **Native + BlueprintCallable**
-respectively — but I haven't cross-referenced every individual
-`EFunctionFlags` bit, so treat the BP-event annotations above as *probable*,
-not certain.
+respectively. I have not cross-referenced every individual `EFunctionFlags`
+bit, so treat the BP-event annotations above as *probable*, not certain.
 
 ### Why `Message` isn't typed `FLuxBattleMessageParam` in the reflection layer
 
 In `Z_Construct_UFunction_OnReceiveMessage` the `Message` parameter is created
-via `FUN_1408df7e0(0x78, …)` (the FStructProperty constructor) but the struct
-class it points at is **not** hard-bound to `FLuxBattleMessageParam`. It's a
+via `FUN_1408df7e0(0x78, …)` (the FStructProperty constructor), but the struct
+class it points at is **not** hard-bound to `FLuxBattleMessageParam` — it is a
 generic FStructProperty.
 
-That matches the actual usage I observed: the existing in-engine callers pass
-**any struct or wstring buffer** through this interface. Specifically,
-`LuxBattle_BroadcastMessageToActorAndOwners` is invoked from the character
-creation menu code (`FUN_1406ffa80`, `FUN_1406a0a40`, etc.) carrying
+That matches the observed usage: the existing in-engine callers pass **any
+struct or wstring buffer** through this interface. Specifically,
+`LuxBattle_BroadcastMessageToActorAndOwners` is invoked from the
+character-creation menu code (`FUN_1406ffa80`, `FUN_1406a0a40`, etc.) carrying
 `wstring`-style payloads such as `"ChangeChromaKeyColor%f,%f,%f"`,
-`"ChangeSituation*"`, `"DisplayPoseInfo"` — *not* `FLuxBattleMessageParam`.
+`"ChangeSituation*"`, and `"DisplayPoseInfo"` — *not* `FLuxBattleMessageParam`.
 
-So `OnReceiveMessage` is **a generic Lux message bus** that *can* carry
-`FLuxBattleMessageParam` but isn't restricted to it. Whether the on-screen
-`ELuxBattleMessage` HUD banners are actually fired through this same bus or
-through a different path is **unverified** — see the Unverified section below.
+So `OnReceiveMessage` is **a generic Lux message bus**: it *can* carry
+`FLuxBattleMessageParam` but is not restricted to it. Whether the on-screen
+`ELuxBattleMessage` HUD banners fire through this same bus or through a
+different path is **unverified** — see the Unverified section below.
 
 ### Where the interface lives in Ghidra
 
@@ -241,8 +240,8 @@ void ILuxBattleMessageReceiver_Execute_OnReceiveMessage(UObject* receiver, const
 ```
 
 This is the only place in the binary that loads the cached `OnReceiveMessage`
-FName (`DAT_144153040`). The vtable index `0x1f8` is `UObject::ProcessEvent`.
-Every battle-message delivery in the game goes through this function.
+FName (`DAT_144153040`). Vtable index `0x1f8` is `UObject::ProcessEvent`. Every
+battle-message delivery in the game passes through this function.
 
 ### `LuxBattle_BroadcastToSiblingActors` — `0x1403cc980`
 
@@ -265,9 +264,9 @@ void LuxBattle_BroadcastToSiblingActors(AActor* self, const void* Message)
 }
 ```
 
-There is **one** caller in the binary: `execLuxBattle_BroadcastToSiblingActors`
-at `0x140abe260` — the Native UFunction handler that exposes the broadcast to
-Blueprint.
+There is exactly **one** caller in the binary:
+`execLuxBattle_BroadcastToSiblingActors` at `0x140abe260` — the Native
+UFunction handler that exposes the broadcast to Blueprint.
 
 ### `LuxBattle_BroadcastMessageToActorAndOwners` — `0x14053d380`
 
@@ -275,12 +274,12 @@ Two-phase variant that hits the target actor first, then walks
 `level->OwnedActors[]` and dispatches to every owned actor that implements the
 interface. Frees the message buffer at the end.
 
-13 callers in the binary. Confirmed callers are mostly **character creation
-menu** code (`FUN_1406ffa80`, `FUN_1406a0a40`, `FUN_1406a2a10`,
-`FUN_1406a3280`, `FUN_1406a98f0`, `FUN_14073c530`, `FUN_140c03e00`) — they pass
-`wstring` payloads, not `FLuxBattleMessageParam`. Those are not battle-HUD
-messages; they are creation-menu state events that happen to ride the same
-interface.
+13 callers in the binary. The confirmed callers are mostly
+**character-creation menu** code (`FUN_1406ffa80`, `FUN_1406a0a40`,
+`FUN_1406a2a10`, `FUN_1406a3280`, `FUN_1406a98f0`, `FUN_14073c530`,
+`FUN_140c03e00`), and they pass `wstring` payloads, not
+`FLuxBattleMessageParam`. Those are not battle-HUD messages — they are
+creation-menu state events that happen to ride the same interface.
 
 ### Where the dispatchers live in Ghidra
 
@@ -315,18 +314,18 @@ D:\dev\sc6\UE4_Steam\LuxorProto\Source\LuxorGame\Battle\HUD\LuxBattleHUDManager.
 ```
 
 A debug-log format string `"BattleMessage(%s): "` lives at `0x143276258` in the
-same `.rdata` block. Ghidra's wide-string xref index didn't recover the
+same `.rdata` block. Ghidra's wide-string xref index did not recover the
 reference site, so the *exact* C++ function that emits this log is not yet
-identified in this project — but the file name strongly implies
+identified in this project. The file name strongly implies that
 `ALuxBattleHUDManager` has a `LogTempBattleMessage`-style macro that fires
-per-message and lists the enum entry name (`%s` → `UEnum::GetNameStringByValue`
-on `ELuxBattleMessage`). **Unverified** — I haven't decompiled the call site.
+per-message and prints the enum entry name (`%s` → `UEnum::GetNameStringByValue`
+on `ELuxBattleMessage`). **Unverified** — the call site has not been decompiled.
 
 ---
 
 ## What's *not* verified yet
 
-These items were investigated but not pinned down — they are potential
+These items were investigated but not pinned down. They are potential
 follow-ups, not conclusions.
 
 ### Where `ELuxBattleMessage` values are *fired*
@@ -343,44 +342,42 @@ What I tried:
 - xrefs to `LuxBattle_BroadcastMessageToActorAndOwners` are all in
   character-creation-menu code, *not* in battle hit-resolution code.
 - xrefs to `LuxBattle_BroadcastToSiblingActors` come only from its Native exec
-  wrapper (Blueprint dispatch), so I can't see who's pushing through
-  Blueprint.
+  wrapper (Blueprint dispatch), so the Blueprint-side callers aren't visible.
 - Direct xrefs to the `FLuxBattleMessageParam` UScriptStruct cached pointer
   (`DAT_14414e010`) are only the construction code, not callers.
 
-So one of these is true:
+So one of the following is true:
 
-1. The HUD banners are dispatched from Blueprint (the `BP_BattleHUD_*` widget),
-   not from C++ — meaning the firing side is in a `.uasset` BP, not in this
-   binary.
-2. The HUD banners use a *different* dispatch path that I haven't found yet
-   (e.g. a direct member-function call on `ALuxBattleHUDManager` rather than a
-   broadcast).
+1. The HUD banners are dispatched from Blueprint (the `BP_BattleHUD_*` widget)
+   rather than from C++ — meaning the firing side lives in a `.uasset` BP, not
+   in this binary.
+2. The HUD banners use a *different* dispatch path not yet found (e.g. a direct
+   member-function call on `ALuxBattleHUDManager` rather than a broadcast).
 3. The firing site is in C++ but loads `EMS_ThrowEscapeA` via something other
-   than a 1-byte stack write (e.g. `mov` from a register that came from an enum
+   than a 1-byte stack write (e.g. a `mov` from a register sourced from an enum
    lookup).
 
-Until that's resolved, I can't say with certainty *how* a custom HUD banner
-should be triggered.
+Until that is resolved, *how* a custom HUD banner should be triggered cannot be
+stated with certainty.
 
 ### `Value` field semantics
 
-Typed as `int32` in reflection. Whether it's a hit count, a damage number, a
+Typed as `int32` in reflection. Whether it is a hit count, a damage number, a
 flag, or a context-specific tag varies per message type. **Unverified.**
 
 ### "BattleMessage(%s)" log call site
 
-The format string exists at `0x143276258` but Ghidra's wide-string xref
-analyzer didn't pick up the call site. I attempted manual byte-pattern searches
-for the address bytes and a `lea r??, [rip+disp32]` pattern; no hit. **Likely
-recoverable by re-running Ghidra's "Auto Analyze" with wide-string xref
-detection re-enabled, or by manually computing `disp32 = 0x143276258 - rip`.
-Not done in this session.**
+The format string exists at `0x143276258`, but Ghidra's wide-string xref
+analyzer did not pick up the call site. Manual byte-pattern searches for the
+address bytes and for a `lea r??, [rip+disp32]` pattern produced no hit. This is
+**likely recoverable** by re-running Ghidra's "Auto Analyze" with wide-string
+xref detection re-enabled, or by manually computing `disp32 = 0x143276258 - rip`
+— neither was done in this session.
 
 ### Whether `ALuxBattleHUDManager` implements `ULuxBattleMessageReceiverInterface`
 
 The class size (`0x3c0`) is large enough to host the interface vtable thunk,
-and its name strongly implies it. But I haven't confirmed it from the
+and the class name strongly implies it. This has not been confirmed from the
 `Z_Construct_UClass_ALuxBattleHUDManager` body. **Unverified.**
 
 ---
@@ -404,29 +401,29 @@ m.Type        = 0x1A;   // EMS_ThrowEscapeA
 reinterpret_cast<FnBroadcast>(0x140000000 + 0x3cc980)(myActor, &m);
 ```
 
-`myActor` must be an actor that lives in the same `ULevel` as the HUD, otherwise
-`GetLevel()` won't return the same level as the HUD's owning level and the
-broadcast won't reach it. In a battle, any `ALuxBattleChara*` or the
-`ALuxBattleManager` should work.
+`myActor` must live in the same `ULevel` as the HUD; otherwise `GetLevel()`
+returns a different level from the HUD's owning level and the broadcast never
+reaches it. In a battle, any `ALuxBattleChara*` or the `ALuxBattleManager`
+should work.
 
 **Caveats:**
 
-- This will only fire `OnReceiveMessage` on actors that **implement
+- This fires `OnReceiveMessage` only on actors that **implement
   `ULuxBattleMessageReceiverInterface`**. Whether `ALuxBattleHUDManager`
-  implements that interface is **unverified**. If it doesn't, this won't show
-  the banner.
-- The `Message` UFunction param is a generic FStructProperty. The receiver's
-  BP/native handler dictates what the buffer is interpreted as — so even if
-  the HUD receives the call, it might expect a `FString` payload (because of
-  the creation-menu observation), not `FLuxBattleMessageParam`. **Test before
-  shipping.**
+  implements that interface is **unverified**; if it does not, this will not
+  show the banner.
+- The `Message` UFunction param is a generic FStructProperty, and the
+  receiver's BP/native handler dictates how the buffer is interpreted. So even
+  if the HUD receives the call, it may expect a `FString` payload (per the
+  creation-menu observation) rather than `FLuxBattleMessageParam`. **Test
+  before shipping.**
 
 ### Path B — direct call on the HUD (more reliable but unverified entry point)
 
 If we identify the C++ method on `ALuxBattleHUDManager` that *takes a
 `FLuxBattleMessageParam` and pushes it onto the visible queue*, we can call
-that method directly. That entry point is what `EMS_*` values would normally
-flow through internally.
+that method directly. That entry point is where `EMS_*` values would normally
+flow internally.
 
 That method has not been located yet (see Unverified).
 
@@ -441,7 +438,7 @@ RegisterHook("/Game/HUD/Battle/BP_BattleHUDManager.BP_BattleHUDManager_C:OnRecei
     function(self, Message) print("HUD received:", Message) end)
 ```
 
-This doesn't *send* messages — it intercepts whatever path is already in use.
+This does not *send* messages — it intercepts whatever path is already in use.
 Useful for verifying which struct type the HUD actually expects.
 
 ---
@@ -449,15 +446,14 @@ Useful for verifying which struct type the HUD actually expects.
 ## Reverse-engineering checklist for the next pass
 
 1. Open `Z_Construct_UClass_ALuxBattleHUDManager @ 0x1409149d0` in Ghidra and
-   list every UFunction registered. If one of them is `OnReceiveMessage`, the
-   HUD does implement the interface. If one is named `ShowMessage` /
-   `SetMessage` / `PostMessage` / similar, that's the direct entry point
-   (Path B above).
-2. Use `lea r??, [rip+disp32]` to locate the call site for `0x143276258`
-   (`"BattleMessage(%s): "`) — it's almost certainly a `UE_LOG(LogBattle, …)`
-   inside `ALuxBattleHUDManager::SetMessage` or similar.
-3. If neither of the above identifies the firing path, hook
+   list every registered UFunction. If one is `OnReceiveMessage`, the HUD does
+   implement the interface. If one is named `ShowMessage`, `SetMessage`,
+   `PostMessage`, or similar, that is the direct entry point (Path B above).
+2. Use a `lea r??, [rip+disp32]` search to locate the call site for
+   `0x143276258` (`"BattleMessage(%s): "`) — almost certainly a
+   `UE_LOG(LogBattle, …)` inside `ALuxBattleHUDManager::SetMessage` or similar.
+3. If neither step identifies the firing path, hook
    `ProcessEvent(self, ufunc, params)` from a UE4SS Lua script and filter for
    `ufunc.Name == "OnReceiveMessage"` while triggering a throw escape in a
-   training-room match. The hooked frame's `params` buffer will reveal both
-   the struct layout the HUD actually receives and which actor is calling.
+   training-room match. The hooked frame's `params` buffer reveals both the
+   struct layout the HUD actually receives and which actor is calling.
