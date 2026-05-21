@@ -230,8 +230,9 @@ Partial `ULuxorMatchData` layout for rank/leaderboard fields:
 
 ### Rank icon lookup
 
-`GetRankIconStringByRankId @ 0x14050AFC0` is a bounds-checked lookup into the
-runtime rank-icon `FString` array:
+`GetRankIconStringByRankId @ 0x14050AFC0` is a bounds-checked lookup into a
+global rank-icon `FString` array initialized by
+`InitializeGlobalRankIconStringTable @ 0x1401363F0`:
 
 ```c
 FString* GetRankIconStringByRankId(int nRankId)
@@ -242,8 +243,25 @@ FString* GetRankIconStringByRankId(int nRankId)
 }
 ```
 
-The array is runtime-initialized, so the static file image does not expose the
-actual rank label strings.
+The initializer creates `0x26` entries:
+
+| RankId | Icon | RankId | Icon | RankId | Icon | RankId | Icon |
+|---:|---|---:|---|---:|---|---:|---|
+| `0` | `B` | `10` | `F1` | `20` | `D1` | `30` | `B1` |
+| `1` | `G5` | `11` | `E5` | `21` | `C5` | `31` | `A5` |
+| `2` | `G4` | `12` | `E4` | `22` | `C4` | `32` | `A4` |
+| `3` | `G3` | `13` | `E3` | `23` | `C3` | `33` | `A3` |
+| `4` | `G2` | `14` | `E2` | `24` | `C2` | `34` | `A2` |
+| `5` | `G1` | `15` | `E1` | `25` | `C1` | `35` | `A1` |
+| `6` | `F5` | `16` | `D5` | `26` | `B5` | `36` | `S2` |
+| `7` | `F4` | `17` | `D4` | `27` | `B4` | `37` | `S1` |
+| `8` | `F3` | `18` | `D3` | `28` | `B3` |  |  |
+| `9` | `F2` | `19` | `D2` | `29` | `B2` |  |  |
+
+`BuildRankingCardPayloadWithRankIconLookup @ 0x1407DAB70` contains a second
+fixed icon list under the `RankUpIconS` UI path and formats rank-name text ids
+as `ID_DLC7_RANK_NAME_%03d` from the matched icon index plus one. This confirms
+that `S2` and `S1` are rank icons, not just unrelated DLC/runtime strings.
 
 `GetAreaIconStringByAreaId @ 0x14050B3B0` is the equivalent area/region-icon
 lookup.
@@ -262,7 +280,9 @@ Observed explicit map entries:
 | `0x00`, `0x06`, `0x08`, `0x0a`, `0x0e`, `0x13`, `0x1c`, `0x20`, `0x21`, `0x22` | `3` |
 | `0x03`, `0x04`, `0x07`, `0x0b`, `0x0c`, `0x0d`, `0x11`, `0x14`, `0x15` | `4` |
 
-Unmapped rank ids return default band `5`.
+Unmapped rank ids return default band `5`. The explicit map stops at rank id
+`34` (`A2`), so `35` (`A1`), `36` (`S2`), and `37` (`S1`) all fall into the
+default top bucket.
 
 The disparity scale table is:
 
@@ -278,19 +298,29 @@ nScaleIndex = (localRankBand - opponentRankBand) + 4;
 ```
 
 If the opponent band is default `5`, or if the computed index is out of range,
-the function returns `1.0`.
+the function returns `1.0`. That means `A1`, `S2`, and `S1` opponents bypass
+the normal disparity multiplier table and get neutral scaling.
 
 ### S1 / S2 status
 
-No direct static `S1` or `S2` rank label was recovered from the binary. The
-visible static `S2` hits are unrelated runtime / DLC strings such as
-`RUNTIME_S2_BONUS_BGM_AVAILABLE`.
+`S2` and `S1` are real rank icons in this build:
 
-That does **not** prove there is no top-rank icon named `S1`/`S2`, because the
-rank icon table is runtime-initialized. It does mean the current static evidence
-does not identify `S2` as a rank. Rank ids above `0x22` remain unresolved until
-the runtime rank-icon table or the data-table row used by `rank_setup` is
-captured.
+| Rank | RankId | Evidence |
+|---|---:|---|
+| `S2` | `36` / `0x24` | `InitializeGlobalRankIconStringTable @ 0x1401363F0` entry 36. |
+| `S1` | `37` / `0x25` | `InitializeGlobalRankIconStringTable @ 0x1401363F0` entry 37. |
+
+Their special handling found so far is in the rank-band disparity path: neither
+`S2` nor `S1` is inserted into `MapRankIdToRankBand @ 0x14047C620`, so both
+return default band `5`. `LuxMoveSlot_ComputeScaleFromRankDiff_WithLazyInit @
+0x14044FB00` treats opponent band `5` as neutral and returns `1.0` instead of
+using the normal `1.10` through `0.80` multiplier table.
+
+`WriteMaximumRankConfigRow @ 0x1404AC9D0` writes the misspelled
+`maximam_rank` config row (`table id 0x90`). Its caller
+`UpdateMaximumRankFromPlayerProfile @ 0x1404ACCD0` reads the max-rank value from
+the player-profile object at `+0x18`; the static rank-icon table establishes the
+highest displayable id as `37` (`S1`).
 
 ## Building an external client
 
@@ -760,9 +790,13 @@ stages are flagged in the `MatchData` so the correct ring/wall config loads.
 | `GetLuxorMatchDataStyleId` | `0x142e1a270` | Reads `StyleId` from `ULuxorMatchData+0x48 + playerIndex*4`. |
 | `GetLuxorMatchDataRankId` | `0x142e192e0` | Calls player-slot vfunc `+0x90` with style id. |
 | `GetLuxorMatchDataRankPoint` | `0x142e19310` | Calls player-slot vfunc `+0x80` with style id. |
+| `InitializeGlobalRankIconStringTable` | `0x1401363f0` | Initializes the 38-entry rank icon table: `0=B`, `36=S2`, `37=S1`. |
 | `GetRankIconStringByRankId` | `0x14050afc0` | Bounds-checked rank-icon string lookup. |
+| `BuildRankingCardPayloadWithRankIconLookup` | `0x1407dab70` | Ranking-card UI path that maps rank icons to `ID_DLC7_RANK_NAME_%03d`. |
 | `MapRankIdToRankBand` | `0x14047c620` | Converts rank id to coarse rank band for disparity scaling. |
 | `LuxMoveSlot_ComputeScaleFromRankDiff_WithLazyInit` | `0x14044fb00` | Rank-band disparity multiplier table. |
+| `WriteMaximumRankConfigRow` | `0x1404ac9d0` | Writes the `maximam_rank` config row from the profile max-rank value. |
+| `WriteMatchingRankDisparityRow` | `0x1404ae020` | Writes `matching_rank_disparity` rows keyed by mode and rank-point delta. |
 | `LuxRanking_BuildPayload_FromSteamLeaderboardRead` | `0x1405a70e0` | Steam → UI payload transform — **hook to filter cheated entries from the local UI.** |
 | `LuxRankedMatch_BuildKpiPayload_PostMatch` | `0x1405a8840` | Outgoing KPI payload (BNED, not Steam) |
 | `CosmosChannel_BuildGetEnvRequest` | `0x14301b850` | BNED bootstrap |
