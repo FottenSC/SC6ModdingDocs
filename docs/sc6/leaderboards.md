@@ -155,6 +155,32 @@ you know the column names: the 16 column FNames are interned at
 A live capture — or the strings `value`, `lang`, `style`, `rank`, `point`,
 `Score` near `0x1432d8980..0x1432d8e20` — matches exactly what the UI expects.
 
+### Raw details column layout
+
+`LuxUploadReplay_FillLeaderboardColumnsFromMatchData @ 0x1405EFF60` writes the
+per-entry detail columns from `ULuxorMatchData`. The important correction is
+that `ULuxorMatchData+0x48` is **style id**, not rank id. Rank id and rank
+points are derived from the per-player match-data slot using that style id.
+
+| Detail column | Source |
+|---|---|
+| `LbCol_01_AreaIcon` | `GetLuxorMatchDataAreaIconId(md)` / `md+0x2c` |
+| `LbCol_02` | player slot 0 vfunc `+0x38` |
+| `LbCol_03` | player slot 1 vfunc `+0x38` |
+| `LbCol_04` | `GetLuxorMatchDataStyleId(md, 0)` |
+| `LbCol_05` | `GetLuxorMatchDataStyleId(md, 1)` |
+| `LbCol_06` | `GetLuxorMatchDataRankId(md, 0)` |
+| `LbCol_07` | `GetLuxorMatchDataRankId(md, 1)` |
+| `LbCol_08` | player slot 0 vfunc `+0x40` |
+| `LbCol_09` | player slot 1 vfunc `+0x40` |
+| `LbCol_10` | `GetLuxorMatchDataColumn10Value(md)` / `md+0x34` |
+| `LbCol_11..15` | zero |
+
+The read-side UI builder still uses FName lookup, so do not infer raw blob
+index order from the lookup order in `LuxRanking_BuildPayload_FromSteamLeaderboardRead`.
+Use the write path and `FOnlineLeaderboardRead_Init_AddAllSteamColumns` as the
+source of truth.
+
 ## Character style IDs
 
 The `styleIcon` field is `%03d` of the character style enum (`ELuxFightStyle`).
@@ -182,6 +208,90 @@ The 31-style enum lists every base and DLC fighter; relevant entries:
 
 Full enum listed at `0x1432994e8..0x14329aa18` in the binary.
 
+## Ranking internals
+
+SC6 keeps these as separate concepts:
+
+| Value | Where it comes from | Notes |
+|---|---|---|
+| `StyleId` | `GetLuxorMatchDataStyleId @ 0x142E1A270` | Direct `int32` at `ULuxorMatchData+0x48 + playerIndex*4`. |
+| `RankId` | `GetLuxorMatchDataRankId @ 0x142E192E0` | Calls player-slot vfunc `+0x90`, passing the player's `StyleId`. |
+| `RankPoint` | `GetLuxorMatchDataRankPoint @ 0x142E19310` | Calls player-slot vfunc `+0x80`, passing the player's `StyleId`. |
+
+Partial `ULuxorMatchData` layout for rank/leaderboard fields:
+
+| Offset | Type | Meaning |
+|-------:|------|---|
+| `+0x2c` | `int32` | Area / region icon id. |
+| `+0x34` | `int32` | Detail column 10 value; semantic still unknown. |
+| `+0x48` | `int32[2]` | Per-player `StyleId` values. |
+| `+0x70` | player slot | Player slot 0. |
+| `+0x1b0` | player slot | Player slot 1, stride `0x140`. |
+
+### Rank icon lookup
+
+`GetRankIconStringByRankId @ 0x14050AFC0` is a bounds-checked lookup into the
+runtime rank-icon `FString` array:
+
+```c
+FString* GetRankIconStringByRankId(int nRankId)
+{
+    if (0 <= nRankId && nRankId < g_nRankIconStringCount)
+        return &g_aRankIconStrings[nRankId];
+    return &g_RankIconFallbackString;
+}
+```
+
+The array is runtime-initialized, so the static file image does not expose the
+actual rank label strings.
+
+`GetAreaIconStringByAreaId @ 0x14050B3B0` is the equivalent area/region-icon
+lookup.
+
+### Rank-band disparity scaling
+
+`MapRankIdToRankBand @ 0x14047C620` maps rank ids to a coarse band used by
+`LuxMoveSlot_ComputeScaleFromRankDiff_WithLazyInit @ 0x14044FB00`.
+
+Observed explicit map entries:
+
+| Rank IDs | Band |
+|---|---:|
+| `0x09`, `0x0f`, `0x1e` | `0` |
+| `0x02`, `0x05`, `0x10`, `0x1d`, `0x1f` | `2` |
+| `0x00`, `0x06`, `0x08`, `0x0a`, `0x0e`, `0x13`, `0x1c`, `0x20`, `0x21`, `0x22` | `3` |
+| `0x03`, `0x04`, `0x07`, `0x0b`, `0x0c`, `0x0d`, `0x11`, `0x14`, `0x15` | `4` |
+
+Unmapped rank ids return default band `5`.
+
+The disparity scale table is:
+
+```text
+index: 0     1     2     3     4     5     6     7     8
+scale: 1.10  1.08  1.05  1.03  1.00  0.95  0.90  0.85  0.80
+```
+
+The index calculation is:
+
+```c
+nScaleIndex = (localRankBand - opponentRankBand) + 4;
+```
+
+If the opponent band is default `5`, or if the computed index is out of range,
+the function returns `1.0`.
+
+### S1 / S2 status
+
+No direct static `S1` or `S2` rank label was recovered from the binary. The
+visible static `S2` hits are unrelated runtime / DLC strings such as
+`RUNTIME_S2_BONUS_BGM_AVAILABLE`.
+
+That does **not** prove there is no top-rank icon named `S1`/`S2`, because the
+rank icon table is runtime-initialized. It does mean the current static evidence
+does not identify `S2` as a rank. Rank ids above `0x22` remain unresolved until
+the runtime rank-icon table or the data-table row used by `rank_setup` is
+captured.
+
 ## Building an external client
 
 Recommended approach for an analytics dashboard or third-party tracker:
@@ -196,9 +306,9 @@ Recommended approach for an analytics dashboard or third-party tracker:
    second per IP; the authenticated Web API allows much more.
 4. **Decode the per-entry `<details>` base64 blob** to get the 16 metadata
    columns. The column order matches the order in
-   `FOnlineLeaderboardRead_Init_AddAllSteamColumns`; sample a few real
-   entries to pin down the exact column types (most are int32 or a short
-   string).
+   `FOnlineLeaderboardRead_Init_AddAllSteamColumns`; see
+   [Raw details column layout](#raw-details-column-layout) for the rank/style
+   split.
 
 Don't bother with the Cosmos Channel backend — it is pure outgoing telemetry,
 and anything you could recover from it is already exposed by Steam.
@@ -646,6 +756,13 @@ stages are flagged in the `MatchData` so the correct ring/wall config loads.
 | `FOnlineLeaderboardsSteam_FindLeaderboardByName_Locked` | `0x1429c9d10` | Name → handle cache lookup |
 | `UFunction_RequestReadLeaderboards_Register` | `0x140ab3f30` | BP read entry point |
 | `FOnlineLeaderboardRead_Init_AddAllSteamColumns` | `0x140579600` | Adds the 16 metadata column FNames |
+| `LuxUploadReplay_FillLeaderboardColumnsFromMatchData` | `0x1405eff60` | Writes leaderboard detail columns from `ULuxorMatchData`. Confirms `StyleId` columns before rank columns. |
+| `GetLuxorMatchDataStyleId` | `0x142e1a270` | Reads `StyleId` from `ULuxorMatchData+0x48 + playerIndex*4`. |
+| `GetLuxorMatchDataRankId` | `0x142e192e0` | Calls player-slot vfunc `+0x90` with style id. |
+| `GetLuxorMatchDataRankPoint` | `0x142e19310` | Calls player-slot vfunc `+0x80` with style id. |
+| `GetRankIconStringByRankId` | `0x14050afc0` | Bounds-checked rank-icon string lookup. |
+| `MapRankIdToRankBand` | `0x14047c620` | Converts rank id to coarse rank band for disparity scaling. |
+| `LuxMoveSlot_ComputeScaleFromRankDiff_WithLazyInit` | `0x14044fb00` | Rank-band disparity multiplier table. |
 | `LuxRanking_BuildPayload_FromSteamLeaderboardRead` | `0x1405a70e0` | Steam → UI payload transform — **hook to filter cheated entries from the local UI.** |
 | `LuxRankedMatch_BuildKpiPayload_PostMatch` | `0x1405a8840` | Outgoing KPI payload (BNED, not Steam) |
 | `CosmosChannel_BuildGetEnvRequest` | `0x14301b850` | BNED bootstrap |

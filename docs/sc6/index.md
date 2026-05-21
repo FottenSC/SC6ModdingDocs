@@ -50,6 +50,7 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 | "How do I add / replace a stage?" | [Stage System](stage-system.md) |
 | "Why do some stages roll more often in random?" | [Stage System: Random-pool bias](stage-system.md#random-pool-bias) |
 | "How do I read character usage / ranked-match data outside the game?" | [Leaderboards & Online](leaderboards.md) |
+| "What's the difference between rank id, rank point, and style id?" | [Leaderboards & Online: ranking internals](leaderboards.md#ranking-internals) |
 | "How do I tell if my mod is running in an online match?" | [Leaderboards & Online: detection](leaderboards.md#detection-is-this-match-online) — call `ALuxBattleManager_CheckOnlineSessionActive @ 0x1403F2590` or read `FrameInputLog+0x4400` |
 | "How does opponent input get into the game during online play?" | [Leaderboards & Online: per-frame input chain](leaderboards.md#per-frame-input-chain-channel-5) — Steam P2P → push deque → drain → per-slot cache at `FrameInputLog+0x3C0` |
 | "How does the on-screen *Counter Hit* / *Punish Attack* / *Throw Escape* banner work?" | [Battle Message System](messages.md) |
