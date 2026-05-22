@@ -179,6 +179,7 @@ the page link for full context.
 | `ALuxBattleManager::NotifyCharaMoveEnded_Impl` | `0x1403F9200` | [Battle Manager: UFunction map](../sc6/battle-manager.md#ufunction-map) |
 | `ULuxBattleFunctionLibrary::SetBattlePause` (UFunction) | `0x140936190` | [Battle Manager: pause](../sc6/battle-manager.md#pause-inspection-bp-api-uluxbattlefunctionlibrary) |
 | `LuxBattleManager_RegisterOnTickWhenPaused_Delegates` | `0x1403F8E70` | [Battle Manager: OnBattleTickWhenPaused](../sc6/battle-manager.md#onbattletickwhenpaused-what-still-ticks-during-setbattlepausetrue) |
+| `LuxBattleManager_BuildActorDependencyGraph_At28` | `0x1403F8A20` | [Battle Manager: subsystem dependency graph](../sc6/battle-manager.md#subsystem-dependency-graph) |
 
 ### Trace (visual weapon-trail)
 
@@ -188,6 +189,15 @@ the page link for full context.
 | `ALuxTraceManager::Inactive_Impl` | `0x1408D1420` | [Trace System: UFunctions](../sc6/trace-system.md#ufunctions-on-aluxtracemanager) |
 | `ALuxTraceManager::GetTracePosition_Impl` | `0x1408D0BB0` | [Trace System: UFunctions](../sc6/trace-system.md#ufunctions-on-aluxtracemanager) (**stale on this build**) |
 | `ALuxTraceManager_ActivateTrace_Impl` | `0x1408D5D10` | [Trace System](../sc6/trace-system.md) |
+| `ALuxTraceManager_execActivateTrace` | `0x140C41AB0` | [Trace System: active trace slots](../sc6/trace-system.md#active-trace-slots-and-weapon-capsule-refresh) |
+| `ALuxTraceManager_execUpdate` | `0x140C415E0` | [Trace System: active trace slots](../sc6/trace-system.md#active-trace-slots-and-weapon-capsule-refresh) |
+| `ALuxTraceManager_Update_Impl` | `0x1408D5590` | [Trace System: active trace slots](../sc6/trace-system.md#active-trace-slots-and-weapon-capsule-refresh) |
+| `ALuxTraceManager_UpdateActiveAttackSlotPositions` | `0x1408D8490` | [Trace System: active trace slots](../sc6/trace-system.md#active-trace-slots-and-weapon-capsule-refresh) |
+| `ALuxTraceManager_ComputeCapsuleAndDirection` | `0x1408D1100` | [Trace System: active trace slots](../sc6/trace-system.md#active-trace-slots-and-weapon-capsule-refresh) |
+| `ALuxTraceManager_InsertActiveAttackSlot` | `0x1408C8D60` | [Trace System: active trace slots](../sc6/trace-system.md#active-trace-slots-and-weapon-capsule-refresh) |
+| `ALuxTraceManager_DispatchHitRequests` | `0x1408CEB40` | [Trace System: active trace slots](../sc6/trace-system.md#active-trace-slots-and-weapon-capsule-refresh) |
+| `ALuxTraceManager_SetSideActive` | `0x1408D5AB0` | [Trace System: active trace slots](../sc6/trace-system.md#active-trace-slots-and-weapon-capsule-refresh) |
+| `ALuxTraceManager_EffectReg_SetSideActive` | `0x1408D5AD0` | [Trace System: active trace slots](../sc6/trace-system.md#active-trace-slots-and-weapon-capsule-refresh) |
 | `Z_Construct_UClass_ALuxTraceManager_Properties` | `0x140C0BA90` | [Trace System: UFunctions](../sc6/trace-system.md#ufunctions-on-aluxtracemanager) |
 
 ### KHit / classifier

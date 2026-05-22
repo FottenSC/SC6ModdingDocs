@@ -135,6 +135,24 @@ instance of class X" rather than as fixed addresses.
     [`ALuxBattleChara` runtime-layout note](structures.md#aluxbattlechara)
     for the downstream consequences.
 
+### Subsystem dependency graph
+
+`LuxBattleManager_BuildActorDependencyGraph_At28 @ 0x1403F8A20` wires the tick/dependency
+graph between BattleManager subsystems. This matters for hook placement: several systems
+depend on earlier subsystem ticks rather than running as independent actors.
+
+| Dependency | Meaning |
+|---|---|
+| `CommonInput -> PauseController / ShortcutController` | Input feeds pause and shortcut state |
+| `ReplayPlayer -> FrameInput -> FrameInputLog -> ReplayRecorder` | Replay/input state advances as an ordered chain |
+| `TimeManager -> Chara actors` | Per-character timing depends on the match time manager |
+| `TimeManager -> VFxInstanceManager / StageActorManager / ColorFade / StageInfinity` | Stage/VFX timing is downstream of battle time |
+| `SpecialtyVFxManager -> VFxInstanceManager / ColorFade` | Specialty effects feed general VFX/color systems |
+
+For freeze, frame-step, replay, and pause mods, prefer hooking the documented tick gates
+and subsystem entry points over random per-actor `TickActor` hooks. The dependency graph
+explains why stopping one actor tick may leave downstream managers alive.
+
 ### Camera & events
 | Offset | Type | Name |
 |-------:|------|------|

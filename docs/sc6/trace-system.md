@@ -106,6 +106,51 @@ struct FTraceActiveParam {  // sizeof == 0x30 (48 bytes)
 };
 ```
 
+## Active trace slots and weapon-capsule refresh
+
+`Active_Impl` opens weapon-trace attack tags `1..9`. Reopening the same tag is
+idempotent: the existing slot is reused or updated, not duplicated. `Inactive_Impl`
+with tag `0` clears all active trace slots; with tag `1..9` it removes only that tag
+from the active-slot hash. The visible trail may continue fading on `ULuxTraceComponent`
+after `Inactive`, but the active-slot path no longer treats the tag as live.
+
+`Update_Impl(X, Y)` is only an axis-feed setter. It writes
+`ULuxTraceComponent+0x444 = X` and `ULuxTraceComponent+0x448 = Y`; it is not the
+component tick and does not sample bones by itself.
+
+| Symbol | Address | Modding use |
+|---|---:|---|
+| `ALuxTraceManager_execActivateTrace` | `0x140C41AB0` | UE4 exec trampoline for `ActivateTrace(Mode, SkeletalMesh, OwnerChara, KindIndex)` |
+| `ALuxTraceManager_execUpdate` | `0x140C415E0` | UE4 exec trampoline for `Update(X, Y)` |
+| `ALuxTraceManager_Active_Impl` | `0x1408CD940` | Opens weapon-trace attack tag `1..9` |
+| `ALuxTraceManager_Inactive_Impl` | `0x1408D1420` | Closes one tag, or all tags when tag is `0` |
+| `ALuxTraceManager_InsertActiveAttackSlot` | `0x1408C8D60` | Adds or updates one active trace slot |
+| `ALuxTraceManager_UpdateActiveAttackSlotPositions` | `0x1408D8490` | Per-frame refresh of active weapon-trace slot positions |
+| `ALuxTraceManager_ComputeCapsuleAndDirection` | `0x1408D1100` | Converts one matching `FLuxCapsule` into world hilt/tip/direction |
+| `ALuxTraceManager_DispatchHitRequests` | `0x1408CEB40` | Dispatches queued weapon-trace hit requests |
+| `ALuxTraceManager_SetSideActive` | `0x1408D5AB0` | Wrapper for trace effect visibility toggling |
+| `ALuxTraceManager_EffectReg_SetSideActive` | `0x1408D5AD0` | Applies visibility to registered trace effect components |
+
+`FActiveAttackSlot` entries are 0x44 bytes:
+
+| Offset | Field | Meaning |
+|---:|---|---|
+| `+0x00` | `uint8 Tag` | Attack tag, matched against `FLuxCapsule.CapsuleType` |
+| `+0x04` | `FVector VelocityA` | Hilt velocity |
+| `+0x10` | `FVector VelocityB` | Tip velocity |
+| `+0x1C` | `FVector PositionMid` | `(hilt + tip) * 0.5` |
+| `+0x28` | `FVector DirectionUnit` | Direction from capsule/bone transform |
+| `+0x34` | `uint8 GateStateByte` | Runtime validation state |
+| `+0x38` | `int32 GateCountdown` | Six-frame grace window on gate changes |
+| `+0x3C` | `int32 HashNextBucket` | Hash-chain link |
+| `+0x40` | `int32 HashThisBucket` | Hash bucket/index bookkeeping |
+
+!!! warning "Trace slots are not general hitboxes"
+    Kicks, body strikes, throws, pushboxes, and hurtboxes do not use this
+    trace-slot path. Those remain on the KHit linked-list system documented in
+    [Hitbox System](hitbox-system.md). The trace helpers are useful for
+    weapon-trail visuals and weapon-capsule visualization only.
+
 ## `FLuxCapsule` (0x50 bytes)
 
 ```cpp
@@ -244,16 +289,17 @@ hooks, see [Dev / Debug Hooks](dev-debug-hooks.md).
 
 ## What's still unfound
 
-- **Live `FLuxCapsule` container on this build.** Layout is known (0x50); the container
-  address is uncertain since `chara+0x388` is now `CharaMesh0`. Best candidate: walk
-  `ALuxBattleMoveCommandPlayer*` at `BattleManager+0x4C0`.
+- **Public `GetTracePosition_Impl` remains stale / unreliable for reflection callers.**
+  For weapon-capsule visualization, prefer hooking
+  `ALuxTraceManager_UpdateActiveAttackSlotPositions @ 0x1408D8490` or
+  `ALuxTraceManager_ComputeCapsuleAndDirection @ 0x1408D1100`.
 - **`FLuxCapsule` radius.** The 80-byte struct holds two endpoints but no radius field. It
   likely lives on `TracePartsDataAsset` or on a sibling struct that the live container
   points at.
-- **Cross-reference with the hitbox system.** The visual `FLuxCapsule` system here and the
-  KHit `KHitArea` subclass on the [Hitbox System](hitbox-system.md) page both encode
-  bone-pair endpoints. Whether any move authoring tool emits both representations from a
-  single source is not confirmed.
+- **Cross-reference with the hitbox system.** The weapon-trace `FLuxCapsule` path here is
+  still separate from the general KHit linked-list hitbox system. Do not use trace
+  capsules as a substitute for KHit when inspecting kicks, body strikes, throws,
+  pushboxes, or hurtboxes.
 
 ---
 
@@ -263,10 +309,10 @@ hooks, see [Dev / Debug Hooks](dev-debug-hooks.md).
 
 | Symbol | RVA | Description |
 |--------|-----|-------------|
-| `ALuxBattleChara_Active_Impl` | `0x8CD940` | Opens attack slot. |
-| `ALuxBattleChara_Inactive_Impl` | `0x8D1420` | Closes attack slot. |
+| `ALuxTraceManager_Active_Impl` | `0x8CD940` | Opens weapon-trace attack slot. |
+| `ALuxTraceManager_Inactive_Impl` | `0x8D1420` | Closes one weapon-trace tag, or all tags when tag is `0`. |
 | `ALuxTraceManager_GetTracePosition_Impl` | `0x8D0BB0` | **Stale** — returns `false` for every real chara. |
-| `execGetTracePosition_ALuxBattleChara` | `0xC3F9B0` | VM trampoline. |
+| `ALuxTraceManager::GetTracePosition` exec trampoline | `0xC3F9B0` | VM trampoline; older Ghidra databases may still carry a chara-class label here. |
 | `ALuxTraceManager_ActivateTrace_Impl` | `0x8D5D10` | Lazy-creates `TraceComponent`, spawns trail. |
 | `ULuxTraceComponent_BeginTrace` | `0x8D5FF0` | Populates `ActiveTraces[]` from kind data asset. |
 | `ULuxTraceComponent_StartTrace` | `0x8D8C40` | `SetActive(true)`. |

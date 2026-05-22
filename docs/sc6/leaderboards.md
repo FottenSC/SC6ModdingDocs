@@ -280,9 +280,9 @@ Observed explicit map entries:
 | `0x00`, `0x06`, `0x08`, `0x0a`, `0x0e`, `0x13`, `0x1c`, `0x20`, `0x21`, `0x22` | `3` |
 | `0x03`, `0x04`, `0x07`, `0x0b`, `0x0c`, `0x0d`, `0x11`, `0x14`, `0x15` | `4` |
 
-Unmapped rank ids return default band `5`. The explicit map stops at rank id
-`34` (`A2`), so `35` (`A1`), `36` (`S2`), and `37` (`S1`) all fall into the
-default top bucket.
+Unmapped rank ids return default band `5`. The explicit map inserts keys `0x00` up
+to `0x22` (`34`, `A2`), so `0x23` (`A1`), `0x24` (`S2`), and `0x25` (`S1`) all fall into
+that default top bucket.
 
 The disparity scale table is:
 
@@ -301,20 +301,25 @@ If the opponent band is default `5`, or if the computed index is out of range,
 the function returns `1.0`. That means `A1`, `S2`, and `S1` opponents bypass
 the normal disparity multiplier table and get neutral scaling.
 
+When `A1`/`S2`/`S1` is on the **local** side, `localRankBand` is also `5`, so
+`nScaleIndex = (5 - opponentRankBand) + 4` can still produce reduced gains
+(`0.95` to `0.80`) against some lower-ranked opponents; it never produces a
+multiplier above `1.0`.
+
 ### S1 / S2 status
 
-`S2` and `S1` are real rank icons in this build:
+`A1`, `S2`, and `S1` are real rank ids in this build:
 
 | Rank | RankId | Evidence |
 |---|---:|---|
+| `A1` | `35` / `0x23` | `MapRankIdToRankBand @ 0x14047C620` has no explicit entry. |
 | `S2` | `36` / `0x24` | `InitializeGlobalRankIconStringTable @ 0x1401363F0` entry 36. |
 | `S1` | `37` / `0x25` | `InitializeGlobalRankIconStringTable @ 0x1401363F0` entry 37. |
 
-Their special handling found so far is in the rank-band disparity path: neither
-`S2` nor `S1` is inserted into `MapRankIdToRankBand @ 0x14047C620`, so both
-return default band `5`. `LuxMoveSlot_ComputeScaleFromRankDiff_WithLazyInit @
-0x14044FB00` treats opponent band `5` as neutral and returns `1.0` instead of
-using the normal `1.10` through `0.80` multiplier table.
+Special handling is in the rank-band disparity path:
+
+- `MapRankIdToRankBand @ 0x14047C620` omits explicit entries for `0x23`–`0x25`, so all three are mapped as band `5` by default.
+- `LuxMoveSlot_ComputeScaleFromRankDiff_WithLazyInit @ 0x14044FB00` treats **opponent** band `5` as neutral and returns `1.0` instead of applying the normal `1.10` through `0.80` scale table.
 
 `WriteMaximumRankConfigRow @ 0x1404AC9D0` writes the misspelled
 `maximam_rank` config row (`table id 0x90`). Its caller
