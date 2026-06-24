@@ -3,7 +3,7 @@
 **Goal**: ship a `.umap` with a brand-new stage code (e.g. `STGMOD`) and
 trigger the game to load it, without replacing any stock stage.
 
-**Requires**: UE4 4.18 editor, UnrealPak.exe, UE4SS (or a native injector) for
+**Requires**: UE4 4.17.2 editor, UnrealPak.exe, UE4SS (or a native injector) for
 the runtime hook. Optional: UAssetGUI for editing data tables.
 
 ## Why this needs more than a `_P.pak`
@@ -35,7 +35,7 @@ the umap, the game loads it.
 ## Step 1 — Build the umap
 
 Stub `ALuxBattleStage`, `ALuxBattleStageActorManager`, `ALuxStageMeshActor`,
-`ALuxStageBreakableBarrierActor` in a UE4 4.18 project. The required hierarchy:
+`ALuxStageBreakableBarrierActor` in a UE4 4.17.2 project. The required hierarchy:
 
 - `ALuxBattleStage` (root actor)
 - `ALuxBattleStageActorManager` (it manages the 9 actor lists at

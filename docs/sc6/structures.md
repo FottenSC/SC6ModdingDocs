@@ -686,7 +686,7 @@ locations as edge-cross-product scratch during point-in-triangle classification.
 - **Path**: `/Script/Engine.World`
 - **Discovered via**: `Z_Construct_UClass_UWorld @ 0x1428A5B90`
 
-Offsets of interest to SC6 modding. The full UE4.17 `UWorld` has many more fields;
+Offsets of interest to SC6 modding. The full UE4 4.17.2 `UWorld` has many more fields;
 only the ones mods commonly need are listed here. The offsets below are confirmed
 against the property-builder sequence inside `Z_Construct_UClass_UWorld`.
 

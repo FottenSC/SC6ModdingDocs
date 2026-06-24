@@ -1370,7 +1370,7 @@ HUD/network hit-event struct.
 
 ### Recommended path (fastest to get to a website)
 
-1. **Dump the UE4 pak chunks.** These are Unreal 4.21-era cooked paks; use
+1. **Dump the UE4 pak chunks.** These are Unreal Engine 4.17.2 cooked paks; use
    UnrealPak or FModel. The `DA_MoveListTable_<StyleId>.uasset` files give you
    the Training-Mode display text for every move (CommandTextID → localised
    move name → AttributeTag/EffectTag). That alone is enough to stand up a

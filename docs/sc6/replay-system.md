@@ -93,7 +93,7 @@ rewinding only the visible cursor is not enough.
 
 ## Seeking / scrubbing status
 
-UE4 4.21's DemoNetDriver seek API is present, but it is not validated as the
+UE4 4.17.2's DemoNetDriver seek API is present, but it is not validated as the
 SC6 in-game replay-menu seek path. Treat it as a UE demo utility, not as the
 Lux battle replay authority:
 

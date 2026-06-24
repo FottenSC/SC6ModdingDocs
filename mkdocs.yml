@@ -1,7 +1,7 @@
 site_name: SoulCalibur VI Modding Docs
 site_description: Community documentation for modding SoulCalibur VI with the UE4SS framework.
 site_url: https://example.com/  # TODO: replace with your GH Pages or CF Pages URL
-repo_url: https://github.com/YOUR_USER/SC6ModdingDocs  # TODO: update
+repo_url: https://github.com/FottenSC/SC6ModdingDocs
 repo_name: SC6ModdingDocs
 edit_uri: edit/main/docs/
 
@@ -96,6 +96,7 @@ nav:
       - sc6/index.md
       - Game Structures: sc6/structures.md
       - Character Data: sc6/character-data.md
+      - Character & Stage Selection Menus: sc6/selection-menus.md
       - On-disk Battle Files: sc6/on-disk-files.md
       - Battle Manager: sc6/battle-manager.md
       - Hitbox System: sc6/hitbox-system.md
@@ -124,7 +125,7 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/YOUR_USER/SC6ModdingDocs
+      link: https://github.com/FottenSC/SC6ModdingDocs
   generator: false
 
 copyright: Community-maintained documentation. Not affiliated with BANDAI NAMCO or the UE4SS team.

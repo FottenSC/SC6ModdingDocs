@@ -1,7 +1,7 @@
 # SoulCalibur VI Internals
 
 Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
-`SoulcaliburVI.exe`, UE4 4.17–4.21).
+`SoulcaliburVI.exe`, Unreal Engine 4.17.2).
 
 ## Binary identity
 
@@ -11,8 +11,8 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 | Module | `SoulcaliburVI.exe` (monolithic — no separate `LuxorGame.dll`) |
 | Source-path prefix in strings | `D:\dev\sc6\UE4_Steam\LuxorProto\Source\LuxorGame\...` |
 | Internal codename | **Luxor** (first-party classes are `ALux*` / `ULux*` / `FLux*`) |
-| Engine version | 4.17–4.21 (verify via `[PS] Found EngineVersion: 4.XX` in `UE4SS.log`) |
-| Recommended UE4SS build | `LessEqual421` (covers any ≤ 4.21) |
+| Engine version | Unreal Engine 4.17.2 (verify via `[PS] Found EngineVersion: 4.17.2` in `UE4SS.log`) |
+| Recommended UE4SS build | `LessEqual421` (compatible with SC6's UE 4.17.2 runtime) |
 
 ## Pages
 
@@ -24,6 +24,7 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 | [Reaction System](reaction-system.md) | **Post-hit** state machine — yarare dispatch, 80-id reaction table, gate-family taxonomy, knockdown camera, throw-react. |
 | [Trace System](trace-system.md) | `FLuxCapsule` + `ALuxTraceManager` — the **visual** weapon-trail / sword-swoosh VFX (not hit detection). |
 | [Stage System](stage-system.md) | Master enum table, stage-code routing, DLC gating, `LuxBattleStageInfoTableRow`, collision storage, custom-stage mod pipeline. |
+| [Character and Stage Selection Menus](selection-menus.md) | Character-select roster builders, selected/decided setup keys, stage picker inputs, arcade/mission stage resolvers, and custom-character submenu feasibility. |
 | [Movement System](movement.md) | Per-character step / 8WR table, conditions that modify step performance (hitstop, Soul Charge, face flip, state index). |
 | [Battle Message System](messages.md) | `ELuxBattleMessage` enum, `FLuxBattleMessageParam` struct, `ULuxBattleMessageReceiverInterface`, broadcast dispatchers, modder-feasibility notes. |
 | [Replay System](replay-system.md) | Per-frame replay tick chain, master clock at `FrameInputLog+0x3A4`, Site 9 plus seven Actor::Tick gates for replay freeze, `TimeDilation` fall-through that bypasses `VMFreezeByte`. |
@@ -48,6 +49,8 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 | "How far does each character step?" | [Movement System](movement.md) |
 | "What changes how well a character moves?" | [Movement System: verified levers](movement.md#what-changes-movement-verified-levers-only) |
 | "How do I add / replace a stage?" | [Stage System](stage-system.md) |
+| "How do character select and map select menus work?" | [Character and Stage Selection Menus](selection-menus.md) |
+| "Can the custom-character submenu select modded stages?" | [Character and Stage Selection Menus: Custom-character submenu as a stage selector](selection-menus.md#custom-character-submenu-as-a-stage-selector) |
 | "Where does match setup copy stage/rules/player tables into the BattleManager?" | [Battle Manager: Battle launcher startup path](battle-manager.md#battle-launcher-startup-path) |
 | "Why do some stages roll more often in random?" | [Stage System: Random-pool bias](stage-system.md#random-pool-bias) |
 | "How do I read character usage / ranked-match data outside the game?" | [Leaderboards & Online](leaderboards.md) |

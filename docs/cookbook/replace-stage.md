@@ -3,7 +3,7 @@
 **Goal**: ship a custom map by overriding a stock stage slot. The simple path
 replaces the stock `.umap` in a higher-priority `_P.pak` and needs no DLL hook.
 
-**Requires**: UE4 4.18 editor (matching SC6's engine version), UnrealPak.exe,
+**Requires**: UE4 4.17.2 editor (matching SC6's engine version), UnrealPak.exe,
 and a basic Blender -> UE4 FBX workflow. UAssetGUI/FModel is optional for
 editing `StageInfoTable` or `ULuxStageAssetPaths` assets.
 
@@ -60,7 +60,7 @@ Save the replacement level at the exact stock content path:
 ```
 
 The level needs the SC6 actor class names to resolve when the cooked package is
-loaded by `SoulcaliburVI.exe`. In a UE4 4.18 mod project, stub the native classes
+loaded by `SoulcaliburVI.exe`. In a UE4 4.17.2 mod project, stub the native classes
 with the right names. For a simple map, inheriting from `AActor` is enough for
 authoring the package references.
 
@@ -158,7 +158,7 @@ for offsets. This table is forgiving but limited: it does not replace
 
 ## Cook and pack
 
-Cook the UE4 4.18 project for Windows. Then build a high-priority patch pak:
+Cook the UE4 4.17.2 project for Windows. Then build a high-priority patch pak:
 
 ```bat
 UnrealPak.exe pakchunk999-WindowsNoEditor_P.pak -create=filelist.txt -compress

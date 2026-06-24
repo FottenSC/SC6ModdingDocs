@@ -4,6 +4,10 @@ The reverse-engineering work runs through `bethington/ghidra-mcp` MCP tools.
 The MCP is the authoritative interface for Ghidra - never edit `.gpr` files or invoke Ghidra scripts directly.
 The bridge auto-discovers tools from `/mcp/schema`; if a tool name isn't in the schema it doesn't exist.
 
+## Project facts
+
+- SoulCalibur VI runs on Unreal Engine 4.17.2.
+
 ## Ghidra MCP conventions
 
 The MCP enforces conventions in the tool layer (auto-fix / warn / reject tiers). Don't fight them - they exist because the codebase outgrew prompt-only discipline.

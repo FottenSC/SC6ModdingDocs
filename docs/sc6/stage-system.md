@@ -413,7 +413,7 @@ to register with the gameplay engine:
   segments
 - (Optional) `ALuxStageBreakableWallActor` — breakable walls
 
-Stub these classes in a UE4 4.18 project with the correct `UClass` names and
+Stub these classes in a UE4 4.17.2 project with the correct `UClass` names and
 property layouts, so the cooked package's class references resolve against the
 shipping `SoulcaliburVI.exe` `UClass*` lookup.
 
