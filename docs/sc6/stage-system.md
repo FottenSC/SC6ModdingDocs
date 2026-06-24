@@ -196,10 +196,38 @@ Terrain height, wall contacts, ring-edge tags, and several Move VM geometry
 predicates use a separate legacy Namco collision blob named by the debug string
 `"J_StgHitChkData::Attach" @ 0x143e89f20`.
 
+Content-side storage is a `ULuxStageAssetPaths` data asset. Reflection shows the
+class layout as `Identifier @ +0x38`, `RawAssets @ +0x40`, and `Setting @ +0x50`.
+Each `RawAssets` element is a `LuxStageRawAsset` record:
+
+```c
+struct LuxStageRawAsset {   // 0x18
+    ELuxStageAssetType Type; // +0x00
+    FString            Path; // +0x08
+};
+```
+
+`ELuxStageAssetType` values are:
+
+| Value | Enum | Runtime setup slot |
+|---:|---|---|
+| 0 | `ESA_HitData` | `J_StgHitChkData*` A |
+| 1 | `ESA_HitData2` | `J_StgHitChkData*` B |
+| 2 | `ESA_IntroCameraData` | intro camera data pointer |
+| 3 | `ESA_StartCameraData` | start camera data pointer |
+
+`FUN_14089b2c0 @ 0x14089b2c0` formats the selected packed stage id as `"%03X"`
+and looks up the matching `ULuxStageAssetPaths` object from the asset-registry
+map. `LuxObject_BuildParamSlots_FromBattleSubstrings_4Slots @ 0x1404208b0`
+then maps the raw assets by `Type`: values 0 and 1 become the two
+`J_StgHitChkData*` pointers later copied by `LuxBattle_SetFrameCacheHitChkDataPtrs`.
+
 Runtime storage chain:
 
 | Address / function | Role |
 |---|---|
+| `ULuxStageAssetPaths.RawAssets` | content-side paths for `ESA_HitData` / `ESA_HitData2` |
+| `LuxObject_BuildParamSlots_FromBattleSubstrings_4Slots @ 0x1404208b0` | maps loaded raw assets into setup slots 0..3 by `ELuxStageAssetType` |
 | `g_pLuxBattle_StgHitChkDataA @ 0x14470d0d0` | serialized `J_StgHitChkData*` for frame context A |
 | `g_pLuxBattle_StgHitChkDataB @ 0x14470d0f8` | serialized `J_StgHitChkData*` for frame context B |
 | `LuxBattle_SetFrameCacheHitChkDataPtrs @ 0x1402dae70` | copies those two blob pointers out of a setup packet |
@@ -227,7 +255,8 @@ Yes, but the viable path depends on which collision layer you mean:
 | Add more deterministic ring segments | Binary patch the fixed storage, getter/setter copies, and every consumer that assumes 12 entries | More invasive than a data mod; no spare count field was found at `0x14484406c` |
 | Move visible/UE4 collision | Edit the `.umap` and each mesh `UBodySetup.AggGeom` with normal UE4 collision meshes | Does not change rollback-safe ring-out/wall tests by itself |
 | Move barrier actors in a custom/replaced `.umap` | Author matching `ALuxStageBreakableBarrierActor` transforms and verify the event 0x19 registration path | Still test against the 12-entry scbattle buffer at runtime |
-| Modify terrain/wall/ring tags | Replace the serialized `J_StgHitChkData` blob before `LuxBattle_AttachStgHitChkData`, or hook `LuxBattle_SetFrameCacheHitChkDataPtrs` / `LuxBattle_AttachStgHitChkData` to substitute A/B blobs | Requires preserving the legacy blob format and keeping both frame contexts coherent |
+| Modify terrain/wall/ring tags without runtime code | Override the stock `ULuxStageAssetPaths` asset and/or the raw assets referenced by its `ESA_HitData` / `ESA_HitData2` `RawAssets` entries in a higher-priority pak | Requires exact stock object paths and a valid `J_StgHitChkData` binary blob format |
+| Modify terrain/wall/ring tags with runtime code | Hook `LuxBattle_SetFrameCacheHitChkDataPtrs` / `LuxBattle_AttachStgHitChkData` to substitute A/B blobs | Easier to experiment, but needs native code and both peers online |
 
 ## Adding a wholly new stage
 

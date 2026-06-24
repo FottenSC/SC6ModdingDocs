@@ -250,6 +250,10 @@ the page link for full context.
 | `LuxStage_RegisterWallActor_BattleEvent0x19` | `0x140428EE0` | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
 | `LuxBattle_SetFrameCacheHitChkDataPtrs` | `0x1402DAE70` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
 | `LuxBattle_ApplyFrameCacheHitChkDataSetup` | `0x1403CFC20` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
+| `LuxObject_BuildParamSlots_FromBattleSubstrings_4Slots` | `0x1404208B0` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
+| `Z_Construct_UClass_ULuxStageAssetPaths` | `0x140BACDB0` | [structures](../sc6/structures.md#uluxstageassetpaths-and-luxstagerawasset) |
+| `Z_Construct_UScriptStruct_LuxStageRawAsset` | `0x140BD8C60` | [structures](../sc6/structures.md#uluxstageassetpaths-and-luxstagerawasset) |
+| `Z_Construct_UEnum_LuxorGame_ELuxStageAssetType` | `0x140BBF230` | [structures](../sc6/structures.md#uluxstageassetpaths-and-luxstagerawasset) |
 | `LuxBattle_RefreshFrameTerrainCache` | `0x140314480` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
 | `LuxBattle_AttachStgHitChkData` | `0x140392080` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
 | `LuxBattle_SampleTerrainAtXZ_Impl` | `0x140391350` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
@@ -366,6 +370,8 @@ note on lazy extensions.
 | `scbattle_StageBoundaryParams` | `0x40` | [structures](../sc6/structures.md#scbattle-stage-info-globals) |
 | `scbattle_StageInfoParam` | `0x120` | [structures](../sc6/structures.md#scbattle-stage-info-globals) |
 | `FLuxBattleEventRecord` | `0x18` | [structures](../sc6/structures.md#stage-actor-registration-event-record) |
+| `ULuxStageAssetPaths` | class | [structures](../sc6/structures.md#uluxstageassetpaths-and-luxstagerawasset) |
+| `LuxStageRawAsset` | `0x18` | [structures](../sc6/structures.md#uluxstageassetpaths-and-luxstagerawasset) |
 | `LuxBattle_FrameCacheHitChkDataSetup` | `0x22` | [structures](../sc6/structures.md#j_stghitchkdata-frame-cache-setup) |
 | `J_StgHitChkData_Header` | `0x30` | [structures](../sc6/structures.md#j_stghitchkdata-serialized-terrainwall-blob) |
 | `J_StgHitChkData_CellHeader` | `0x10` | [structures](../sc6/structures.md#j_stghitchkdata-serialized-terrainwall-blob) |

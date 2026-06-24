@@ -90,6 +90,9 @@ asset.
    isn't cooking — verify the `UCX_`/`UBX_` prefix names on import.
 4. If wall/ring-edge behavior still matches the stock stage, inspect or hook the
    `J_StgHitChkData` path documented in [Stage System](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid).
+   The no-runtime-mod route is to override the stock `ULuxStageAssetPaths`
+   asset and/or the raw assets referenced by its `ESA_HitData` and
+   `ESA_HitData2` `RawAssets` entries.
 
 ## Related
 

@@ -145,9 +145,11 @@ stage-code argument.
   configuration.
 - **Custom terrain/wall tags** — UE4 `BodySetup` and barrier actors are not the
   serialized `J_StgHitChkData` terrain/wall grid. If your stage needs different
-  terrain heights, wall tags, or ring-edge tags, plan for a native hook that
-  substitutes the A/B `J_StgHitChkData` blobs before
-  `LuxBattle_AttachStgHitChkData @ 0x140392080`.
+  terrain heights, wall tags, or ring-edge tags, override or create the
+  `ULuxStageAssetPaths` asset for the stage and point `ESA_HitData` /
+  `ESA_HitData2` at valid replacement raw assets. A native hook that substitutes
+  the A/B blobs before `LuxBattle_AttachStgHitChkData @ 0x140392080` is the
+  experimental fallback.
 - **Online play** — both peers need the mod installed and built identically.
   The host broadcasts the resolved stage code; the client's AssetManager
   must succeed at loading the same code or the match desyncs at stage load.

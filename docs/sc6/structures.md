@@ -79,6 +79,8 @@ Alphabetical jump table. Click through for full layout.
 | [`scbattle_StageBoundaryParams`](#scbattle-stage-info-globals) | `0x40` | Stage origin, spawn offsets, and facing angles. |
 | [`scbattle_StageInfoParam`](#scbattle-stage-info-globals) | `0x120` | Whole scbattle stage-info block: seed, boundary params, flags, 12 barrier entries. |
 | [`FLuxBattleEventRecord`](#stage-actor-registration-event-record) | `0x18` | Event packet used by stage barrier/wall registration event class `0x19`. |
+| [`ULuxStageAssetPaths`](#uluxstageassetpaths-and-luxstagerawasset) | class | Per-stage content-side asset list. `RawAssets` names hit-data/camera raw assets. |
+| [`LuxStageRawAsset`](#uluxstageassetpaths-and-luxstagerawasset) | `0x18` | `{ELuxStageAssetType Type; FString Path;}` entry in `ULuxStageAssetPaths.RawAssets`. |
 | [`LuxBattle_FrameCacheHitChkDataSetup`](#j_stghitchkdata-frame-cache-setup) | `0x22` | Setup packet that seeds the A/B `J_StgHitChkData*` globals. |
 | [`J_StgHitChkData_*`](#j_stghitchkdata-serialized-terrainwall-blob) | variable | Serialized legacy terrain/wall collision blob expanded into frame-bounds grids. |
 | [Frame-bounds grid](#frame-bounds-grid) | (`>=0x44b`) | Runtime terrain/wall spatial acceleration for VM predicates and wall collision. |
@@ -489,6 +491,30 @@ record before dispatching class `2`. For barrier actors the observed values are
 | +0x10 | `uint32` | `dwReserved` | |
 | +0x14 | `byte` | `bEventClassId` | barrier/wall registration uses `0x19` |
 | +0x15 | `byte[3]` | `p_pad_15` | |
+
+### `ULuxStageAssetPaths` and `LuxStageRawAsset`
+
+`ULuxStageAssetPaths` is the content-side data asset that names the raw files
+used for a stage. `Z_Construct_UClass_ULuxStageAssetPaths @ 0x140BACDB0`
+registers these reflected fields:
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x38 | `FString` or name-like id | `Identifier` | matched against selected stage id formatted as `"%03X"` by `FUN_14089B2C0` |
+| +0x40 | `TArray<LuxStageRawAsset>` | `RawAssets` | entries keyed by `ELuxStageAssetType` |
+| +0x50 | `LuxStageSetting` | `Setting` | three bools: anomaly VFX, wet, breath |
+
+`LuxStageRawAsset` is 0x18 bytes, registered by
+`Z_Construct_UScriptStruct_LuxStageRawAsset @ 0x140BD8C60`:
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `ELuxStageAssetType` | `Type` | 0=`ESA_HitData`, 1=`ESA_HitData2`, 2=`ESA_IntroCameraData`, 3=`ESA_StartCameraData` |
+| +0x08 | `FString` | `Path` | raw asset path loaded by the Lux asset path system |
+
+`LuxObject_BuildParamSlots_FromBattleSubstrings_4Slots @ 0x1404208B0` maps
+loaded `RawAssets` into the four setup slots. Type 0 and 1 become the A/B
+`J_StgHitChkData*` pointers used by the frame-cache terrain/wall grid.
 
 ### `J_StgHitChkData` frame-cache setup
 
