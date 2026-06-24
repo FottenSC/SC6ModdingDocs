@@ -59,9 +59,11 @@ enum used by leaderboard metadata — that is a separate numbering (see
 | `064` | Azwel | base |
 | `065` | Geralt | base |
 
-> Source: `BuildCharaSelectRosterTable @ 0x1405D3870` (the exe's own
-> name-key↔cid roster), cross-checked against the `ID_CMN_Char_D_<cid>`
-> localization keys.
+> Source: select-roster rows from `BuildCharaSelectRosterTable @ 0x1405D3870`
+> (the exe's own name-key↔cid roster), cross-checked against the
+> `ID_CMN_Char_D_<cid>` localization keys. `013` is a known non-select
+> boss / AI slot from localization and runtime-condition strings; it is not
+> emitted by `BuildCharaSelectRosterTable`.
 
 - `base` = data ships on-disc with plain `ID_CMN_Char_D_<cid>` keys;
   `DLC<N>` = shipped in a DLC pak with `ID_DLC<N>_*` keys.
@@ -71,6 +73,85 @@ enum used by leaderboard metadata — that is a separate numbering (see
   alone leaves those three unlabelled.
 - cids outside this list (`000` / `0FF` shared-motion slots, the
   Create-a-Soul slot, etc.) are not playable roster characters.
+
+## `BuildCharaSelectRosterTable` select roster
+
+`BuildCharaSelectRosterTable @ 0x1405D3870` builds the transient
+character-select roster `LuxDataTable`. Each row is a `(locTextId, cid)`
+pair. The `cid` is the 3-hex style id used by `hdr<cid>.khd`,
+`Content/Style/<cid>/`, and `ID_CMD_<cid>_*` move-list keys. The function
+does **not** emit numeric `ELuxCharacter` / `ELuxFightStyle` ids; keep those
+separate from cids.
+
+The literal seed table is 29 rows: one menu/header row plus 28 character rows.
+If a `MoveProvider` is available, the function then keeps the header row and
+intersects the character rows with `FUN_140638290 @ 0x140638290`, the shared
+runtime-available cid filter. If no game-flow / world context is available,
+the helper copies the input list and the literal seed rows remain unfiltered.
+
+| Seed row | locTextId | cid | Character / meaning | Notes |
+|---:|---|---|---|---|
+| 0 | `ID_SYS_SEM_MENU_0207` | `ALL` | Menu header / all filter | Not a fighter row |
+| 1 | `ID_CMN_Char_D_001` | `001` | Mitsurugi | base |
+| 2 | `ID_CMN_Char_D_002` | `002` | Seong Mi-na | base |
+| 3 | `ID_CMN_Char_D_003` | `003` | Taki | base |
+| 4 | `ID_CMN_Char_D_004` | `004` | Maxi | base |
+| 5 | `ID_CMN_Char_D_005` | `005` | Voldo | base |
+| 6 | `ID_CMN_Char_D_006` | `006` | Sophitia | base |
+| 7 | `ID_CMN_Char_D_007` | `007` | Siegfried | base |
+| 8 | `ID_CMN_Char_D_00B` | `00b` | Ivy | base |
+| 9 | `ID_CMN_Char_D_00C` | `00c` | Kilik | base |
+| 10 | `ID_CMN_Char_D_00D` | `00d` | Xianghua | base |
+| 11 | `ID_CMN_Char_D_00F` | `00f` | Yoshimitsu | base |
+| 12 | `ID_CMN_Char_D_011` | `011` | Nightmare | base |
+| 13 | `ID_CMN_Char_D_012` | `012` | Astaroth | base |
+| 14 | `ID_CMN_Char_D_014` | `014` | Cervantes | base |
+| 15 | `ID_CMN_Char_D_015` | `015` | Raphael | base |
+| 16 | `ID_CMN_Char_D_016` | `016` | Talim | base |
+| 17 | `ID_CMN_Char_D_023` | `023` | Tira | on-disc, purchase-gated |
+| 18 | `ID_CMN_Char_D_024` | `024` | Zasalamel | base |
+| 19 | `ID_CMN_Char_D_062` | `062` | Grøh | base |
+| 20 | `ID_CMN_Char_D_064` | `064` | Azwel | base |
+| 21 | `ID_CMN_Char_D_065` | `065` | Geralt | base / guest |
+| 22 | `ID_DLC2_CMN_Char_D_060` | `060` | 2B | DLC2 |
+| 23 | `ID_DLC4_CMN_Char_D_030` | `030` | Amy | DLC4 |
+| 24 | `ID_DLC6_CMN_Char_D_017` | `017` | Cassandra | DLC6 |
+| 25 | `ID_DLC7_CMN_Char_D_028` | `028` | Hilde | DLC7 |
+| 26 | `ID_DLC9_CMN_Char_D_061` | `061` | Haohmaru | DLC9 |
+| 27 | `ID_DLC11_CMN_Char_D_022` | `022` | Setsuka | DLC11 |
+| 28 | `ID_DLC13_CMN_Char_D_009` | `009` | Hwang | DLC13 |
+
+The cid seed list, in emitted order, is:
+
+```text
+001, 002, 003, 004, 005, 006, 007, 00b, 00c, 00d, 00f, 011,
+012, 014, 015, 016, 023, 024, 062, 064, 065, 060, 030, 017,
+028, 061, 022, 009
+```
+
+Excluded by construction:
+
+| cid / id | Meaning | Evidence |
+|---|---|---|
+| `013` | Inferno / boss / AI slot | `ID_CMN_Char_D_013` and `RUNTIME_CHAR_013_AVAILABLE` exist elsewhere, but the select roster seed skips it. |
+| `066` | non-select runtime style id | `RUNTIME_CHAR_066_AVAILABLE` and `ID_CMN_Char_E_066` exist, but there is no select-roster display row. |
+| `000`, `0FF` | shared/common motion slots | on-disk pseudo-style ids, not character-select rows. |
+| `ELuxCharacter::ELC_EDGEMASTER`, `ELuxFightStyle::EFS_EDGEMASTER` | enum-only Edgemaster ids | enum strings exist, but no cid row is seeded here. |
+
+Direct code callers of the table builder:
+
+| Caller | Call site | Observed role |
+|---|---:|---|
+| `FUN_1405CDF70` | `0x1405CE099` | Builds a `LuxSEMPlayerMenuCompanionsListItem` menu data table. |
+| `FUN_1405D3070` | `0x1405D324C` | Builds a player-menu weapon/list submenu using `LuxSEMPlayerMenuWeaponListItem`. |
+| `FUN_1405D4E20` | `0x1405D4FEC` | Variant of the player-menu weapon/list submenu builder with extra command/delete parameters. |
+| `FUN_140C84E60` | `0x140C84E81` | UFunction/exec-style wrapper that commits the roster table directly. |
+
+No direct battle-launch / battle-setup caller xrefs this table. Treat it as UI
+menu data, not as the authoritative battle setup whitelist. The validity filter
+flows the other direction: `BuildCharaSelectRosterTable` consumes the shared
+runtime-available cid helper to prune menu rows, while battle setup uses its own
+launch-data path described in [Battle Manager](battle-manager.md#battle-launcher-startup-path).
 
 ## DataTable asset paths
 

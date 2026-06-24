@@ -323,6 +323,7 @@ the page link for full context.
 
 | Symbol | RVA | Page |
 |---|---|---|
+| `BuildCharaSelectRosterTable` | `0x5D3870` | [Character Data: select roster](../sc6/character-data.md#buildcharaselectrostertable-select-roster) |
 | `LuxDataTablePath_Ctor` | `0x2ED0AA0` | [Battle Manager: helper API](../sc6/battle-manager.md#helper-api) |
 | `LuxDataTablePath_Dtor` | `0x2ED6A80` | [Battle Manager: helper API](../sc6/battle-manager.md#helper-api) |
 | `LuxDataTablePath_AppendString` | `0x2EDA150` | [Battle Manager: helper API](../sc6/battle-manager.md#helper-api) |
