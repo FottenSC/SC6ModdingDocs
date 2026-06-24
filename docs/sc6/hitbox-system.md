@@ -23,7 +23,7 @@ see [Reaction System](reaction-system.md).
 | Own active-attack mask | `chara+0x44058` | Own move's per-frame mask cell. |
 | Aggregation array | `chara+0x44078` (`u64[22]`) | `PerHurtboxBitmask` — one slot per kind tag. |
 | Reaction output | `chara+0x1C74` (`i32[22]`) | `PerHurtboxReactionState` — `LuxHitReactionState` enum. |
-| Node size | `0x80` (128 bytes) | Same for all subclasses. |
+| Node storage | Sphere `0x80`; Area/FixArea `0xA0` | Mixed-size intrusive nodes; `+0x20` stores the relative next-node delta. |
 | Subclass tag | `node+0x16` | `0=Sphere`, `1=Area`, `2=FixArea`. |
 | Geometry gate | `node+0x14` | Attack list: `(hotMask >> KindTag) & 1` per tick. Hurtbox list: written on demand by MoveVM opcode `0x13AC`. See [per-frame hot-mask](#per-frame-hot-mask). |
 | Damage gate | `(hotMask & (1 << KindTag)) AND (*(u64*)(chara+0x44048))` | Both must be set for a hit to fire. |
@@ -58,7 +58,15 @@ List counts live at the matching `head - 0x8` offsets (`+0x44470`, `+0x44490`, `
 | `+0x444B4` | `i32` | `HurtboxMaxSlot` — hurtbox list's own max kind-tag + 1. **Not read by hit pipeline.** |
 | `+0x1C74` | `i32[22]` | `PerHurtboxReactionState` — classifier output. See [reaction-state values](#reaction-state-values). |
 
-## KHit node layout (0x80 bytes)
+<a id="khit-node-layout"></a>
+
+## KHit node layout (variable `0x80` / `0xA0` storage)
+
+`Lux_KHitChk_DeserializeLinkedList @ 0x14030C940` emits mixed-size nodes into one
+scratch pool: Sphere records advance the cursor by `0x80`, while Area and FixArea
+records advance by `0xA0`. The list link at `+0x18` is authoritative; `+0x20`
+stores the relative byte delta to the next node (`0x80` after a Sphere,
+`0xA0` after an Area/FixArea, zero on the tail).
 
 Common header (every subclass):
 
@@ -71,7 +79,7 @@ Common header (every subclass):
 | `+0x16` | `u8` | `StreamTypeTag` | `0=Sphere`, `1=Area`, `2=FixArea` |
 | `+0x17` | `u8` | `KindTag` | KHit kind/category in `[0, ~22)`. **Not** a skeletal bone id. |
 | `+0x18` | `KHitBase*` | `Next` | intrusive list link; null-terminates |
-| `+0x20` | `i64` | `nextDelta` | `0x80` in practice |
+| `+0x20` | `i32` | `NextDeltaBytes` | Relative offset from this node to the next emitted node; `0x80` after Sphere, `0xA0` after Area/FixArea, zero on the tail. |
 
 Subclass vtables:
 
@@ -101,7 +109,7 @@ KHitArea (StreamTypeTag = 1) — SWEPT CAPSULE, double-buffered for CCD:
     +0x70..+0x8F   WorldSpaceBufB  (P1, P2)
                    g_LuxKHitArea_DoubleBufferToggle selects cur vs prev each tick.
                    Overlap test does 4-way segment/segment CCD across both halves.
-    +0x90  float    ContactImpulseScale
+    +0x90  uint32   BoneIndexUe4_P1
     +0x94  uint32   BoneIndexUe4_P2
 
 KHitFixArea (StreamTypeTag = 2) — STATIC OBB from THREE reference points:
@@ -112,8 +120,10 @@ KHitFixArea (StreamTypeTag = 2) — STATIC OBB from THREE reference points:
     +0x70  FVector  WorldPoint2
     +0x80  FVector  WorldPoint3
     +0x90  uint32   BoneIndexUe4
-    +0x94  float    ContactImpulseScale
 ```
+
+Only `KHitSphere` carries a contact-impulse scale (`+0x78`), used by the body / pushbox
+solver. `KHitArea` and `KHitFixArea` do not have a verified contact-impulse field.
 
 To recover an OBB from `KHitFixArea`'s three world-space points:
 

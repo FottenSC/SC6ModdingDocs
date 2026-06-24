@@ -19,7 +19,7 @@ Alphabetical jump table. Click through for full layout.
 | [`ALuxBattleReplayPlayer`](#aluxbattlereplayplayer-977-bytes) | `0x3D1` | Replay playback actor. |
 | [`ALuxTraceManager`](#aluxtracemanager) | `0x408` | **Visual-only** weapon-trail driver. |
 | [`FActiveAttackSlot`](#factiveattackslot-68-bytes) | `0x44` | Per-tag active-attack hash slot at `chara+0x3D0`. |
-| [`FKHitNodeBase`](#fkhitnodebase-36-bytes-header-view) / [`FLuxKHitNode`](#fluxkhitnode-160-bytes-full-node-view) | `0xA0` runtime | KHit linked-list node — base header + 3 subclass tails. |
+| [`FKHitNodeBase`](#fkhitnodebase-36-bytes-header-view) / [`FLuxKHitNode`](#fluxkhitnode-variable-size-node-view) | Sphere `0x80`; Area/FixArea `0xA0` | KHit linked-list node — shared header plus subclass tails. |
 | `FLuxBattleChara` (Ghidra type) | `0x973F0` | Big-struct view of a fighter's runtime state — same entity as [`ALuxBattleChara`](#aluxbattlechara), with wider field coverage. (Previously documented as `0x97330`; the Ghidra struct now reports `0x973F0` = 619504 bytes.) |
 | [`FLuxBattleCharaVisibilityFlags`](#fluxbattlecharavisibilityflags-7-bytes) | `0x07` | 7-byte mesh visibility bitfield. |
 | [`FLuxBattleVMFreezeRecord`](#fluxbattlevmfreezerecord-64-bytes) | `0x40` | Slow-motion / VM-freeze blend state. |
@@ -301,13 +301,14 @@ UFunction map and the hierarchical config-tree path convention.
 - **Path**: `/Script/LuxorGame.LuxTraceManager`
 - **Size**: 0x408
 - **Role**: drives the **visual** weapon trail / particle FX for one chara. Despite the name, this
-  actor has nothing to do with hit resolution — hitboxes are `FLuxCapsule` entries on the
-  `MoveProvider`. Every field on this class is visual state: two particle components, the
-  trail-rendering `ULuxTraceComponent`, and a `KindIndex` that picks the visual style.
+  actor has nothing to do with hit resolution — live hit detection uses KHit linked-list nodes
+  documented in [Hitbox System](hitbox-system.md). Every field on this class is visual state: two
+  particle components, the trail-rendering `ULuxTraceComponent`, and a `KindIndex` that picks the
+  visual style.
 
 | Offset | Type | Name |
 |-------:|------|------|
-| +0x388 | `UObject*` | OwnerMoveProvider (back-ref) |
+| +0x388 | `ULuxTraceDataAsset*` | TraceDataAsset |
 | +0x398 | `UParticleSystemComponent*` | EffectSlotA |
 | +0x3A0 | `UParticleSystemComponent*` | EffectSlotB |
 | +0x3A8 | `ULuxTraceComponent*` | TraceComponent |
@@ -362,9 +363,11 @@ Held at `ALuxTraceManager+0x388` as `TraceManager.TraceDataAsset` on this build.
 ### `FLuxCapsule`
 
 - **Size**: 80 bytes (0x50) — confirmed from the Ghidra struct layout.
-- **Storage**: the MoveProvider owns a *container* struct at `MoveProvider +0x30`; that container
-  holds an array-of-pointers — `FLuxCapsule**` at `container +0x30`, count `int32` at `container +0x38`.
-  The iteration chain is therefore `chara +0x388 → +0x30 (container) → +0x30 (FLuxCapsule**) / +0x38 (count)`.
+- **Storage**: the legacy container shape is `FLuxCapsuleContainer` (`FLuxCapsule**` at
+  `container+0x30`, count at `+0x38`), but the old runtime chain
+  `chara+0x388 -> +0x30 -> container` is stale on this build because `chara+0x388` is
+  `CharaMesh0`, not a MoveProvider. The live capsule-container owner is still unconfirmed; see
+  [Trace System](trace-system.md#where-the-live-fluxcapsule-array-is-on-this-build).
 - The first 48 bytes (`+0x00 .. +0x2F`) are an internal header that `GetTracePosition_Impl` never
   touches. The documented fields all live in the tail of the struct.
 
@@ -1143,9 +1146,10 @@ for the full call-graph walkthrough.
 
 `FKHitNodeBase` and `FLuxKHitNode` are Ghidra-named partial views. The canonical names
 in the binary's vtables (`KHitBase_vftable @ 0x143E87838`, etc.) are `KHitBase`, `KHitSphere`,
-`KHitArea`, and `KHitFixArea`. Each node is **0xA0 (160) bytes** at runtime regardless of
-subclass (the Ghidra struct sizes for `KHitBase` and `KHitFixArea` both report 160). The sparse
-`FLuxKHitNode` layout in the data-type manager covers the common header plus the FixArea tail.
+`KHitArea`, and `KHitFixArea`. Runtime storage is mixed-size: `Lux_KHitChk_DeserializeLinkedList
+@ 0x14030C940` advances Sphere nodes by `0x80` bytes and Area/FixArea nodes by `0xA0` bytes.
+The sparse `FLuxKHitNode` layout in the data-type manager covers the common header plus the
+largest FixArea tail.
 
 #### `FKHitNodeBase` (36 bytes — header view)
 
@@ -1156,15 +1160,15 @@ subclass (the Ghidra struct sizes for `KHitBase` and `KHitFixArea` both report 1
 | +0x10 | `uint32` | `dwNode_Flags10_WriteOnly` | authored, write-only — no runtime reader. **Don't gate or classify on this.** |
 | +0x14 | `uint16` | `wActiveThisFrame` | per-frame **geometry** gate, written from the MoveVM hot-mask as `(hotMask >> KindTag) & 1`. `hotMask` has a permanent floor of `0x3FFFD` (slots `{0, 2..17}` are always on). |
 | +0x16 | `uint8`  | `bStreamTypeTag` | `0=Sphere`, `1=Area`, `2=FixArea` |
-| +0x17 | `uint8`  | `bSubIdOrBoneId` | actually a **KindTag** in `[0, ~22)`, not a skeletal bone id. Drives the `+0x08` mask, the `PerHurtboxBitmask` index, and the strike-vs-throw partition (slots 31, 55 = throw). |
+| +0x17 | `uint8`  | `bKindTag` | KHit category in `[0, ~22)`, not a skeletal bone id. Drives the `+0x08` mask, the `PerHurtboxBitmask` index, and the strike-vs-throw partition (slots 31, 55 = throw). |
 | +0x18 | `void*`  | `next` | intrusive linked-list link |
-| +0x20 | `uint32` | `dwAux_flags` | |
+| +0x20 | `int32` | `nNextDeltaBytes` | Relative offset to the next emitted node; `0x80` after Sphere, `0xA0` after Area/FixArea, zero on the tail. |
 
-#### `FLuxKHitNode` (160 bytes — full-node view)
+#### `FLuxKHitNode` (variable-size node view)
 
-Same header as `FKHitNodeBase`, plus the 128-byte tail `KHitFixArea` uses for its
-three reference points and transforms. `KHitSphere` and `KHitArea` reuse the same byte
-range with subclass-specific layouts (see below).
+Same header as `FKHitNodeBase`, plus the largest `0x80`-byte tail `KHitFixArea` uses for its
+three reference points and transforms. `KHitSphere` stops at `0x80` total node bytes;
+`KHitArea` and `KHitFixArea` consume `0xA0` total bytes.
 
 | Offset | Type | Name | Notes |
 |-------:|------|------|-------|
@@ -1172,11 +1176,13 @@ range with subclass-specific layouts (see below).
 | +0x08 | `uint64`        | `CategoryMask` | aliased name for `PerAttackerBit` / `PerHurtboxBit` |
 | +0x10 | `uint32`        | `dwField_10` | aliased `Node_Flags10` (write-only) |
 | +0x14 | `uint16`        | `wPerFrameLiveGate` | aliased `ActiveThisFrame` |
-| +0x17 | `uint8`         | `bBoneIdInternal` | aliased `KindTag` |
+| +0x17 | `uint8`         | `bKindTag` | aliased `KindTag` |
 | +0x18 | `uint64`        | `Next` | aliased `next` |
-| +0x20 | 16 × `uint64`   | `pTail_0x80` | 128-byte subclass tail |
+| +0x20 | `int32`         | `nNextDeltaBytes` | Relative next-node delta; see header view. |
+| +0x28 | `byte[8]`       | `pPad_28` | padding / ABI gap before subclass fields |
+| +0x30 | `byte[]`        | `pSubclassTail` | subclass-specific fields below |
 
-#### Subclass-specific layouts (within the 0x80-byte node)
+#### Subclass-specific layouts
 
 ```text
 KHitSphere (StreamTypeTag = 0):
@@ -1188,7 +1194,6 @@ KHitSphere (StreamTypeTag = 0):
     +0x74  float    RadiusAuthored
     +0x78  float    ContactImpulseScale  (pushbox contact force)
     +0x7C  uint32   BoneIndexUe4         (post-Remap)
-    +0x7F  uint8    ActiveByte
 
 KHitArea (StreamTypeTag = 1) — SWEPT CAPSULE, double-buffered for CCD:
     +0x30  FVector  BoneLocalP1
@@ -1197,7 +1202,7 @@ KHitArea (StreamTypeTag = 1) — SWEPT CAPSULE, double-buffered for CCD:
     +0x70..+0x8F   WorldSpaceBufB  (P1, P2)
                    g_LuxKHitArea_DoubleBufferToggle selects cur vs prev each tick;
                    the overlap test does 4-way segment/segment CCD across both halves.
-    +0x90  float    ContactImpulseScale
+    +0x90  uint32   BoneIndexUe4_P1
     +0x94  uint32   BoneIndexUe4_P2
 
 KHitFixArea (StreamTypeTag = 2) — STATIC OBB from THREE reference points:
@@ -1208,11 +1213,14 @@ KHitFixArea (StreamTypeTag = 2) — STATIC OBB from THREE reference points:
     +0x70  FVector  WorldPoint2
     +0x80  FVector  WorldPoint3
     +0x90  uint32   BoneIndexUe4
-    +0x94  float    ContactImpulseScale
 ```
 
+Only `KHitSphere` carries a verified contact-impulse scale (`+0x78`), used by the
+body / pushbox solver. Area and FixArea nodes are overlap geometry only in the
+verified paths.
+
 `KHitFixArea`'s OBB is derived at overlap-test time by Gram-Schmidting `(P2-P1)` and
-`(P3-P1)` — see [hitbox-system.md](hitbox-system.md#khit-node-layout-0x80-bytes)
+`(P3-P1)` — see [hitbox-system.md](hitbox-system.md#khit-node-layout)
 for the formula.
 
 **Subclass vtables**:
@@ -1605,10 +1613,9 @@ above; the legacy name collision is being phased out.)
 #### `FLuxMoveProvider_CapsuleSlot` (64 bytes)
 
 Same shape as `FLuxCapsuleContainer` (header + Data/Num/Max), but referenced
-from a different code path. It is the storage type the move provider uses to
-expose its `FLuxCapsule*` array. The layout is identical to `FLuxCapsuleContainer`;
-the separate type only exists so callers can tell whether they are walking the
-chara's capsule list or the provider's.
+from a different legacy code path. The layout is identical to `FLuxCapsuleContainer`;
+the old MoveProvider ownership chain is stale on this build and the live owner is
+still unconfirmed.
 
 | Offset | Type | Name | Notes |
 |-------:|------|------|-------|
@@ -1629,7 +1636,7 @@ Includes the 904-byte `AActor` base plus the trace-manager-specific tail.
 
 | Offset | Type | Name | Notes |
 |-------:|------|------|-------|
-| +0x388 | `void*` | `pOwnerMoveProvider` | back-ref |
+| +0x388 | `void*` | `pTraceDataAsset` | `ULuxTraceDataAsset*` |
 | +0x398 | `void*` | `pEffectSlotA` | `UParticleSystemComponent*` |
 | +0x3A0 | `void*` | `pEffectSlotB` | `UParticleSystemComponent*` |
 | +0x3A8 | `void*` | `pTraceComponent` | `ULuxTraceComponent*` |

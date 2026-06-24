@@ -244,9 +244,10 @@ class layout as `Identifier @ +0x38`, `RawAssets @ +0x40`, and `Setting @ +0x50`
 Each `RawAssets` element is a `LuxStageRawAsset` record:
 
 ```c
-struct LuxStageRawAsset {   // 0x18
-    ELuxStageAssetType Type; // +0x00
-    FString            Path; // +0x08
+struct LuxStageRawAsset {    // 0x18
+    ELuxStageAssetType Type;  // +0x00
+    uint               Pad04; // +0x04 alignment
+    FString            Path;  // +0x08
 };
 ```
 
@@ -259,11 +260,13 @@ struct LuxStageRawAsset {   // 0x18
 | 2 | `ESA_IntroCameraData` | intro camera data pointer |
 | 3 | `ESA_StartCameraData` | start camera data pointer |
 
-`FUN_14089b2c0 @ 0x14089b2c0` formats the selected packed stage id as `"%03X"`
-and looks up the matching `ULuxStageAssetPaths` object from the asset-registry
-map. `LuxObject_BuildParamSlots_FromBattleSubstrings_4Slots @ 0x1404208b0`
-then maps the raw assets by `Type`: values 0 and 1 become the two
-`J_StgHitChkData*` pointers later copied by `LuxBattle_SetFrameCacheHitChkDataPtrs`.
+`LookupLuxStageAssetPathNameByPackedStageId @ 0x14089b2c0` formats the selected
+packed stage id as `"%03X"` and looks up the matching `ULuxStageAssetPaths`
+asset name/path handle from the asset-registry map.
+`BuildLuxStageRawAssetLookupMap @ 0x14089d9a0` indexes the object's `RawAssets`,
+then `LuxObject_BuildParamSlots_FromBattleSubstrings_4Slots @ 0x1404208b0` maps
+the raw assets by `Type`: values 0 and 1 become the two `J_StgHitChkData*`
+pointers later copied by `LuxBattle_SetFrameCacheHitChkDataPtrs`.
 
 ### `LuxStageSetting` cosmetic flags
 

@@ -58,29 +58,29 @@ the page link for full context.
 
 | Symbol | Address | Page |
 |---|---|---|
-| `LuxBattle_PerFrameTick` | `0x1402DBC60` | [Replay System: Site 9](../sc6/replay-system.md#the-seven-tick-paths-to-halt-for-a-frozen-replay) |
+| `LuxBattle_PerFrameTick` | `0x1402DBC60` | [Replay System: Site 9](../sc6/replay-system.md#replay-freeze-gates) |
 | `LuxBattle_TickCharaMainSimulation` | `0x14034DA70` | [Movement: per-tick chara update flow](../sc6/movement.md#the-per-tick-chara-update-flow) |
 | `LuxBattle_TickHitResolutionAndBodyCollision` | `0x14033CCA0` | [Hitbox System](../sc6/hitbox-system.md) |
 | `LuxBattleManager_Update_Impl` | `0x140437590` | [Battle Manager: per-frame Update_Impl](../sc6/battle-manager.md#per-frame-update_impl) |
-| `LuxBattleManager_Tick_MainStateMachine_At1461` | `0x1403FBF30` | [Replay System: Site 21](../sc6/replay-system.md#the-seven-tick-paths-to-halt-for-a-frozen-replay) |
+| `LuxBattleManager_Tick_MainStateMachine_At1461` | `0x1403FBF30` | [Replay System: Site 21](../sc6/replay-system.md#replay-freeze-gates) |
 | `LuxBattleManager_Tick_SimulationLoop_UpdateInputAndRoundState` | `0x1403FE520` | [Replay System: SimulationLoop catch-up](../sc6/replay-system.md#simulationloop-catch-up) |
-| `LuxBattleChara_Tick_AdvanceReplayFrame_OrLocal` | `0x1403F8410` | [Replay System: Site 11](../sc6/replay-system.md#the-seven-tick-paths-to-halt-for-a-frozen-replay) |
+| `LuxBattleChara_Tick_AdvanceReplayFrame_OrLocal` | `0x1403F8410` | [Replay System: Site 11](../sc6/replay-system.md#replay-freeze-gates) |
 | `LuxBattleChara_VTable648_TickAndAdvanceReplayClock` | `0x1403E1FC0` | [Replay System: master clock R1](../sc6/replay-system.md#the-replay-master-clock-and-what-advances-it) |
 | `LuxBattleChara_VTable648_TickAndAdvanceReplayClock_GatedBy4404` | `0x1403E2000` | [Replay System: master clock R2](../sc6/replay-system.md#the-replay-master-clock-and-what-advances-it) |
-| `LuxActor_Tick_CallVtable5f8` | `0x1403FBDF0` | [Replay System: Site 20](../sc6/replay-system.md#the-seven-tick-paths-to-halt-for-a-frozen-replay) |
-| `ALuxBattleChara_TickActor` | `0x1403D0590` | [Replay System: Site 22](../sc6/replay-system.md#the-seven-tick-paths-to-halt-for-a-frozen-replay) |
-| `ALuxDemoHumanActor_TickActor` | `0x1404865B0` | [Replay System: Site 22b](../sc6/replay-system.md#the-seven-tick-paths-to-halt-for-a-frozen-replay) |
-| `APreviewHumanActor_TickActor` | `0x140486C60` | [Replay System: Site 22c](../sc6/replay-system.md#the-seven-tick-paths-to-halt-for-a-frozen-replay) |
-| `UDemoNetDriver_GotoTimeInSeconds` | `0x141E0ECA0` | [Replay System: scrubbing](../sc6/replay-system.md#scrubbing-a-match-replay-udemonetdrivergototimeinseconds) — UE4 native scrub for match replays |
-| `RegisterCVar_DemoGotoTimeInSeconds` | `0x140255B00` | [Replay System: scrubbing](../sc6/replay-system.md#scrubbing-a-match-replay-udemonetdrivergototimeinseconds) — CVar `demo.GotoTimeInSeconds` registrar |
+| `LuxActor_Tick_CallVtable5f8` | `0x1403FBDF0` | [Replay System: Site 20](../sc6/replay-system.md#replay-freeze-gates) |
+| `ALuxBattleChara_TickActor` | `0x1403D0590` | [Replay System: Site 22](../sc6/replay-system.md#replay-freeze-gates) |
+| `ALuxDemoHumanActor_TickActor` | `0x1404865B0` | [Replay System: Site 22b](../sc6/replay-system.md#replay-freeze-gates) |
+| `APreviewHumanActor_TickActor` | `0x140486C60` | [Replay System: Site 22c](../sc6/replay-system.md#replay-freeze-gates) |
+| `UDemoNetDriver_GotoTimeInSeconds` | `0x141E0ECA0` | [Replay System: seeking status](../sc6/replay-system.md#replay-seeking-status) — UE demo seek API present; not validated as the SC6 Lux replay-menu scrub path |
+| `RegisterCVar_DemoGotoTimeInSeconds` | `0x140255B00` | [Replay System: seeking status](../sc6/replay-system.md#replay-seeking-status) — CVar `demo.GotoTimeInSeconds` registrar for the UE demo task path |
 
 ### Replay input serialization
 
 | Symbol | Address | Page |
 |---|---|---|
-| `LuxReplay_DecodeInputPackets_FromFile` | `0x1403ED310` | [Replay System: custom Lux input replay opcodes](../sc6/replay-system.md#custom-lux-input-replay-opcodes) — expands 3-byte packed records into decoded input records |
-| `LuxReplay_EncodeInputEvents_ToBuffer` | `0x1403ED980` | [Replay System: custom Lux input replay opcodes](../sc6/replay-system.md#custom-lux-input-replay-opcodes) — inverse encoder for Lux replay input streams |
-| `LuxReplay_WriteThreeByteInputRecord_ToBuffer` | `0x1403F62E0` | [Replay System: custom Lux input replay opcodes](../sc6/replay-system.md#custom-lux-input-replay-opcodes) — appends one packed opcode record |
+| `LuxReplay_DecodeInputPackets_FromFile` | `0x1403ED310` | [Replay System: Lux input replay opcodes](../sc6/replay-system.md#lux-input-replay-opcodes) — expands 3-byte packed records into decoded input records |
+| `LuxReplay_EncodeInputEvents_ToBuffer` | `0x1403ED980` | [Replay System: Lux input replay opcodes](../sc6/replay-system.md#lux-input-replay-opcodes) — inverse encoder for Lux replay input streams |
+| `LuxReplay_WriteThreeByteInputRecord_ToBuffer` | `0x1403F62E0` | [Replay System: Lux input replay opcodes](../sc6/replay-system.md#lux-input-replay-opcodes) — appends one packed opcode record |
 
 ### Move VM (outer command-script VM)
 
@@ -367,7 +367,7 @@ note on lazy extensions.
 | `FLuxBattleVMFreezeRecord` | `0x40` | [structures](../sc6/structures.md#fluxbattlevmfreezerecord-64-bytes) |
 | `LuxBattleCharaMotionFlags` | `0x40` | [structures](../sc6/structures.md#luxbattlecharamotionflags-64-bytes) |
 | `FLuxDataTablePath` | `0x18` | [structures](../sc6/structures.md#fluxdatatablepath-24-bytes) |
-| `KHitBase` / `KHitFixArea` (runtime node) | `0xA0` | [structures](../sc6/structures.md#fluxkhitnode-160-bytes-full-node-view) |
+| `KHitBase` / `KHit*` runtime node | Sphere `0x80`; Area/FixArea `0xA0` | [structures](../sc6/structures.md#fluxkhitnode-variable-size-node-view) |
 | `FActiveAttackSlot` | `0x44` | [structures](../sc6/structures.md#factiveattackslot-68-bytes) |
 | `FBatchedLine` | `0x34` | [structures](../sc6/structures.md#fbatchedline-0x34-bytes) |
 | `LuxBattleStageInfoTableRow` | `0x108` | [stage-system](../sc6/stage-system.md#luxbattlestageinfotablerow) |

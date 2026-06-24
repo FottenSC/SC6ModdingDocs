@@ -500,7 +500,7 @@ fractional dt anywhere in the simulation.
 |------|-------|-----|
 | **WorldTickGate** | `LuxBattle_PerFrameTick @ 0x1402DBC60` (Site 9) | The simulation core. Halts MoveVM, hit detection, the integrator, frame counter, and every per-tick counter that isn't dt-scaled. |
 | **ReplayClockGate** | INC at `0x1403E1FC0+0x2A` and `0x1403E2000+0x33` | Pins the replay master clock at `ALuxBattleFrameInputLog+0x3A4`. Without this, `SimulationLoop_UpdateInputAndRoundState`'s `delta = master - lastApplied` keeps growing during freeze and replays release as a fast-forward burst. |
-| **ActorTickGate** | Sites 11, 20, 21, 21b, 22, 22b, 22c — see [Replay System](replay-system.md#the-seven-tick-paths-to-halt-for-a-frozen-replay) | Per-chara replay-frame advance, FrameInputLog tick, BM main-state-machine, BM round-timer (`Update_Impl`), chara TickActor + DemoHumanActor + PreviewHumanActor variants. PerFrameTick alone misses every one. |
+| **ActorTickGate** | Sites 11, 20, 21, 21b, 22, 22b, 22c — see [Replay System](replay-system.md#replay-freeze-gates) | Per-chara replay-frame advance, FrameInputLog tick, BM main-state-machine, BM round-timer (`Update_Impl`), chara TickActor + DemoHumanActor + PreviewHumanActor variants. PerFrameTick alone misses every one. |
 | **TimeDilationGate** | `LuxMoveVM_GetTimeDilationScalar @ 0x14030A8C0` entry | Force return `0.0f`. Bypasses the function's state==2 fall-through that returns `chara+0x3500` (≈ 1.0) and ignores `bVMFreezeByte` for normal-play characters during replay viewing — see [TimeDilation fall-through paths](replay-system.md#timedilation-fall-through-paths-bypasses-vmfreezebyte). |
 
 `g_LuxBattle_VMFreezeRecord.bVMFreezeByte @ 0x1448462D0` is the engine's

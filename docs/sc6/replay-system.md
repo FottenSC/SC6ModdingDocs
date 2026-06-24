@@ -1,46 +1,55 @@
 # Replay System
 
 How SC6 records and plays back a match. Critically, **a "frozen" replay is not
-the same as a frozen training match**: replay viewing has at least seven
-independent tick paths that keep advancing chara state, the round timer,
-recorded-input cursors, and animation. Stopping `LuxBattle_PerFrameTick` alone
-(the simulation-core entry point) leaves all of them running.
+the same as a frozen training match**: replay viewing has the simulation-core
+world tick plus seven additional Actor::Tick paths that can keep advancing
+chara state, the round timer, recorded-input cursors, and animation. Stopping
+`LuxBattle_PerFrameTick` alone leaves the Actor::Tick paths running.
 
 All addresses absolute (image base `0x140000000`).
 
-## Two replay subsystems
+## Replay backends present in the binary
 
-SC6 ships **two distinct replay backends**. They share many of the same
-chara/InputLog field offsets, which makes them easy to confuse:
+SC6 carries UE4's generic DemoNetDriver code, but the current SC6 replay-menu
+evidence points at the **Lux replay** path as the authoritative in-game replay
+system:
 
-| Subsystem | Where used | What records | What plays |
-|-----------|------------|--------------|------------|
-| **Custom Lux input replay** | Training replays, online catch-up | Per-round chara checkpoints + per-frame inputs (LPD format, "REPLAY/" path prefix) | The deterministic input pipeline below — `pBM->pReplayDataBlock_at0x460`, Stage 2 packet drain, chara-side `vtable[0x6A8]/[0x6C8]` |
-| **UE4 `UDemoNetDriver`** | Match-replay viewing (in-game "Replay" menu) | Replicated property updates from every networked actor (UE4 `.demo` format) | Standard UE4 demo netdriver — replication packets directly write actor properties; SC6 has no custom per-frame consumer for this path |
+| Path | Where observed | What it does |
+|------|----------------|--------------|
+| **Lux battle replay** | In-game replay saves/viewing, battle replay player, input-log catch-up | Stores SC6 replay data under the `REPLAY/` path, restores per-round reset snapshots, and advances deterministic input/frame state through `ALuxBattleFrameInputLog` and the BattleManager simulation loop. |
+| **UE4 `UDemoNetDriver`** | Generic UE4 engine code still linked into the binary | Can play/seek UE `.demo` streams when a real `UWorld->DemoNetDriver` exists. It is **not currently validated as the SC6 replay-menu authority**. |
 
-Evidence the match-replay menu path uses `UDemoNetDriver`:
+Evidence for the Lux path:
 
-- Strings `UGameInstance::PlayReplay: GetWorld() is null` @ `0x1438cdf00`,
-  `PlayReplay: Attempting to play demo %s` @ `0x1438ce490`,
-  `PlayReplay: failed to create demo net driver!` @ `0x1438ce5f0`
-- 156 `DemoNet*` strings sourced from
-  `D:\dev\sc6\UE4_Steam\Engine\Source\Runtime\Engine\Private\DemoNetDriver.cpp`
-- `RecordReplay: failed to create demo net driver!` @ `0x1438cc410` — match
-  recording also goes through `UDemoNetDriver`
+- `LuxReplayManager_Ctor_WithReplayPath @ 0x140409880` constructs the
+  `LuxBattleReplaySave` file manager and sets its base path to `"REPLAY/"`.
+- `ALuxBattleReplayPlayer_Tick_CopyRoundResetSnapshotAndSetMoveState4 @
+  0x140435C20` handles replay round navigation, copies a `0xC0`-byte
+  round-start snapshot into `BattleManager+0x1360`, then calls
+  `ALuxBattleManager_SetMoveState(..., 4)`.
+- `LuxBattleManager_Tick_SimulationLoop_UpdateInputAndRoundState @ 0x1403FE520`
+  consumes `ALuxBattleFrameInputLog+0x3A4 nMasterClock` as `delta` and applies
+  recorded input/round-state catch-up.
+- The Stage 1/2/3 input pipeline below (`FLuxReplayDataBlock`, decoded packets,
+  chara-side replay input ring) is native Lux code, not DemoNetDriver packet
+  playback.
 
-This distinction matters because the chara fields documented as
-**replay-relevant** below (`+0x4400 dwReplayEnableFlag`, `+0x4424 bCharaMode`)
-are populated by the **custom** subsystem only. Observed during match-replay
-viewing: both bytes read as nondeterministic values (e.g. `mode=14/197/63`,
-never `2` or `5`), because the UDemoNetDriver path never writes them — in that
-mode they overlap unrelated VFX state. Mods that key off these fields to detect
-"are we in replay" will misbehave during match-replay viewing. The robust
-signals are a non-null `DemoNetDriver` on the world, or an
-`ALuxBattleReplayPlayer` present at `BM+0x488`.
+Evidence for the UE4 DemoNetDriver path is weaker: the binary contains stock
+UE4 strings such as `PlayReplay: Attempting to play demo %s`,
+`RecordReplay: failed to create demo net driver!`, `demo.GotoTimeInSeconds`, and
+many `DemoNetDriver.cpp` strings. Those prove the UE4 engine code is present;
+they do **not** by themselves prove the SC6 replay menu routes through it.
 
-## Custom Lux input replay opcodes
+Practical detection guidance: for SC6 replay-viewing features, prefer
+`ALuxBattleReplayPlayer` at `BM+0x488` and the `ALuxBattleFrameInputLog` state.
+Only use `UWorld->DemoNetDriver` as a DemoNet signal after verifying it is
+non-null in the current session.
 
-The custom Lux replay backend stores input as a stream of 3-byte records:
+<a id="lux-input-replay-opcodes"></a>
+
+## Lux input replay opcodes
+
+The Lux replay backend stores input as a stream of 3-byte records:
 `[opcode: uint8][argument: uint16]`. The decoder expands that stream into
 8-byte per-frame records: `{frameId, cursor, p1Input, p2Input}`.
 
@@ -80,37 +89,47 @@ For replay tools, treat this as a delta-coded forward stream. Backward scrub
 needs a saved decoded stream or a full `FLuxReplayDataBlock` snapshot restore;
 rewinding only the visible cursor is not enough.
 
-## Scrubbing a match replay (`UDemoNetDriver::GotoTimeInSeconds`)
+<a id="replay-seeking-status"></a>
 
-UE4 4.21 ships built-in scrub for demo replays. SC6 keeps it intact:
+## Seeking / scrubbing status
+
+UE4 4.21's DemoNetDriver seek API is present, but it is not validated as the
+SC6 in-game replay-menu seek path. Treat it as a UE demo utility, not as the
+Lux battle replay authority:
 
 | Symbol | Address | Role |
 |---|---|---|
-| `UDemoNetDriver_GotoTimeInSeconds` | `0x141E0ECA0` | `void(UDemoNetDriver* this, float TimeInSeconds, FOnGotoTimeDelegate* del)`. Queues an `FGotoTimeInSecondsTask` on `NetDriver+0x7E0`; UE4 loads the nearest checkpoint and plays demo packets forward to the target time. |
-| `RegisterCVar_DemoGotoTimeInSeconds` | `0x140255B00` | Registers the CVar `demo.GotoTimeInSeconds`. Writing a float to that CVar at runtime invokes the same task path. |
+| `UDemoNetDriver_GotoTimeInSeconds` | `0x141E0ECA0` | `void(UDemoNetDriver* this, float TimeInSeconds, FOnGotoTimeDelegate* del)`. Queues an `FGotoTimeInSecondsTask` on `NetDriver+0x7E0`; drops the request if a goto task is already queued or `driver+0x791` is busy. |
+| `RegisterCVar_DemoGotoTimeInSeconds` | `0x140255B00` | Registers the CVar `demo.GotoTimeInSeconds`. Writing a float reaches the same UE demo task path when a DemoNetDriver is active. |
 
-To seek a match-replay session from a mod:
+For SC6 Lux battle replays, the verified native seek-like operation is **round
+navigation**, not arbitrary time seek:
 
-1. Get the active `UWorld*` (UE4SS exposes it as `GUWorld`).
-2. Read `UWorld->DemoNetDriver` (a `UDemoNetDriver*` field on `UWorld`; UE4 4.21
-   stores it as a UProperty, so UE4SS reflection finds it by name).
-3. Call `UDemoNetDriver_GotoTimeInSeconds(driver, targetSeconds, nullptr)` —
-   the delegate parameter accepts null for fire-and-forget.
+1. `ALuxBattleReplayPlayer_Tick_CopyRoundResetSnapshotAndSetMoveState4 @
+   0x140435C20` watches replay-menu bits 8/9.
+2. It adjusts `ReplayPlayer+0x39C nCurrentRound`, selects a `0xC0`-byte entry
+   from `ReplayPlayer+0x3A8 pStateResetRounds`, copies that entry into
+   `BattleManager+0x1360`, then calls `ALuxBattleManager_SetMoveState(..., 4)`.
+3. Frame-accurate backward scrub requires restoring a coherent snapshot of the
+   Lux replay-data block, `ALuxBattleFrameInputLog`, BattleManager replay
+   cursors, and chara replay input overlay state. Rewinding only a visible cursor
+   or writing `demo.GotoTimeInSeconds` is not enough for the Lux path.
 
-The scrub is **asynchronous**. Don't hold any per-actor pointers across the
-call: the netdriver tears down actors and re-spawns them from the checkpoint.
+If you deliberately use the UE demo path, first verify `UWorld->DemoNetDriver`
+is non-null and that the current session is actually a UE `.demo` playback.
+The scrub is asynchronous; don't hold per-actor pointers across it because the
+netdriver checkpoint path can tear down and respawn actors.
 
-> source: `FUN_141E0ECA0` (renamed `UDemoNetDriver_GotoTimeInSeconds`),
-> task-vtable at `0x1438B9B88`, CVar registration at `FUN_140255B00`,
-> error strings cited above.
+> source: `UDemoNetDriver_GotoTimeInSeconds @ 0x141E0ECA0`, task vtable
+> `0x1438B9B88`, `RegisterCVar_DemoGotoTimeInSeconds @ 0x140255B00`,
+> `ALuxBattleReplayPlayer_Tick_CopyRoundResetSnapshotAndSetMoveState4 @
+> 0x140435C20`, `LuxReplayManager_Ctor_WithReplayPath @ 0x140409880`.
 
-!!! warning "This does not freeze the demo driver"
-    `GotoTimeInSeconds` only seeks. To **pause** a match replay use UE4's
-    standard pause path (`AWorldSettings::Pauser != nullptr` /
-    `bGamePaused`). `UDemoNetDriver::TickFlush` early-returns when the world
-    is paused, halting demo packet dispatch at the source. The seven
-    custom-Lux Actor::Tick gates below pin chara/BM/InputLog state but
-    don't stop the demo driver.
+!!! warning "Do not use DemoNetDriver as the default SC6 replay scrub"
+    The DemoNetDriver API is real engine code, but current SC6 replay-menu
+    evidence is Lux replay-player/input-log based. A mod that blindly writes
+    `demo.GotoTimeInSeconds` may do nothing useful in a normal SC6 replay
+    viewing session.
 
 ## At a glance
 
@@ -132,10 +151,13 @@ The two functions exist as separate copies because they sit on different
 vtable slots and fire from different parents. The INC instruction is identical
 in both: `FF 83 A4 03 00 00` (`inc dword [rbx+0x3A4]`).
 
-### The seven tick paths to halt for a frozen replay
+<a id="replay-freeze-gates"></a>
 
-Verified against HorseMod's gate stack. Each is a separate Actor::Tick chain
-that drives chara/replay/round state independently of `PerFrameTick`:
+### Site 9 plus seven Actor::Tick gates to halt for a frozen replay
+
+Verified against HorseMod's gate stack. Site 9 is the simulation-core tick;
+the remaining seven rows are separate Actor::Tick chains that drive
+chara/replay/round state independently of `PerFrameTick`:
 
 | Site | Function | RVA | Drives |
 |------|----------|-----|--------|
@@ -156,7 +178,7 @@ documented in [movement.md](movement.md#timedilation-system-verified)) is
 characters during replay viewing — see
 [TimeDilation fall-through paths](#timedilation-fall-through-paths-bypasses-vmfreezebyte) below.
 A complete replay freeze needs an entry-RET on `GetTimeDilationScalar` that
-unconditionally returns 0.0, *plus* the seven Actor::Tick gates above.
+unconditionally returns 0.0, *plus* Site 9 and the seven Actor::Tick gates above.
 
 ---
 
@@ -340,7 +362,7 @@ one tick — seen on screen as the chara mashing buttons.
 |-----------|-------|------|
 | `Horse::WorldTickGate` | Site 9 | Owns the policy slot. RET on PerFrameTick when slot=0; consume one credit when slot>0. |
 | `Horse::ReplayClockGate` | INC at `R1+0x2A`, INC at `R2+0x33` | Skip the master-clock INC when policy=0. Keeps `delta=0` so SimulationLoop's catch-up loop is a no-op during freeze. |
-| `Horse::ActorTickGate` | Sites 11, 20, 21, 21b, 22, 22b, 22c | Entry-RET on each Actor::Tick prologue when policy=0. Halts the six tick chains that aren't covered by Site 9. |
+| `Horse::ActorTickGate` | Sites 11, 20, 21, 21b, 22, 22b, 22c | Entry-RET on each Actor::Tick prologue when policy=0. Halts the seven Actor::Tick chains that aren't covered by Site 9. |
 | `Horse::TimeDilationGate` | `LuxMoveVM_GetTimeDilationScalar @ 0x14030A8C0` entry | Force return `0.0f` (XORPS XMM0; RET) when policy=0. Bypasses the function's state==2 fall-through that would otherwise return `chara+0x3500` ≈ 1.0. |
 
 The four gates share a single `int32_t` policy slot:
@@ -379,8 +401,8 @@ operation.
 | `LuxBattleChara_ReplayPlayback_PushInputsToActiveSlots` | `0x1403F6600` | Stage-3 push: drains InputLog ring into chara active-input slot. |
 | `LuxMoveVM_GetTimeDilationScalar` | `0x14030A8C0` | Per-chara time scale. Four return paths; only Path B honours `bVMFreezeByte`. |
 | `g_LuxBattle_VMFreezeRecord` | `0x1448462D0` | 64-byte record. `bVMFreezeByte` at `+0x00`, `flBaseAlpha` at `+0x04`. |
-| `UDemoNetDriver_GotoTimeInSeconds` | `0x141E0ECA0` | UE4 native match-replay scrub. `(UDemoNetDriver*, float, FOnGotoTimeDelegate*)`. |
-| `RegisterCVar_DemoGotoTimeInSeconds` | `0x140255B00` | Registers CVar `demo.GotoTimeInSeconds` — writing the CVar triggers the same task path. |
+| `UDemoNetDriver_GotoTimeInSeconds` | `0x141E0ECA0` | UE4 demo seek API present in the binary. Not validated as the SC6 Lux replay-menu scrub path. |
+| `RegisterCVar_DemoGotoTimeInSeconds` | `0x140255B00` | Registers CVar `demo.GotoTimeInSeconds` for the UE demo task path. |
 
 ## Practical notes for mods
 
@@ -392,7 +414,7 @@ operation.
   [`OnBattleTickWhenPaused`](battle-manager.md#onbattletickwhenpaused-what-still-ticks-during-setbattlepausetrue)).
   One of those is `ALuxBattleFrameInputLog @ BM+0x478` — i.e. SC6's own
   pause path *intentionally* keeps the replay-cursor handler alive.
-- **The seven Actor::Tick sites are not exhaustive** for every conceivable
+- **The seven additional Actor::Tick sites are not exhaustive** for every conceivable
   freeze use case. They cover the paths that drive *gameplay-relevant*
   state; UMG widget Tick, particle/Niagara render time, audio, and
   non-battle actors keep ticking regardless. For full pause semantics

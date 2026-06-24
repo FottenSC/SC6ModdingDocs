@@ -26,7 +26,7 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 | [Stage System](stage-system.md) | Master enum table, stage-code routing, DLC gating, `LuxBattleStageInfoTableRow`, collision storage, custom-stage mod pipeline. |
 | [Movement System](movement.md) | Per-character step / 8WR table, conditions that modify step performance (hitstop, Soul Charge, face flip, state index). |
 | [Battle Message System](messages.md) | `ELuxBattleMessage` enum, `FLuxBattleMessageParam` struct, `ULuxBattleMessageReceiverInterface`, broadcast dispatchers, modder-feasibility notes. |
-| [Replay System](replay-system.md) | Per-frame replay tick chain, master clock at `FrameInputLog+0x3A4`, the seven Actor::Tick paths a freeze must halt, `TimeDilation` fall-through that bypasses `VMFreezeByte`. |
+| [Replay System](replay-system.md) | Per-frame replay tick chain, master clock at `FrameInputLog+0x3A4`, Site 9 plus seven Actor::Tick gates for replay freeze, `TimeDilation` fall-through that bypasses `VMFreezeByte`. |
 | [Leaderboards & Online](leaderboards.md) | Steam leaderboards (`Characterboard`, `RankmatchWorld/Asia/...`), BNED Cosmos Channel telemetry, building an external API client. |
 | [Move System](move-system.md) | Command-script bytecode VM, opcode dispatch, IF predicates. |
 | [Audio System](audio-system.md) | CRI ADX2 middleware + `UAtomComponent`, MoveVM-to-cue routing via `g_pLuxVfxDispatcher`, DramaticVoice triggers, weapon-SE bank routing, DLC ACB folder map, PartsSE / costume-part SE. |
@@ -67,11 +67,11 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 | "Does AI tick during replay viewing?" | [CPU / AI System: Replay behavior](ai-cpu-system.md#replay-behavior-summary) — yes, but the AI's output is silently discarded by the replay decoder. |
 | "How do I draw a debug line?" | [Drawing 3D Debug Lines](line-batching.md) |
 | "How do I pause the game?" | [Battle Manager: `SetBattlePause`](battle-manager.md#pause-inspection-bp-api-uluxbattlefunctionlibrary) |
-| "How do I freeze a *replay* (not just a training match)?" | [Replay System](replay-system.md) — `SetBattlePause` and `VMFreezeByte` both leak in replay viewing; needs the seven-site Actor::Tick gate stack. |
+| "How do I freeze a *replay* (not just a training match)?" | [Replay System](replay-system.md#replay-freeze-gates) — `SetBattlePause` and `VMFreezeByte` both leak in replay viewing; needs Site 9 plus the seven Actor::Tick gate stack. |
 | "Why does my freeze release as a fast-forward burst in replay viewing?" | [Replay System: SimulationLoop catch-up](replay-system.md#simulationloop-catch-up) — master clock keeps advancing during freeze, `delta` accumulates, drains in one tick on release. |
-| "How do I scrub / seek inside a match replay?" | [Replay System: scrubbing](replay-system.md#scrubbing-a-match-replay-udemonetdrivergototimeinseconds) — UE4's native `UDemoNetDriver::GotoTimeInSeconds` is intact; CVar `demo.GotoTimeInSeconds` exposes it too. |
-| "What's the format of SC6's custom replay input stream?" | [Replay System: custom Lux input replay opcodes](replay-system.md#custom-lux-input-replay-opcodes) — 3-byte opcode records expanded into 8-byte `{frame,cursor,p1,p2}` records. |
-| "What's the difference between training replays and match replays?" | [Replay System: two subsystems](replay-system.md#two-replay-subsystems) — training = custom Lux input pipeline; match-replay menu = UE4 `UDemoNetDriver`. |
+| "How do I scrub / seek inside a match replay?" | [Replay System: seeking status](replay-system.md#replay-seeking-status) — Lux replay round navigation is verified; DemoNetDriver seek exists but is not the default SC6 replay scrub path. |
+| "What's the format of SC6's replay input stream?" | [Replay System: Lux input replay opcodes](replay-system.md#lux-input-replay-opcodes) — 3-byte opcode records expanded into 8-byte `{frame,cursor,p1,p2}` records. |
+| "What's the relationship between Lux replays and DemoNetDriver?" | [Replay System: replay backends](replay-system.md#replay-backends-present-in-the-binary) — SC6 replay-menu evidence points to Lux replay/player/input-log code; DemoNetDriver is present UE engine code but not validated as the SC6 replay authority. |
 | "What does `ULuxDevBattleHUDSetting` do?" | [Dev / Debug Hooks](dev-debug-hooks.md) |
 | "What's the move-data DataTable schema?" | [Character Data](character-data.md) |
 

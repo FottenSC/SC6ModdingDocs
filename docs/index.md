@@ -54,10 +54,6 @@ make an edit, this is the navigation contract:
 
 <div class="grid cards" markdown>
 
--   :material-rocket-launch: **[Getting Started](getting-started/index.md)**
-
-    Install UE4SS into SoulCalibur VI and load your first Lua mod.
-
 -   :material-code-braces: **[UE4SS Framework](ue4ss/index.md)**
 
     Lua API, hooks, UObject reflection, and dumper usage.

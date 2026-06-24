@@ -243,7 +243,7 @@ Each uses the same **i16-tagged stream format** the runtime walks via
 | Tag | Stride | Tail |
 |----:|-------:|------|
 | 0 (Sphere)  | `0x20` | `float[4]` (x, y, z, radius), `u32 id`, `u32 reserved` |
-| 1 (Area)    | `0x28` | swept capsule — see [hitbox-system.md / KHit node layout](hitbox-system.md#khit-node-layout-0x80-bytes) |
+| 1 (Area)    | `0x28` | swept capsule — see [hitbox-system.md / KHit node layout](hitbox-system.md#khit-node-layout) |
 | 2 (FixArea) | `0x30` | 3-point OBB — same reference |
 
 Stream ends on the first `tag < 0` (typical sentinel: `0xFFFF` = -1).

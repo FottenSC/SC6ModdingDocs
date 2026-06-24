@@ -86,10 +86,6 @@ plugins:
 # Folder-level index.md files render as section landing pages.
 nav:
   - Home: index.md
-  - Getting Started:
-      - getting-started/index.md
-      - Install UE4SS: getting-started/install-ue4ss.md
-      - First Mod: getting-started/first-mod.md
   - UE4SS Framework:
       - ue4ss/index.md
       - Lua API Overview: ue4ss/lua-api.md
