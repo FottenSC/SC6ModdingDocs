@@ -38,6 +38,10 @@ built statically and therefore needs a DLL hook.
 | `GetScbattleStageInfoBarrierGeometry` | `0x1402d7730` | Copies exactly 12 deterministic ring-boundary entries out when the valid flag is set. |
 | `LuxBattle_SetFrameCacheHitChkDataPtrs` | `0x1402dae70` | Seeds the A/B `J_StgHitChkData*` globals used by frame-cache refresh. |
 | `LuxBattle_AttachStgHitChkData` | `0x140392080` | Expands serialized terrain/wall collision blobs into live frame-bounds grids. |
+| `LuxBattleManager_InitRound_TickTimers_ClearRoundData` | `0x1403fb660` | Round-start consumer of `ULuxStageAssetPaths.Setting.bWet`; drives `WetRatio`. |
+| `LuxBattleManager_StopTimers_IsBattleRunning_WetRatio` | `0x1403eec20` | Round/shutdown cleanup for `IsBattleRunning` and `WetRatio` timer handles. |
+| `LuxMove_RefreshProvider_CacheMeshesAndParts` | `0x1403cede0` | Copies `bAnomalyStageVFxEnabled` / `bBreath` into the stage/VFX refresh state. |
+| `IsAnomalyStageByStageCodeStr` | `0x140646230` | Pure string check for `_T`; separate from `LuxStageSetting.bAnomalyStageVFxEnabled`. |
 
 ## Master enum table
 
@@ -137,15 +141,54 @@ particle physics, and ordinary UE4 component collision:
 
 ```
 ALuxBattleStage  (root actor, class size 0x3a0)
-└── ALuxBattleStageActorManager  (class size 0x420, 9 TArray<UObject*> at +0x388..+0x408)
-    ├── StageMeshActorList          (ALuxStageMeshActor, visual + UE4 collision)
-    ├── BarrierActorList            (ALuxStageBreakableBarrierActor, ring-out triggers)
-    ├── BreakableWallActorList      (ALuxStageBreakableWallActor, wall-break)
-    ├── CuttableStageMeshActorList  (Soul-Charge sliceable scenery)
-    ├── HideableMeshActorList / VisibilitySwitcherList / StageMobList
-    ├── WolfCharacterList           (background animals)
-    └── StageActorList              (catch-all)
+└── ALuxBattleStageActorManager  (class size 0x420)
+    ├── +0x388 StageActorList
+    ├── +0x398 WolfCharacterList
+    ├── +0x3a8 BreakableWallActorList
+    ├── +0x3b8 BarrierActorList
+    ├── +0x3c8 HideableMeshActorList
+    ├── +0x3d8 VisibilitySwitcherList
+    ├── +0x3e8 StageMobList
+    ├── +0x3f8 StageMeshActorList
+    └── +0x408 CuttableStageMeshActorList
 ```
+
+`LuxActor_CollectActors_By8Classes_IntoTArrays @ 0x140417a70` walks the
+persistent level, streamed sublevels, and relevant actor/component objects, then
+partitions matching stage actors into those arrays. The arrays are not all
+deterministic collision inputs; several are only visual, visibility, or
+background-animation helpers.
+
+| Manager list | Native object collected | Runtime role |
+|---|---|---|
+| `StageActorList` | Any `ALuxStageActorBase` subclass | Catch-all list for stage-specific Lux actors. It is a broad registry, not a collision layer by itself. |
+| `WolfCharacterList` | `ALuxStageWolfCharacter` (`LuxStageWolfCharacter` registered class) | Background creature/animal actor bucket. Despite some decompiler names saying `MobBase`, the registered class is wolf-character-specific. |
+| `BreakableWallActorList` | `ALuxStageBreakableWallActor` | Visible breakable wall/set-piece actors. After collection, each wall dispatches battle event class `0x19` through `LuxStage_RegisterWallActor_BattleEvent0x19`; gameplay then treats the wall as a registered breakable segment. |
+| `BarrierActorList` | `ALuxStageBreakableBarrierActor` | Invisible/nonvisual arena-boundary or ring-out trigger actors. After collection, each barrier dispatches battle event class `0x19` through `LuxStage_RegisterBarrierActor_BattleEvent0x19`. The fixed 12-entry scbattle barrier block is still the authoritative deterministic boundary after registration. |
+| `HideableMeshActorList` | `ALuxStageHideableMeshActor` | Mesh actors that can be hidden/faded based on camera, LOD, or stage state. The collector can immediately hide them if the active condition fails. |
+| `VisibilitySwitcherList` | `ALuxStageVisibilitySwitcher` / registered `LuxStageVisibilitySwitcher` | Stage-state visibility controllers used by streamed BG/VFX/gimmick sublevels to toggle sets of actors. The current Ghidra wrapper name includes `Actor`, but the reflected class string is `LuxStageVisibilitySwitcher`. |
+| `StageMobList` | `ULuxStageAnimInstance` from `ALuxStagePawnBase` actors | Stores stage mob animation instances, not the pawn actors themselves. Used for animated background characters/creatures and stage animation events. |
+| `StageMeshActorList` | `ALuxStageMeshActor` | Visible stage meshes plus their ordinary UE4-side `ULuxStageMeshComponent`/`UBodySetup` collision. Useful for camera, particles, overlaps, and visual collision, but not sufficient for rollback-safe ring/wall gameplay geometry. |
+| `CuttableStageMeshActorList` | `ALuxStageCuttableMeshBase` (`LuxStageCuttableMeshBase` registered class) | Optional weapon-overlap sliceable mesh actor. The native path owns an initial static mesh, a procedural mesh, slice particles/SE, `MinCuttableDistance`, and an `OnOverlapBegin` handler that only accepts overlaps involving a component whose name contains `weapon` and an `ALuxBattleChara`. No Soul Charge gate was observed in this path. |
+
+Observed stock-map usage from the current dump (`.umap` name-table string scan
+under `/Content/Stage` and `/Content/DLC/*/Stage`; exact class-string matches
+only):
+
+| Manager list / class string | Stage folders observed |
+|---|---|
+| `ALuxStageMeshActor` | `STG001`, `STG001_T`, `STG002`, `STG002_T`, `STG003`, `STG003_T`, `STG005`, `STG005_T`, `STG008`, `STG008_D`, `STG008_T`, `STG009`, `STG010`, `STG010_T`, `STG011`, `STG011_T`, `STG012`, `STG012_T`, `STG013` |
+| `ALuxStageBreakableBarrierActor` | `STG004` (`STG004_Gimmicks2.umap`) |
+| `ALuxStageBreakableWallActor` | `STG009` (`STG009_Gimmicks.umap`) |
+| `ALuxStageHideableMeshActor` | `STG001`, `STG001_T`, `STG003`, `STG003_T`, `STG009`, `STG011`, `STG011_T`, `STG012`, `STG012_T` |
+| `ALuxStageVisibilitySwitcher` / `ALuxStageVisibilitySwitch*` | `STG001`, `STG001_T`, `STG002`, `STG002_D`, `STG002_T`, `STG003`, `STG003_T`, `STG004`, `STG005`, `STG005_T`, `STG006`, `STG008`, `STG008_T`, `STG009`, `STG010`, `STG010_T`, `STG011`, `STG011_T`, `STG012`, `STG012_T`, `STG013` |
+| `ALuxStageCuttableMeshBase` / `Cuttable*` | No exact `.umap` matches in the dumped stock stages. The class exists natively, but the dump does not show stock map usage. |
+| `ALuxStageWolfCharacter` / `StageMob*` | No exact `.umap` matches in the dumped stock stages. Treat these as supported optional background-actor paths unless a specific stage asset proves otherwise. |
+
+No DLC stage `.umap` in the supplied dump matched these exact Lux stage actor
+class strings. That does not prove the DLC stages have no equivalent behavior;
+it only means this quick scan did not find those exact native class names in the
+map packages.
 
 Each `ULuxStageMeshComponent` carries a stock UE4 `UBodySetup`
 (`Z_Construct_UClass_UBodySetup_NoRegister @ 0x1422b8e50` confirms verbatim
@@ -221,6 +264,30 @@ and looks up the matching `ULuxStageAssetPaths` object from the asset-registry
 map. `LuxObject_BuildParamSlots_FromBattleSubstrings_4Slots @ 0x1404208b0`
 then maps the raw assets by `Type`: values 0 and 1 become the two
 `J_StgHitChkData*` pointers later copied by `LuxBattle_SetFrameCacheHitChkDataPtrs`.
+
+### `LuxStageSetting` cosmetic flags
+
+`ULuxStageAssetPaths.Setting @ +0x50` is a compact 3-byte `LuxStageSetting`
+struct. These flags are content-side stage behavior toggles, not part of the
+deterministic collision layer:
+
+| Asset offset | Field | Verified runtime consumer |
+|---:|---|---|
+| `+0x50` | `bAnomalyStageVFxEnabled` | Copied by `LuxMove_RefreshProvider_CacheMeshesAndParts @ 0x1403cede0` into the stage/VFX refresh state at `+0x460`. The exact owner layout conflicts with the currently documented `ALuxBattleChara+0x460` UPROPERTY, so runtime-check this offset before hooking it. |
+| `+0x51` | `bWet` | Read by `LuxBattleManager_InitRound_TickTimers_ClearRoundData @ 0x1403fb660`. Round init first drives the `WetRatio` timer handle at `BM+0x1428` to `0.0`; if this flag is true, it immediately drives `WetRatio` to `1.0`. `LuxBattleManager_StopTimers_IsBattleRunning_WetRatio @ 0x1403eec20` stops/clears the same timer path. |
+| `+0x52` | `bBreath` | Copied by `LuxMove_RefreshProvider_CacheMeshesAndParts @ 0x1403cede0` into the stage/VFX refresh state at `+0x462`; same owner-layout caveat as `bAnomalyStageVFxEnabled`. |
+
+`IsAnomalyStageByStageCodeStr @ 0x140646230` is only a string helper: it returns
+true when the stage code contains `_T`. Do not treat that helper as proof that
+`bAnomalyStageVFxEnabled` was enabled; the reflected asset flag is copied through
+the VFX-refresh path separately.
+
+Modding implication: `bWet` is the cleanest verified no-code toggle in this
+group. If a replacement stage overrides the stock `ULuxStageAssetPaths` object
+and sets `Setting.bWet`, the battle manager's material-parameter path should
+start wet at round init without a native hook. `bAnomalyStageVFxEnabled` and
+`bBreath` are promising cosmetic toggles, but the destination owner/offset needs
+one live-memory pass before a hook should rely on it.
 
 Runtime storage chain:
 
@@ -422,6 +489,19 @@ encodes the stage string into a packed int:
 
 The packed int is written to `FBattleStageInfo+0x148` on the active
 MoveProvider; the is-anomaly bit (`_T` suffix) goes to `+0x14c`.
+
+## Stage investigation backlog
+
+This pass picked `ULuxStageAssetPaths.Setting` first because it is directly
+content-authorable and affects visible runtime behavior. Good next stage threads:
+
+| Target | Why it matters | Starting symbols |
+|---|---|---|
+| Stage wind emitters | Per-stage wind could drive cloth, particles, or force-style cosmetic effects that custom maps may want to preserve. | `AddStageWindParamFromAsset @ 0x1403b3100`, `LuxBattle_RebuildStageWindEmitterList @ 0x1402d9f30`, `LuxBattle_TickStageWindAndAccumulateForces @ 0x140333fd0` |
+| Intro/start camera raw assets | `ESA_IntroCameraData` / `ESA_StartCameraData` already map to setup slots 2 and 3, but the binary camera payload format is still not documented. | `LuxCameraAction_StartStageIntro @ 0x140324ad0`, `LuxEffectSystem_InitStageIntroCameraSlot @ 0x140322240`, `LuxEffectCamera_GetStageIntroCameraTypeID @ 0x140301490` |
+| Stage BGSE / ambience audio | Custom or replaced stages may need matching background SE `.acb` assets and DLC path routing. | `LuxObject_CreateAsyncLoader_StageBGSE_ACB_RegisterAndAppend @ 0x14042d3d0`, `LuxAudio_LookupStageMaterialSoundTable @ 0x1404247b0` |
+| Destructible and visibility actors | Breakable walls, hideable meshes, and visibility switchers are likely the next layer after deterministic barriers. | `HandleStageBreakableWallBroken @ 0x14053d4b0`, `SetStageVisibilitySwitcherEnableFlag @ 0x140bdeaa0`, `SetLuxStageHideableMeshActorMeshHidden @ 0x14055cbf0` |
+| Online stage sync payload | New-stage mods need exact host/client stage-code and random-stage behavior to avoid load desyncs. | `LuxOnlineBattleSync_SendStage_StageCode_IsRandom_RngSeed @ 0x14051fc80`, `LuxOnlineBattleSync_RequestStage_SendOpcode6 @ 0x14051dbc0` |
 
 ## Cross-references
 

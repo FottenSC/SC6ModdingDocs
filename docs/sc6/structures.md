@@ -79,15 +79,21 @@ Alphabetical jump table. Click through for full layout.
 | [`scbattle_StageBoundaryParams`](#scbattle-stage-info-globals) | `0x40` | Stage origin, spawn offsets, and facing angles. |
 | [`scbattle_StageInfoParam`](#scbattle-stage-info-globals) | `0x120` | Whole scbattle stage-info block: seed, boundary params, flags, 12 barrier entries. |
 | [`FLuxBattleEventRecord`](#stage-actor-registration-event-record) | `0x18` | Event packet used by stage barrier/wall registration event class `0x19`. |
-| [`ULuxStageAssetPaths`](#uluxstageassetpaths-and-luxstagerawasset) | class | Per-stage content-side asset list. `RawAssets` names hit-data/camera raw assets. |
-| [`LuxStageRawAsset`](#uluxstageassetpaths-and-luxstagerawasset) | `0x18` | `{ELuxStageAssetType Type; FString Path;}` entry in `ULuxStageAssetPaths.RawAssets`. |
+| [`ULuxStageAssetPaths`](#uluxstageassetpaths-luxstagerawasset-and-luxstagesetting) | class | Per-stage content-side asset list. `RawAssets` names hit-data/camera raw assets. |
+| [`LuxStageRawAsset`](#uluxstageassetpaths-luxstagerawasset-and-luxstagesetting) | `0x18` | `{ELuxStageAssetType Type; FString Path;}` entry in `ULuxStageAssetPaths.RawAssets`. |
+| [`LuxStageSetting`](#uluxstageassetpaths-luxstagerawasset-and-luxstagesetting) | `0x03` | Three content-side cosmetic flags: anomaly VFX, wet, breath. |
 | [`LuxBattle_FrameCacheHitChkDataSetup`](#j_stghitchkdata-frame-cache-setup) | `0x22` | Setup packet that seeds the A/B `J_StgHitChkData*` globals. |
 | [`J_StgHitChkData_*`](#j_stghitchkdata-serialized-terrainwall-blob) | variable | Serialized legacy terrain/wall collision blob expanded into frame-bounds grids. |
 | [Frame-bounds grid](#frame-bounds-grid) | (`>=0x44b`) | Runtime terrain/wall spatial acceleration for VM predicates and wall collision. |
 | [`FLuxFrameBoundsCellRow`](#fluxframeboundscellrow-32-bytes-and-fluxterraintriangleentry-64-bytes) | `0x20` | Cell row in the bounds grid. |
 | [`FLuxTerrainTriangleEntry`](#fluxframeboundscellrow-32-bytes-and-fluxterraintriangleentry-64-bytes) | `0x40` | Triangle entry with pre-baked plane equation. |
 | `ALuxBattleStage` | `0x3a0` | Per-stage root actor; loaded from `/Game/Stage/<code>/Maps/<code>.umap`. Owns one `ALuxBattleStageActorManager`. |
-| `ALuxBattleStageActorManager` | `0x420` | Manages 9 `TArray<UObject*>` actor lists at `+0x388..+0x408` (StageMesh/Barrier/BreakableWall/etc). Populated by `LuxActor_CollectActors_By8Classes_IntoTArrays @ 0x140417a70`. See [Stage System](stage-system.md). |
+| `ALuxBattleStageActorManager` | `0x420` | Manages 9 stage actor/object arrays from `+0x388..+0x408`: StageActor, WolfCharacter, BreakableWall, Barrier, HideableMesh, VisibilitySwitcher, StageMob, StageMesh, CuttableStageMesh. Populated by `LuxActor_CollectActors_By8Classes_IntoTArrays @ 0x140417a70`. See [Stage System](stage-system.md). |
+| `ALuxStageMeshActor` | `0x3d0` | Visible stage mesh actor with ordinary UE4 `ULuxStageMeshComponent`/`UBodySetup` collision; visual/camera/particle layer, not deterministic scbattle terrain by itself. |
+| `ALuxStageHideableMeshActor` | `0x3b0` | Stage mesh actor that can be hidden/faded by camera, LOD, or stage-state conditions. |
+| `ALuxStageVisibilitySwitcher` | `0x3d0` | Stage-state visibility controller used by streamed BG/VFX/gimmick sublevels. Reflected class string is `LuxStageVisibilitySwitcher`. |
+| `ALuxStageCuttableMeshBase` | `0x460` | Optional weapon-overlap sliceable mesh actor with procedural cut mesh, particles/SE, and `MinCuttableDistance`; no Soul Charge gate observed in the native slice path. |
+| `ALuxStageWolfCharacter` | `0x7a0` | Optional background creature/animal actor bucket used by `WolfCharacterList`; no exact stock `.umap` usage observed in the current dump. |
 | `ALuxStageBreakableBarrierActor` | `0x4f0` | Invisible box-trigger actor registered through stage event class `0x19`; deterministic ring storage is the fixed 12-entry scbattle buffer. |
 | `ALuxStageBreakableWallActor` | `0x480` | Visible breakable walls (Soul Charge wall-break geometry). Standard UE4 `BodySetup` collision. |
 | `FBattleStageEnumEntry` | `0x20` | One row in the master stage roster: `{FString DisplayLocId; FString StageCode;}`. 31 stock entries at `g_LuxStage_MasterEnumStringTable @ 0x144149c50`. |
@@ -492,7 +498,7 @@ record before dispatching class `2`. For barrier actors the observed values are
 | +0x14 | `byte` | `bEventClassId` | barrier/wall registration uses `0x19` |
 | +0x15 | `byte[3]` | `p_pad_15` | |
 
-### `ULuxStageAssetPaths` and `LuxStageRawAsset`
+### `ULuxStageAssetPaths`, `LuxStageRawAsset`, and `LuxStageSetting`
 
 `ULuxStageAssetPaths` is the content-side data asset that names the raw files
 used for a stage. `Z_Construct_UClass_ULuxStageAssetPaths @ 0x140BACDB0`
@@ -502,7 +508,7 @@ registers these reflected fields:
 |-------:|------|------|-------|
 | +0x38 | `FString` or name-like id | `Identifier` | matched against selected stage id formatted as `"%03X"` by `FUN_14089B2C0` |
 | +0x40 | `TArray<LuxStageRawAsset>` | `RawAssets` | entries keyed by `ELuxStageAssetType` |
-| +0x50 | `LuxStageSetting` | `Setting` | three bools: anomaly VFX, wet, breath |
+| +0x50 | `LuxStageSetting` | `Setting` | three cosmetic/content behavior bools |
 
 `LuxStageRawAsset` is 0x18 bytes, registered by
 `Z_Construct_UScriptStruct_LuxStageRawAsset @ 0x140BD8C60`:
@@ -511,6 +517,20 @@ registers these reflected fields:
 |-------:|------|------|-------|
 | +0x00 | `ELuxStageAssetType` | `Type` | 0=`ESA_HitData`, 1=`ESA_HitData2`, 2=`ESA_IntroCameraData`, 3=`ESA_StartCameraData` |
 | +0x08 | `FString` | `Path` | raw asset path loaded by the Lux asset path system |
+
+`LuxStageSetting` is 3 bytes, registered by
+`Z_Construct_UScriptStruct_LuxStageSetting @ 0x140BD9120`:
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `bool` | `bAnomalyStageVFxEnabled` | copied by `LuxMove_RefreshProvider_CacheMeshesAndParts @ 0x1403CEDE0` into the stage/VFX refresh state |
+| +0x01 | `bool` | `bWet` | consumed by `LuxBattleManager_InitRound_TickTimers_ClearRoundData @ 0x1403FB660`; true drives `WetRatio` to `1.0` at round init |
+| +0x02 | `bool` | `bBreath` | copied by `LuxMove_RefreshProvider_CacheMeshesAndParts @ 0x1403CEDE0` into the stage/VFX refresh state |
+
+The VFX destination offsets observed in `LuxMove_RefreshProvider_CacheMeshesAndParts`
+conflict with the currently documented `ALuxBattleChara+0x460` UPROPERTY layout,
+so treat those destination fields as owner-layout-pending until a live-memory pass
+confirms the object type. The source asset offsets above are reflected and stable.
 
 `LuxObject_BuildParamSlots_FromBattleSubstrings_4Slots @ 0x1404208B0` maps
 loaded `RawAssets` into the four setup slots. Type 0 and 1 become the A/B
