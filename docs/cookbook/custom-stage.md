@@ -41,9 +41,10 @@ Stub `ALuxBattleStage`, `ALuxBattleStageActorManager`, `ALuxStageMeshActor`,
 - `ALuxBattleStageActorManager` (it manages the 9 actor lists at
   `+0x388..+0x408` — see [Stage System](../sc6/stage-system.md))
 - 1+ `ALuxStageMeshActor` (visuals + collision)
-- 4–8 `ALuxStageBreakableBarrierActor` (invisible boxes — the ring-out
-  boundary; their box transforms become the gameplay-engine
-  `g_scbattle_StageInfo_BarrierArray` at match start)
+- `ALuxStageBreakableBarrierActor` placements covering the ring boundary.
+  The deterministic scbattle storage is a fixed 12-entry
+  `g_aScbattleStageInfoBarrierEntries` buffer at `0x144844070`; verify the
+  runtime entries after load rather than assuming every actor becomes one entry.
 - (Optional) `ALuxStageBreakableWallActor` (breakable walls)
 
 For collision on the visual meshes use Blender naming:
@@ -142,6 +143,11 @@ stage-code argument.
 - **No `LuxBattleStageInfoTableRow` data** — the global stage info table is
   similarly forgiving. Add a row only if you need custom Center/RingEdge/Wall
   configuration.
+- **Custom terrain/wall tags** — UE4 `BodySetup` and barrier actors are not the
+  serialized `J_StgHitChkData` terrain/wall grid. If your stage needs different
+  terrain heights, wall tags, or ring-edge tags, plan for a native hook that
+  substitutes the A/B `J_StgHitChkData` blobs before
+  `LuxBattle_AttachStgHitChkData @ 0x140392080`.
 - **Online play** — both peers need the mod installed and built identically.
   The host broadcasts the resolved stage code; the client's AssetManager
   must succeed at loading the same code or the match desyncs at stage load.
@@ -149,7 +155,7 @@ stage-code argument.
 ## Related
 
 - [Stage System](../sc6/stage-system.md) — full reference for the stage
-  pipeline, the two-tier collision system, master enum bias, and the
+  pipeline, collision storage, master enum bias, and the
   `LuxBattleStageInfoTableRow` schema.
 - [Replace a Stage](replace-stage.md) — even simpler if you don't need a new
   code, just custom geometry on a stock slot.

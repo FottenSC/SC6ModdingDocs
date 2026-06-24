@@ -75,17 +75,23 @@ Alphabetical jump table. Click through for full layout.
 
 | Struct | Size | Purpose |
 |--------|------|---------|
-| [Frame-bounds grid](#frame-bounds-grid) | (`>=0x430`) | Spatial acceleration for VM range/angle predicates. |
+| [`scbattle_BarrierEntry`](#scbattle-stage-info-globals) | `0x10` | One deterministic ring-boundary segment. Fixed array of 12 at `0x144844070`. |
+| [`scbattle_StageBoundaryParams`](#scbattle-stage-info-globals) | `0x40` | Stage origin, spawn offsets, and facing angles. |
+| [`scbattle_StageInfoParam`](#scbattle-stage-info-globals) | `0x120` | Whole scbattle stage-info block: seed, boundary params, flags, 12 barrier entries. |
+| [`FLuxBattleEventRecord`](#stage-actor-registration-event-record) | `0x18` | Event packet used by stage barrier/wall registration event class `0x19`. |
+| [`LuxBattle_FrameCacheHitChkDataSetup`](#j_stghitchkdata-frame-cache-setup) | `0x22` | Setup packet that seeds the A/B `J_StgHitChkData*` globals. |
+| [`J_StgHitChkData_*`](#j_stghitchkdata-serialized-terrainwall-blob) | variable | Serialized legacy terrain/wall collision blob expanded into frame-bounds grids. |
+| [Frame-bounds grid](#frame-bounds-grid) | (`>=0x44b`) | Runtime terrain/wall spatial acceleration for VM predicates and wall collision. |
 | [`FLuxFrameBoundsCellRow`](#fluxframeboundscellrow-32-bytes-and-fluxterraintriangleentry-64-bytes) | `0x20` | Cell row in the bounds grid. |
 | [`FLuxTerrainTriangleEntry`](#fluxframeboundscellrow-32-bytes-and-fluxterraintriangleentry-64-bytes) | `0x40` | Triangle entry with pre-baked plane equation. |
 | `ALuxBattleStage` | `0x3a0` | Per-stage root actor; loaded from `/Game/Stage/<code>/Maps/<code>.umap`. Owns one `ALuxBattleStageActorManager`. |
 | `ALuxBattleStageActorManager` | `0x420` | Manages 9 `TArray<UObject*>` actor lists at `+0x388..+0x408` (StageMesh/Barrier/BreakableWall/etc). Populated by `LuxActor_CollectActors_By8Classes_IntoTArrays @ 0x140417a70`. See [Stage System](stage-system.md). |
-| `ALuxStageBreakableBarrierActor` | `0x4f0` | Invisible box-trigger actors forming the ring-out boundary. Its UE4 box transform is what gets pushed into the gameplay-engine `BarrierArray` at match start. |
+| `ALuxStageBreakableBarrierActor` | `0x4f0` | Invisible box-trigger actor registered through stage event class `0x19`; deterministic ring storage is the fixed 12-entry scbattle buffer. |
 | `ALuxStageBreakableWallActor` | `0x480` | Visible breakable walls (Soul Charge wall-break geometry). Standard UE4 `BodySetup` collision. |
 | `FBattleStageEnumEntry` | `0x20` | One row in the master stage roster: `{FString DisplayLocId; FString StageCode;}`. 31 stock entries at `g_LuxStage_MasterEnumStringTable @ 0x144149c50`. |
 | `LuxBattleStageInfoTableRow` | `0x108` | UDataTable row type; per-stage round-position config (Center, RingEdge, Wall, OptionalCenters). See [Stage System](stage-system.md#luxbattlestageinfotablerow). |
 | `LuxBattleStageBasePositionParam` | `0x28` | Inner element of `LuxBattleStageInfoTableRow` arrays — `{FVector Position; FRotator Rotation; float DistanceOffset; TArray<int32> RoundNumbers;}`. |
-| scbattle stage globals | `0x148` | Match-time stage-info block at `0x144844010..0x144844158`: RngSeed, StageBoundaryParams (64 B), BarrierCount, BarrierArray (24 × 16 B). See [Stage System](stage-system.md#two-tier-collision-gameplay-vs-visuals). |
+| scbattle stage globals | `0x120` | Match-time stage-info block at `0x144844010..0x144844130`: RngSeed, StageBoundaryParams (64 B), valid flag, BarrierArray (12 × 16 B). See [Stage System](stage-system.md#stage-collision-storage). |
 
 ### Misc / discovered-but-uncategorised
 
@@ -417,6 +423,130 @@ A/B pairs, selected via the byte flag `g_LuxBattle_FrameContextUseB @
 `LuxBattle_GetActiveFrameBoundsGrid @ 0x1403133E0` and
 `LuxBattle_GetActiveFrameTransform @ 0x140313400` return the "B" variant.
 
+### scbattle stage-info globals
+
+- **Global block**: `0x144844010..0x144844130`
+- **Writers/readers**: `GetScbattleStageInfoBarrierGeometry @ 0x1402D7730`,
+  `SetScbattleStageInfoBarrierGeometry @ 0x1402D77C0`,
+  `scbattle_StageInfo_SetStageBoundaryParams @ 0x1402D7670`
+- **Storage conclusion**: the ring-boundary array is fixed at 12 entries. The
+  flag at `+0x5C` / `0x14484406C` is a valid bit, not a count.
+
+`scbattle_StageInfoParam` is the whole contiguous global block:
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x000 | `uint32` | `dwRngSeed` | `g_scbattle_StageInfo_RngSeed @ 0x144844010` |
+| +0x004 | `byte[12]` | `p_pad_04` | alignment gap before the boundary params |
+| +0x010 | `scbattle_StageBoundaryParams` | `sBoundaryParams` | `g_sScbattleStageBoundaryParams @ 0x144844020` |
+| +0x058 | `uint32` | `dwInitialized` | `g_dwScbattleStageInfoInitialized @ 0x144844068` |
+| +0x05C | `uint32` | `dwBarrierValid` | `g_dwScbattleStageInfoBarrierValid @ 0x14484406C` |
+| +0x060 | `scbattle_BarrierEntry[12]` | `pABarrierEntries` | `g_aScbattleStageInfoBarrierEntries @ 0x144844070`, total `0xC0` bytes |
+
+`scbattle_BarrierEntry` is one deterministic ring segment:
+
+| Offset | Type | Name |
+|-------:|------|------|
+| +0x00 | `float` | `flX0` |
+| +0x04 | `float` | `flY0` |
+| +0x08 | `float` | `flX1` |
+| +0x0C | `float` | `flY1` |
+
+`scbattle_StageBoundaryParams` is 64 bytes:
+
+| Offset | Type | Name |
+|-------:|------|------|
+| +0x00 | `float` | `flStageOriginX` |
+| +0x04 | `float` | `flStageOriginY` |
+| +0x08 | `float` | `flStageOriginZ` |
+| +0x0C | `float` | `flPadding_0c` |
+| +0x10 | `float` | `flPlayer1Offset_DX` |
+| +0x14 | `float` | `flPlayer1Offset_DY` |
+| +0x18 | `float` | `flPlayer1Offset_DZ` |
+| +0x1C | `float` | `flPlayer2Offset_DX` |
+| +0x20 | `float` | `flPlayer2Offset_DY` |
+| +0x24 | `float` | `flPlayer2Offset_DZ` |
+| +0x28 | `float` | `flPadding_28` |
+| +0x2C | `float` | `flPadding_2c` |
+| +0x30 | `float` | `flStageFacingRadians` |
+| +0x34 | `float` | `flPerPlayerFacingDelta_P1` |
+| +0x38 | `float` | `flPerPlayerFacingDelta_P2` |
+| +0x3C | `float` | `flPadding_3c` |
+
+### Stage actor registration event record
+
+`LuxStage_RegisterBarrierActor_BattleEvent0x19 @ 0x140427490` and
+`LuxStage_RegisterWallActor_BattleEvent0x19 @ 0x140428EE0` build a 24-byte event
+record before dispatching class `2`. For barrier actors the observed values are
+`bEventType = 3`, `dwPayloadExt = 1`, and `bEventClassId = 0x19`.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `byte` | `bEventType` | barrier path writes `3` |
+| +0x01 | `byte[3]` | `p_pad_01` | |
+| +0x04 | `uint32` | `dwPayloadExt` | barrier path writes `1` |
+| +0x08 | `uint64` | `qwPayload` | actor / payload pointer-sized value |
+| +0x10 | `uint32` | `dwReserved` | |
+| +0x14 | `byte` | `bEventClassId` | barrier/wall registration uses `0x19` |
+| +0x15 | `byte[3]` | `p_pad_15` | |
+
+### `J_StgHitChkData` frame-cache setup
+
+`LuxBattle_SetFrameCacheHitChkDataPtrs @ 0x1402DAE70` copies a small setup
+packet into globals. The first two fields are then consumed by
+`LuxBattle_RefreshFrameTerrainCache @ 0x140314480`, which passes them to
+`LuxBattle_AttachStgHitChkData @ 0x140392080`.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `J_StgHitChkData*` | `pStgHitChkDataA` | copied to `g_pLuxBattle_StgHitChkDataA @ 0x14470D0D0` |
+| +0x08 | `J_StgHitChkData*` | `pStgHitChkDataB` | copied to `g_pLuxBattle_StgHitChkDataB @ 0x14470D0F8` |
+| +0x10 | `void*` | `pField10` | copied to `DAT_14470D0C8`; role still unknown |
+| +0x18 | `void*` | `pField18` | copied to `DAT_14470D180`; role still unknown |
+| +0x20 | `byte` | `bField20` | copied to `DAT_14470D0DB` |
+| +0x21 | `byte` | `bField21` | copied to `DAT_14470D0D8` |
+
+### `J_StgHitChkData` serialized terrain/wall blob
+
+`J_StgHitChkData` is the serialized legacy stage collision blob expanded into
+the live frame-bounds grid. The attach function uses the debug tag string
+`"J_StgHitChkData::Attach" @ 0x143E89F20`, which is the strongest fingerprint
+that this path is not UE4 PhysX.
+
+Header view (`J_StgHitChkData_Header`, 0x30 bytes):
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `byte[40]` | `pReserved_00` | opaque header bytes not decoded by attach |
+| +0x28 | `int16` | `nCellCount` | number of 16-byte cell headers |
+| +0x2A | `int16` | `nPoolChunkCount` | number of pool chunks / reindex entries |
+| +0x2C | `int16` | `nTerrainEntryCount` | terrain-entry count used for tag scans |
+| +0x2E | `int16` | `nReserved_2e` | |
+
+Cell header (`J_StgHitChkData_CellHeader`, 0x10 bytes):
+
+| Offset | Type | Name |
+|-------:|------|------|
+| +0x00 | `uint16` | `wPoolBaseA` |
+| +0x02 | `uint16` | `wMetaA` |
+| +0x04 | `uint16` | `wPoolBaseB` |
+| +0x06 | `uint16` | `wCountA` |
+| +0x08 | `uint16` | `wPoolBaseC` |
+| +0x0A | `uint16` | `wCountB` |
+| +0x0C | `uint16` | `wMetaC` |
+| +0x0E | `uint16` | `wCountC` |
+
+Pool chunk header (`J_StgHitChkData_PoolChunk`, variable-size tail):
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `void*` | `pRuntimePatchedNext` | patched after attach |
+| +0x08 | `uint16` | `wEntryCount` | packed index count |
+| +0x0A | `byte` | `bReady` | initialized to 1 after pointer fixup |
+| +0x0B | `byte` | `bReserved_0b` | |
+| +0x0C | `uint32` | `dwRuntimePatched` | runtime-patched metadata |
+| +0x10 | `uint16[1]` | `pPackedIndices` | variable tail; attach rewrites indices into terrain-entry pointers |
+
 ### Frame-bounds grid
 
 - **Instances**:
@@ -425,8 +555,8 @@ A/B pairs, selected via the byte flag `g_LuxBattle_FrameContextUseB @
 - **Discovered via**: `LuxBattle_GetActiveFrameBoundsGrid @ 0x1403133E0`,
   `LuxBattle_TraceSegmentThroughFrameBoundsGrid @ 0x1403149E0`,
   `LuxBattle_TestFrameBoundsCell @ 0x1403916E0`
-- **Size**: at least 0x430 bytes (reads observed up to the `isValid` byte
-  at +0x410; the grid header is ~0x30 bytes plus a `cells[]` tail).
+- **Size**: at least 0x44b bytes (reads observed through terrain-query flags
+  at `+0x448`; the grid header is ~0x30 bytes plus a `cells[]` tail).
 
 | Offset | Type | Name | Notes |
 |-------:|------|------|-------|

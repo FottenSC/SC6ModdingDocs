@@ -27,12 +27,14 @@ project — just inherit from `AActor` and give them the right names:
 - `ALuxBattleStage` (root)
   - `ALuxBattleStageActorManager` (manages the 9 actor lists at `+0x388..+0x408`)
   - 1+ `ALuxStageMeshActor` — visual + collision
-  - 4–8 `ALuxStageBreakableBarrierActor` — invisible boxes forming the ring boundary
+  - `ALuxStageBreakableBarrierActor` placements covering the ring boundary
   - 0+ `ALuxStageBreakableWallActor` — visible breakable walls (optional)
 
-The barrier boxes are the gameplay ring-out trigger — at match start their
-box-component extents are pushed into
-`g_scbattle_StageInfo_BarrierArray @ 0x144844070`.
+The deterministic ring-out boundary is stored separately in the fixed
+`g_aScbattleStageInfoBarrierEntries @ 0x144844070` buffer:
+12 `scbattle_BarrierEntry` records, `0xC0` bytes total. Barrier actors are still
+part of the stage setup path, but verify the runtime scbattle entries after load
+instead of assuming actor count maps one-to-one to barrier entries.
 
 For visual collision (camera, particles, character proximity), give each
 `ALuxStageMeshActor.StaticMesh` a custom `BodySetup`. Name the collision
@@ -52,7 +54,9 @@ UE4's FBX importer auto-routes these into `StaticMesh.BodySetup.AggGeom`.
 1. Save the level as `STG004.umap` at content path
    `/Game/Stage/STG004/Maps/STG004`.
 2. (Optional) Open the `StageInfoTable` .uasset in UAssetGUI and edit the
-   row for `STG004` if your ring shape differs from stock.
+   row for `STG004` if your spawn/camera/RingEdge metadata differs from stock.
+   This row does not replace the deterministic scbattle barrier buffer or the
+   `J_StgHitChkData` terrain/wall blob.
 3. Cook the project for Windows.
 
 ## Pack into a `_P.pak`
@@ -84,6 +88,8 @@ asset.
 3. Confirm the in-game ring-out boundary matches your `ALuxStageBreakableBarrierActor`
    placements. If characters fall through the floor, your `BodySetup` collision
    isn't cooking — verify the `UCX_`/`UBX_` prefix names on import.
+4. If wall/ring-edge behavior still matches the stock stage, inspect or hook the
+   `J_StgHitChkData` path documented in [Stage System](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid).
 
 ## Related
 

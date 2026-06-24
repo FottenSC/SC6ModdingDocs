@@ -74,6 +74,14 @@ the page link for full context.
 | `UDemoNetDriver_GotoTimeInSeconds` | `0x141E0ECA0` | [Replay System: scrubbing](../sc6/replay-system.md#scrubbing-a-match-replay-udemonetdrivergototimeinseconds) — UE4 native scrub for match replays |
 | `RegisterCVar_DemoGotoTimeInSeconds` | `0x140255B00` | [Replay System: scrubbing](../sc6/replay-system.md#scrubbing-a-match-replay-udemonetdrivergototimeinseconds) — CVar `demo.GotoTimeInSeconds` registrar |
 
+### Replay input serialization
+
+| Symbol | Address | Page |
+|---|---|---|
+| `LuxReplay_DecodeInputPackets_FromFile` | `0x1403ED310` | [Replay System: custom Lux input replay opcodes](../sc6/replay-system.md#custom-lux-input-replay-opcodes) — expands 3-byte packed records into decoded input records |
+| `LuxReplay_EncodeInputEvents_ToBuffer` | `0x1403ED980` | [Replay System: custom Lux input replay opcodes](../sc6/replay-system.md#custom-lux-input-replay-opcodes) — inverse encoder for Lux replay input streams |
+| `LuxReplay_WriteThreeByteInputRecord_ToBuffer` | `0x1403F62E0` | [Replay System: custom Lux input replay opcodes](../sc6/replay-system.md#custom-lux-input-replay-opcodes) — appends one packed opcode record |
+
 ### Move VM (outer command-script VM)
 
 | Symbol | Address | Page |
@@ -181,6 +189,19 @@ the page link for full context.
 | `LuxBattleManager_RegisterOnTickWhenPaused_Delegates` | `0x1403F8E70` | [Battle Manager: OnBattleTickWhenPaused](../sc6/battle-manager.md#onbattletickwhenpaused-what-still-ticks-during-setbattlepausetrue) |
 | `LuxBattleManager_BuildActorDependencyGraph_At28` | `0x1403F8A20` | [Battle Manager: subsystem dependency graph](../sc6/battle-manager.md#subsystem-dependency-graph) |
 
+### Battle launcher / match setup
+
+| Symbol | Address | Page |
+|---|---|---|
+| `ULuxUIBattleLauncher::Start` | `0x1405EEB50` | [Battle Manager: launcher startup](../sc6/battle-manager.md#battle-launcher-startup-path) — copies launch sub-tables into the BattleManager |
+| `ULuxUIBattleLauncher::GetBattleStageCode` | `0x1405B0C60` | [Battle Manager](../sc6/battle-manager.md#battle-launcher-startup-path) / [Stage System](../sc6/stage-system.md) — reads `StageSetting.StageCode`, defaults to `STG001` |
+| `ULuxUIBattleLauncher::SetSlipOutMode` | `0x1405ED550` | [Battle Manager: known leaf paths](../sc6/battle-manager.md#known-leaf-paths) — writes `BattleRule.SlipOut` |
+| `ULuxUIBattleLauncher::SetNoRingOutMode` | `0x1405ECC70` | [Battle Manager: known leaf paths](../sc6/battle-manager.md#known-leaf-paths) — writes `BattleRule.NoRingOut` |
+| `ULuxUIBattleLauncher::SetEndlessMode` | `0x1405EC390` | [Battle Manager: known leaf paths](../sc6/battle-manager.md#known-leaf-paths) — writes `BattleRule.Endless` |
+| `ULuxUIBattleLauncher::SetDamageUpMode` | `0x1405EC190` | [Battle Manager: known leaf paths](../sc6/battle-manager.md#known-leaf-paths) — writes `BattleRule.DamageUp` |
+| `ULuxUIBattleLauncher::SetBlowUpMode` | `0x1405EB7F0` | [Battle Manager: known leaf paths](../sc6/battle-manager.md#known-leaf-paths) — writes `BattleRule.BlowUp` |
+| `ULuxUIBattleLauncher::SetRecordMode` | `0x1405ED170` | [Battle Manager: known leaf paths](../sc6/battle-manager.md#known-leaf-paths) — writes top-level `BattleRecord` |
+
 ### Trace (visual weapon-trail)
 
 | Symbol | Address | Page |
@@ -222,7 +243,17 @@ the page link for full context.
 | `GetStageLocIdByStageCode` | `0x1406415B0` | [Stage System: key entry points](../sc6/stage-system.md#key-entry-points) |
 | `ApplyBattleSettingDataTableToBattleManager` | `0x140594EB0` | [Stage System: key entry points](../sc6/stage-system.md#key-entry-points) |
 | `LuxBattle_CreateStageInfoHandler` | `0x1403C3010` | [Stage System: key entry points](../sc6/stage-system.md#key-entry-points) |
-| `LuxActor_CollectActors_By8Classes_IntoTArrays` | `0x140417A70` | [Stage System: two-tier collision](../sc6/stage-system.md#two-tier-collision-gameplay-vs-visuals) |
+| `LuxActor_CollectActors_By8Classes_IntoTArrays` | `0x140417A70` | [Stage System: collision storage](../sc6/stage-system.md#stage-collision-storage) |
+| `GetScbattleStageInfoBarrierGeometry` | `0x1402D7730` | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
+| `SetScbattleStageInfoBarrierGeometry` | `0x1402D77C0` | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
+| `LuxStage_RegisterBarrierActor_BattleEvent0x19` | `0x140427490` | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
+| `LuxStage_RegisterWallActor_BattleEvent0x19` | `0x140428EE0` | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
+| `LuxBattle_SetFrameCacheHitChkDataPtrs` | `0x1402DAE70` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
+| `LuxBattle_ApplyFrameCacheHitChkDataSetup` | `0x1403CFC20` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
+| `LuxBattle_RefreshFrameTerrainCache` | `0x140314480` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
+| `LuxBattle_AttachStgHitChkData` | `0x140392080` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
+| `LuxBattle_SampleTerrainAtXZ_Impl` | `0x140391350` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
+| `LuxBattle_TestAndResolveWallCollision` | `0x140316600` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
 
 ### Audio / Voice
 
@@ -331,6 +362,14 @@ note on lazy extensions.
 | `FBatchedLine` | `0x34` | [structures](../sc6/structures.md#fbatchedline-0x34-bytes) |
 | `LuxBattleStageInfoTableRow` | `0x108` | [stage-system](../sc6/stage-system.md#luxbattlestageinfotablerow) |
 | `LuxBattleStageBasePositionParam` | `0x28` | [stage-system](../sc6/stage-system.md#luxbattlestagebasepositionparam) |
+| `scbattle_BarrierEntry` | `0x10` | [structures](../sc6/structures.md#scbattle-stage-info-globals) |
+| `scbattle_StageBoundaryParams` | `0x40` | [structures](../sc6/structures.md#scbattle-stage-info-globals) |
+| `scbattle_StageInfoParam` | `0x120` | [structures](../sc6/structures.md#scbattle-stage-info-globals) |
+| `FLuxBattleEventRecord` | `0x18` | [structures](../sc6/structures.md#stage-actor-registration-event-record) |
+| `LuxBattle_FrameCacheHitChkDataSetup` | `0x22` | [structures](../sc6/structures.md#j_stghitchkdata-frame-cache-setup) |
+| `J_StgHitChkData_Header` | `0x30` | [structures](../sc6/structures.md#j_stghitchkdata-serialized-terrainwall-blob) |
+| `J_StgHitChkData_CellHeader` | `0x10` | [structures](../sc6/structures.md#j_stghitchkdata-serialized-terrainwall-blob) |
+| `J_StgHitChkData_PoolChunk` | variable | [structures](../sc6/structures.md#j_stghitchkdata-serialized-terrainwall-blob) |
 
 ---
 
@@ -449,6 +488,15 @@ Layout source: [structures.md / ALuxBattleFrameInputLog](../sc6/structures.md#al
 | `0x1447123BC` | `g_LuxCharaAttrTable_Int_0x3038Stride` | Per-chara int table. | [Move System](../sc6/move-system.md#key-vm-globals) |
 | `0x1440F4750` | `g_LuxMoveStateTable` | Move-state ids, stride `0x14`, `0x29` rows. | [Move System](../sc6/move-system.md#key-vm-globals) |
 | `0x144149C50` | `g_LuxStage_MasterEnumStringTable` | `TArray<FBattleStageEnumEntry>` — 31 stock entries. | [Stage System: master enum table](../sc6/stage-system.md#master-enum-table) |
+| `0x144844010` | `g_scbattle_StageInfo_RngSeed` | Host-broadcast stage-info seed at the head of `scbattle_StageInfoParam`. | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
+| `0x144844020` | `g_sScbattleStageBoundaryParams` | 64-byte origin/spawn/facing parameter block. | [structures](../sc6/structures.md#scbattle-stage-info-globals) |
+| `0x14484406C` | `g_dwScbattleStageInfoBarrierValid` | Ring-boundary valid flag, not an entry count. | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
+| `0x144844070` | `g_aScbattleStageInfoBarrierEntries` | Fixed `scbattle_BarrierEntry[12]` deterministic ring-boundary buffer. | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
+| `0x14470D0D0` | `g_pLuxBattle_StgHitChkDataA` | Serialized `J_StgHitChkData*` attached into frame-bounds grid A. | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
+| `0x14470D0F8` | `g_pLuxBattle_StgHitChkDataB` | Serialized `J_StgHitChkData*` attached into frame-bounds grid B. | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
+| `0x14470DEDC` | `g_LuxBattle_FrameContextUseB` | Selects frame-transform/grid A vs B. | [structures](../sc6/structures.md#frame-bounds-grid) |
+| `0x144844DD0` | `g_LuxBattle_FrameBoundsGridA` | Live terrain/wall frame-bounds grid A. | [structures](../sc6/structures.md#frame-bounds-grid) |
+| `0x144845E80` | `g_LuxBattle_FrameBoundsGridB` | Live terrain/wall frame-bounds grid B, embedded in FrameTransformB at `+0xC60`. | [structures](../sc6/structures.md#frame-bounds-grid) |
 | `0x143E87838` | `KHitBase_vftable` | Vtable for the `KHitBase` family. | [structures](../sc6/structures.md#hit-detection-node-structs-khit) |
 | `0x1448554E8` | `g_LuxBattle_HitReactionSlideTable` | Per-hit-type slide-decay curves. | [Movement: code references](../sc6/movement.md#code-references) |
 | `0x14470E018` | `g_LuxBattle_YarareReactionParamBlock` (lazy-malloc'd) | The 1100-byte `FLuxBattleYarareReactionParamBlock` (per-intensity reach/knockback/weight tables). | [Reaction System](../sc6/reaction-system.md#fluxbattleyararereactionparamblock-1100-byte-global-param-table) |

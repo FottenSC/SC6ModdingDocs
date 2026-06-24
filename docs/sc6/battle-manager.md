@@ -353,13 +353,66 @@ float keys. It's the leaf-value constructor — it builds the RHS of
 | Path | Type | Writer |
 |---|---|---|
 | `BattleRule.Rounds` | int | `ChangeBattleRounds` |
+| `BattleRule.SlipOut` | bool | `ULuxUIBattleLauncher::SetSlipOutMode` |
+| `BattleRule.NoRingOut` | bool | `ULuxUIBattleLauncher::SetNoRingOutMode` |
+| `BattleRule.Endless` | bool | `ULuxUIBattleLauncher::SetEndlessMode` — key is `Endless`, not `EndlessMode` |
+| `BattleRule.DamageUp` | bool | `ULuxUIBattleLauncher::SetDamageUpMode` |
+| `BattleRule.BlowUp` | bool | `ULuxUIBattleLauncher::SetBlowUpMode` |
+| `BattleRecord` | bool | `ULuxUIBattleLauncher::SetRecordMode`; enables the Lux replay recorder when `BattleReplay` is false |
 | `CommonParam.BattleTime` | int (seconds) | `ChangeBattleTime` |
+| `StageSetting.StageCode` | string | Stage-select / launcher setup; read by `ULuxUIBattleLauncher::GetBattleStageCode` and consumed by `ApplyBattleSettingDataTableToBattleManager` |
 | `<side>[idx].PlayerParam.Gauge.LifeInit` | float | `ChangeBattleLife` |
 | `<side>[idx].PlayerParam.Gauge.LifeMax` | float | `ChangeBattleLife` |
 | `<side>[idx]` (whole row) | struct | `ChangeBattlePlayerSetting` |
 
 `<side>` is literal `"PlayerLeft"` or `"PlayerRight"`; `idx` is the 0-based
 per-side slot.
+
+### Battle launcher startup path
+
+`ULuxUIBattleLauncher::Start @ 0x1405EEB50` is the Blueprint-callable match-start
+handoff. Its only native caller is `execStart_ULuxUIBattleLauncher @ 0x140C41C90`,
+so this path is reached through `ProcessEvent` / Blueprint flow rather than a
+direct C++ call.
+
+`Start` copies eight sub-tables from the launcher's cache at `launcher+0x50` into
+a fresh battle-setting table, then calls
+`ApplyBattleSettingDataTableToBattleManager @ 0x140594EB0`:
+
+| Sub-table | Purpose |
+|---|---|
+| `CommonParam` | shared match toggles, including battle time |
+| `BattleRule` | rounds and special rules: `SlipOut`, `NoRingOut`, `Endless`, `DamageUp`, `BlowUp` |
+| `BattleReplay` | replay-playback metadata |
+| `BattleRecord` | replay-recording enable flag |
+| `PlayerLeft` / `PlayerRight` | per-side character, weapon, gauge, CPU, and player rows |
+| `StageSetting` | selected stage code |
+| `SoundSetting` | match sound settings |
+
+`FUIBattleLauncherStartParam` is a 16-byte reflected struct:
+
+| Offset | Type | Meaning |
+|-------:|------|---------|
+| `+0x00` | `uint32` | context A, copied to `launcher+0x158` |
+| `+0x04` | `uint32` | context B, copied to `launcher+0x15C` |
+| `+0x08` | `FWeakObjectPtr`-style qword | copied to `launcher+0x160` |
+
+Useful launcher functions:
+
+| Function | Address | Writes / reads |
+|---|---:|---|
+| `ULuxUIBattleLauncher::Start` | `0x1405EEB50` | copies all launch sub-tables to the BattleManager |
+| `ULuxUIBattleLauncher::GetBattleStageCode` | `0x1405B0C60` | reads `StageSetting.StageCode`; defaults to `STG001` if missing |
+| `SetSlipOutMode(bool)` | `0x1405ED550` | writes `BattleRule.SlipOut`; `true` suppresses player slip |
+| `SetNoRingOutMode(bool)` | `0x1405ECC70` | writes `BattleRule.NoRingOut` |
+| `SetEndlessMode(bool)` | `0x1405EC390` | writes `BattleRule.Endless` |
+| `SetDamageUpMode(bool)` | `0x1405EC190` | writes `BattleRule.DamageUp` |
+| `SetBlowUpMode(bool)` | `0x1405EB7F0` | writes `BattleRule.BlowUp` |
+| `SetRecordMode(bool)` | `0x1405ED170` | writes top-level `BattleRecord`; recorder C++ is match-type agnostic |
+
+Online caveat: this launcher path is host-oriented. Joiners receive match setup
+piecewise through Lux online sync messages, so gameplay-affecting rule changes
+must either be part of the synchronized data or be mirrored on both peers.
 
 ### `BattleTime` enum → seconds
 

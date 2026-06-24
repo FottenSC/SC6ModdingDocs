@@ -14,7 +14,7 @@ A stage in SC6 is the sum of four independent pieces:
 | **Master enum entry** | `g_LuxStage_MasterEnumStringTable @ 0x144149c50` (`TArray<FBattleStageEnumEntry>`, 31 stock entries) | DLL hook into `InitGlobalLuxStageMasterEnumStringTable @ 0x140149720` |
 | **Stage info row** | `LuxBattleStageInfoTableRow` UDataTable .uasset, looked up by `FName "StageInfoTable"` | Edit .uasset (UAssetGUI / FModel) |
 | **Level .umap** | `/Game/Stage/<code>/Maps/<code>.umap` (resolver: `ResolveStageCodeToAssetPath @ 0x140641840`) | Drop a `_P.pak` into `Content/Paks/~mods/` |
-| **Selected stage code** | `LuxDataTable` key `StageSetting.StageCode` set by stage-select UI | Blueprint hook on `ULuxUIBattleLauncher::SetStageCode` |
+| **Selected stage code** | `LuxDataTable` key `StageSetting.StageCode` in the battle launcher cache | `ULuxUIBattleLauncher::Start` / `GetBattleStageCode`; Blueprint picker hooks can rewrite it before match start |
 
 The four pieces are independent: replacing the .umap alone is enough to reskin a
 stock stage. Adding a wholly new stage means touching the master enum, which is
@@ -31,7 +31,13 @@ built statically and therefore needs a DLL hook.
 | `ResolveStageCodeToAssetPath` | `0x140641840` | Stage code string → `/Game/Stage/...` asset path. Substring-based DLC routing. |
 | `GetStageLocIdByStageCode` | `0x1406415B0` | Stage code → display loc ID. |
 | `ApplyBattleSettingDataTableToBattleManager` | `0x140594eb0` | Match-start consumer. Reads `StageSetting.StageCode`, parses to packed int, fires async stage load. |
+| `ULuxUIBattleLauncher::Start` | `0x1405eeb50` | Copies `StageSetting` and the other launch sub-tables into the BattleManager setup table. |
+| `ULuxUIBattleLauncher::GetBattleStageCode` | `0x1405b0c60` | Reads `StageSetting.StageCode`; defaults to `STG001` if missing. |
 | `LuxBattle_CreateStageInfoHandler` | `0x1403c3010` | Allocates the gameplay-side `scbattle::StageInfoHandler`. |
+| `SetScbattleStageInfoBarrierGeometry` | `0x1402d77c0` | Copies exactly 12 deterministic ring-boundary entries into `g_aScbattleStageInfoBarrierEntries`. |
+| `GetScbattleStageInfoBarrierGeometry` | `0x1402d7730` | Copies exactly 12 deterministic ring-boundary entries out when the valid flag is set. |
+| `LuxBattle_SetFrameCacheHitChkDataPtrs` | `0x1402dae70` | Seeds the A/B `J_StgHitChkData*` globals used by frame-cache refresh. |
+| `LuxBattle_AttachStgHitChkData` | `0x140392080` | Expands serialized terrain/wall collision blobs into live frame-bounds grids. |
 
 ## Master enum table
 
@@ -119,12 +125,15 @@ UScriptStruct registered by `Z_Construct_UScriptStruct_LuxBattleStageBasePositio
 | +0x10 | `float` | `DistanceOffset` | ring radius in cm; SC6 stock rings ≈ 700 cm |
 | +0x18 | `TArray<int32>` | `RoundNumbers` | which rounds this entry applies to |
 
-## Two-tier collision (gameplay vs visuals)
+## Stage collision storage
 
-A SC6 stage carries two parallel collision representations. Both must exist for
-the stage to function, but the gameplay engine consults only the second.
+SC6 stage collision is not one asset. The shipping build keeps at least three
+separate representations, and each one answers a different runtime question.
 
-**1. UE4 actor world** (visual + camera + particle physics):
+### UE4 actor and `BodySetup` collision
+
+The loaded `.umap` owns the actor hierarchy used by visuals, camera helpers,
+particle physics, and ordinary UE4 component collision:
 
 ```
 ALuxBattleStage  (root actor, class size 0x3a0)
@@ -144,27 +153,81 @@ Each `ULuxStageMeshComponent` carries a stock UE4 `UBodySetup`
 **No Lux customization** — FBX import with `UCX_/UBX_/USP_/UCP_` prefix
 meshes produces the right cooked-PhysX BodySetup.
 
-**2. scbattle gameplay engine** (deterministic, rollback-safe):
+This does **not** define deterministic ring-out collision by itself. Editing a
+static mesh `BodySetup` can fix camera/particle/UE4 overlap behavior, but the
+battle simulation reads the scbattle and `J_StgHitChkData` paths below.
+
+### scbattle ring-boundary block
 
 `scbattle::StageInfoHandler` (allocated by `LuxBattle_CreateStageInfoHandler @ 0x1403c3010`)
-backed by globals at `0x144844010..0x144844158`:
+backs deterministic ring-boundary state with globals at `0x144844010..0x144844130`:
 
 | Address | Label | Size | Purpose |
 |---|---|---:|---|
 | `0x144844010` | `g_scbattle_StageInfo_RngSeed` | 4 B | host-broadcast match seed |
-| `0x144844020` | `g_scbattle_StageInfo_StageBoundaryParams` | 64 B | spawn data (Origin/P1/P2 offsets/facing) |
-| `0x144844068` | `g_scbattle_StageInfo_Initialized` | 4 B | flag |
-| `0x14484406c` | `g_scbattle_StageInfo_BarrierCount` | 4 B | valid flag (0/1) |
-| `0x144844070` | `g_scbattle_StageInfo_BarrierArray` | 384 B | 24 × 16-byte ring polygon entries |
+| `0x144844020` | `g_sScbattleStageBoundaryParams` | 64 B | stage origin, P1/P2 offsets, facing angles |
+| `0x144844068` | `g_dwScbattleStageInfoInitialized` | 4 B | initialized flag |
+| `0x14484406c` | `g_dwScbattleStageInfoBarrierValid` | 4 B | barrier-valid flag, not a count |
+| `0x144844070` | `g_aScbattleStageInfoBarrierEntries` | `0xC0` | `scbattle_BarrierEntry[12]` ring-boundary segments |
 
-Populated at match start by walking `BarrierActorList` + `BreakableWallActorList`
-and pushing geometry through `scbattle_StageInfo_SetBarrierGeometry @ 0x1402d77c0`
-(StageInfoHandler vtable slot 21, vtable at `0x143269070`).
+`GetScbattleStageInfoBarrierGeometry @ 0x1402d7730` and
+`SetScbattleStageInfoBarrierGeometry @ 0x1402d77c0` both copy exactly 12
+`scbattle_BarrierEntry` records: 12 entries × 16 bytes = `0xC0`. Older notes
+that described a 24-entry / `0x180`-byte block were stale.
 
-The two systems coordinate at match start through event 0x19, dispatched by
-`LuxStage_RegisterBarrierActor_BattleEvent0x19 @ 0x140427490` and
-`LuxStage_RegisterWallActor_BattleEvent0x19 @ 0x140428ee0` — one event per actor,
-fired from `LuxActor_CollectActors_By8Classes_IntoTArrays @ 0x140417a70`.
+```c
+struct scbattle_BarrierEntry {  // 0x10
+    float flX0;
+    float flY0;
+    float flX1;
+    float flY1;
+};
+```
+
+The UE4 barrier/wall actor bridge is event-based. `LuxActor_CollectActors_By8Classes_IntoTArrays @ 0x140417a70`
+collects the stage actor lists, then `LuxStage_RegisterBarrierActor_BattleEvent0x19 @ 0x140427490`
+and `LuxStage_RegisterWallActor_BattleEvent0x19 @ 0x140428ee0` dispatch event
+class `0x19` records for those actors. `HandleStageBreakableBarrierHit @ 0x140549f40`
+is visual break-event logic; it does not write the deterministic barrier array.
+
+### `J_StgHitChkData` terrain/wall grid
+
+Terrain height, wall contacts, ring-edge tags, and several Move VM geometry
+predicates use a separate legacy Namco collision blob named by the debug string
+`"J_StgHitChkData::Attach" @ 0x143e89f20`.
+
+Runtime storage chain:
+
+| Address / function | Role |
+|---|---|
+| `g_pLuxBattle_StgHitChkDataA @ 0x14470d0d0` | serialized `J_StgHitChkData*` for frame context A |
+| `g_pLuxBattle_StgHitChkDataB @ 0x14470d0f8` | serialized `J_StgHitChkData*` for frame context B |
+| `LuxBattle_SetFrameCacheHitChkDataPtrs @ 0x1402dae70` | copies those two blob pointers out of a setup packet |
+| `LuxBattle_RefreshFrameTerrainCache @ 0x140314480` | pairs FrameTransformA/B with the A/B blobs each refresh |
+| `LuxBattle_AttachStgHitChkData @ 0x140392080` | expands the serialized blob into the live frame-bounds grid |
+| `g_LuxBattle_FrameBoundsGridA @ 0x144844dd0` | live grid A |
+| `g_LuxBattle_FrameBoundsGridB @ 0x144845e80` | live grid B, inside `g_LuxBattle_FrameTransformB + 0xc60` |
+| `g_LuxBattle_FrameContextUseB @ 0x14470dedc` | selects A vs B accessors |
+
+Consumers include `LuxBattle_SampleTerrainAtWorldXZ @ 0x1403915a0`,
+`LuxBattle_SampleTerrainAtXZ_Impl @ 0x140391350`, and
+`LuxBattle_TestAndResolveWallCollision @ 0x140316600`. The terrain tag mapping
+observed in the wall path is: tag `1` → `0x3A`, tag `3` → `0x3C`, otherwise
+`dwSurfaceFlags >> 4`; `0x3A` is the ring/wall clearance-gated contact,
+`0x3B` is vertical floor/ceiling contact, `0x3C` is edge/ring-out terrain, and
+`0x3F` is the excluded scan tag.
+
+### Can collisions be modified or added?
+
+Yes, but the viable path depends on which collision layer you mean:
+
+| Goal | Plausible path | Hard limit / risk |
+|---|---|---|
+| Modify existing deterministic ring boundary | Hook `SetScbattleStageInfoBarrierGeometry @ 0x1402d77c0` or patch `g_aScbattleStageInfoBarrierEntries @ 0x144844070` after it is set | Fixed 12-entry buffer; both peers need identical data online |
+| Add more deterministic ring segments | Binary patch the fixed storage, getter/setter copies, and every consumer that assumes 12 entries | More invasive than a data mod; no spare count field was found at `0x14484406c` |
+| Move visible/UE4 collision | Edit the `.umap` and each mesh `UBodySetup.AggGeom` with normal UE4 collision meshes | Does not change rollback-safe ring-out/wall tests by itself |
+| Move barrier actors in a custom/replaced `.umap` | Author matching `ALuxStageBreakableBarrierActor` transforms and verify the event 0x19 registration path | Still test against the 12-entry scbattle buffer at runtime |
+| Modify terrain/wall/ring tags | Replace the serialized `J_StgHitChkData` blob before `LuxBattle_AttachStgHitChkData`, or hook `LuxBattle_SetFrameCacheHitChkDataPtrs` / `LuxBattle_AttachStgHitChkData` to substitute A/B blobs | Requires preserving the legacy blob format and keeping both frame contexts coherent |
 
 ## Adding a wholly new stage
 
@@ -218,9 +281,9 @@ routes:
    `LuxDataTable_LookupByKey` calls inside it) and rewrite
    `StageSetting.StageCode` to your custom code before the preload kick. This
    needs no UI changes: pick "Free Stage" in the menu and get your custom map.
-2. **Inject into the Blueprint picker** — a UE4SS BP hook on
-   `ULuxUIBattleLauncher::SetStageCode` (or the picker widget's construction)
-   that adds your code to the picker list. The picker's validation calls
+2. **Inject into the Blueprint picker** — a UE4SS BP hook on the picker widget
+   or stage-code setter path that adds your code to the picker list. The
+   picker's validation calls
    `execIsValidStageCodeStr`, which *does* check the master enum — so this
    route also requires:
 3. **Append to the master enum** — hook
@@ -246,8 +309,9 @@ to register with the gameplay engine:
 - `ALuxBattleStageActorManager` (manages the 9 lists)
 - 1+ `ALuxStageMeshActor` — visuals + UE4 collision (`UCX_/UBX_/USP_/UCP_`
   meshes auto-route into `BodySetup.AggGeom`)
-- 4–8 `ALuxStageBreakableBarrierActor` — invisible boxes forming the
-  ring-out boundary
+- `ALuxStageBreakableBarrierActor` placements covering the ring boundary;
+  the deterministic scbattle buffer has room for 12 `scbattle_BarrierEntry`
+  segments
 - (Optional) `ALuxStageBreakableWallActor` — breakable walls
 
 Stub these classes in a UE4 4.18 project with the correct `UClass` names and
@@ -277,11 +341,17 @@ path — the stream load fails and the match desyncs at level-load time.
 ## Runtime collision overlay (collision-only mods)
 
 To reshape ring-out or wall-break geometry without authoring a new umap, hook
-`scbattle_StageInfo_SetBarrierGeometry @ 0x1402d77c0` and rewrite the 192-byte
-buffer it copies into `g_scbattle_StageInfo_BarrierArray @ 0x144844070`. The
-visual stage stays the same; the deterministic ring boundary becomes whatever
-you supply. Online play needs the same hook on both peers — otherwise rollback
-snapshots disagree about ring-out events.
+`SetScbattleStageInfoBarrierGeometry @ 0x1402d77c0` and rewrite the `0xC0`
+buffer it copies into `g_aScbattleStageInfoBarrierEntries @ 0x144844070`.
+The visual stage stays the same; the deterministic ring boundary becomes the
+12 segments you supply. Online play needs the same hook on both peers —
+otherwise rollback snapshots disagree about ring-out events.
+
+For terrain height, wall tags, or ring-edge tags, the barrier setter is the
+wrong layer. Substitute the `J_StgHitChkData` blob before
+`LuxBattle_AttachStgHitChkData @ 0x140392080`, or hook
+`LuxBattle_SetFrameCacheHitChkDataPtrs @ 0x1402dae70` to provide replacement
+A/B blob pointers.
 
 ## Random-pool bias
 

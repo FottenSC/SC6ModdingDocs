@@ -38,6 +38,48 @@ mode they overlap unrelated VFX state. Mods that key off these fields to detect
 signals are a non-null `DemoNetDriver` on the world, or an
 `ALuxBattleReplayPlayer` present at `BM+0x488`.
 
+## Custom Lux input replay opcodes
+
+The custom Lux replay backend stores input as a stream of 3-byte records:
+`[opcode: uint8][argument: uint16]`. The decoder expands that stream into
+8-byte per-frame records: `{frameId, cursor, p1Input, p2Input}`.
+
+| Opcode | Argument | Meaning |
+|---:|---|---|
+| `1` | frame id | set the working frame id |
+| `2` | cursor | set the working replay cursor |
+| `3` | cursor end | emit decoded records from the working cursor through this cursor |
+| `4` | P1 input bitmask | update the P1 input mirror used by emitted records |
+| `5` | P2 input bitmask | update the P2 input mirror used by emitted records |
+| `6` | ignored | end-of-stream; clears the running flag |
+
+Key functions:
+
+| Function | Address | Role |
+|---|---:|---|
+| `LuxReplay_DecodeInputPackets_FromFile` | `0x1403ED310` | Stage 1 decoder. Reads 3-byte file records from `FLuxReplayDataBlock+0x3C8`, writes decoded 8-byte records at `+0x3A8`. |
+| `LuxReplay_EncodeInputEvents_ToBuffer` | `0x1403ED980` | Inverse encoder. Emits frame/cursor/input records and compresses unchanged cursor runs with opcode `3`. |
+| `LuxReplay_WriteThreeByteInputRecord_ToBuffer` | `0x1403F62E0` | Appends one packed opcode record. |
+
+`FLuxReplayDataBlock` high-traffic offsets:
+
+| Offset | What |
+|-------:|------|
+| `+0x3A8` | decoded packet buffer (`{frame,cursor,p1,p2}` records, 8 B each) |
+| `+0x3B0` | decoded buffer size / limit |
+| `+0x3B8` | decoded write cursor |
+| `+0x3C0` | decoded read cursor consumed by Stage 2 |
+| `+0x3C8` | packed file-opcode buffer |
+| `+0x3D0` | packed buffer size |
+| `+0x3D8` | packed buffer write limit |
+| `+0x3E0` | packed file read cursor |
+| `+0x3F0..+0x3F6` | working frame, cursor, P1 input, P2 input mirrors |
+| `+0x3FC` | running flag |
+
+For replay tools, treat this as a delta-coded forward stream. Backward scrub
+needs a saved decoded stream or a full `FLuxReplayDataBlock` snapshot restore;
+rewinding only the visible cursor is not enough.
+
 ## Scrubbing a match replay (`UDemoNetDriver::GotoTimeInSeconds`)
 
 UE4 4.21 ships built-in scrub for demo replays. SC6 keeps it intact:
