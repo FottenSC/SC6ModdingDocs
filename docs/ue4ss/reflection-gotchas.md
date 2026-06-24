@@ -67,7 +67,7 @@ Inherited UFunctions from parents registered with the extended form are still fi
 3. **Raw memory walk.** Read struct fields directly via offsets mapped in Ghidra. Tedious,
    but no reflection required — useful when the data is simple (flat POD).
 4. **UE4SS dev build (3.1.0+).** Not yet tagged. May ship improvements for `LessEqual421`
-   (pre-4.21) alignment that could change behaviour here. Worth trying, not guaranteed to fix.
+   alignment on older UE4 runtimes, including SC6's UE 4.17.2. Worth trying, not guaranteed to fix.
 
 ### What doesn't work
 

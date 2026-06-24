@@ -188,15 +188,13 @@ For custom stages, the least invasive testing path remains a late rewrite of
 `StageSetting.StageCode`. The more polished path is master-enum append plus UI
 picker injection.
 
-## Ghidra Cleanup Notes
+## Key Native Functions
 
-The following functions were named/typed during this pass:
-
-| Function | Address | Cleanup |
+| Function | Address | Menu relevance |
 |---|---:|---|
-| `GetStageCodeFromArcadeRegulationSetting` | `0x1405BB200` | Prototype, parameter names/types, plate comment. |
-| `MakeEnemySettingFromArcadeRegulationSetting` | `0x1405C4190` | Prototype, parameter names/types, plate comment. |
-| `MakeRandomMission_BuildBattleSettingTable` | `0x1405C8A20` | Prototype, parameter names/types, plate comment. |
-| `execGetStageCodeFromArcadeRegulationSetting` | `0x140C81270` | Function name and plate comment. |
-| `execMakeEnemySettingFromArcadeRegulationSetting` | `0x140C82840` | Function name and plate comment. |
-| `execMakeRandomMission` | `0x140C83520` | Function name and plate comment. |
+| `GetStageCodeFromArcadeRegulationSetting` | `0x1405BB200` | Reads `StageCount` and returns the arcade/mission `VersusStage`, falling back to `STG001`. |
+| `MakeEnemySettingFromArcadeRegulationSetting` | `0x1405C4190` | Consumes the same arcade regulation row and builds enemy character/AI setup. |
+| `MakeRandomMission_BuildBattleSettingTable` | `0x1405C8A20` | Worker for `MakeRandomMission`; copies `StageSetting.StageCode` into the mission battle-setting payload. |
+| `execGetStageCodeFromArcadeRegulationSetting` | `0x140C81270` | Reflected UFunction wrapper for arcade/mission stage-code lookup. |
+| `execMakeEnemySettingFromArcadeRegulationSetting` | `0x140C82840` | Reflected UFunction wrapper for arcade enemy-setting construction. |
+| `execMakeRandomMission` | `0x140C83520` | Reflected UFunction wrapper for random mission battle-setting construction. |
