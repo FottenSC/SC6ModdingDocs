@@ -22,6 +22,9 @@ git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
   snapshot paths.
 - Added a practical minimal prototype plan for validating deterministic
   restore/resimulation locally under `E:/myMods`.
+- Added a testing methodology and fault-injection plan for proving or falsifying
+  rollback feasibility, including instrumentation, pass/fail criteria, and
+  offline HorseMod versus native online-transport test boundaries.
 
 ### Changed
 

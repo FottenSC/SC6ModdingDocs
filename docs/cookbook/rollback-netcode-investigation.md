@@ -477,6 +477,120 @@ hash mismatch after restore/resim
   -> missing snapshot state, uncontrolled side effect, RNG leak, or wrong frame boundary
 ```
 
+## Testing methodology
+
+Treat rollback as unproven until the tests below make it boring. Static
+analysis identifies likely frame, input, snapshot, and RNG boundaries; the test
+harness has to prove or falsify those boundaries with repeatable data.
+
+The first rule is scope control. All positive results should be same-build,
+same-mod-set, same-stage, same-round tests unless the test explicitly targets a
+boundary fault. Do not count cross-round restore, actor recreation, or online
+session recovery as supported until those cases have their own passing tests.
+
+### Instrumentation to add first
+
+Build the instrumentation before building correction logic. Otherwise every
+hash mismatch becomes guesswork.
+
+| Instrument | What to record | Why it matters |
+|---|---|---|
+| Per-frame gameplay hash | Frame id, master clock, selected `ALuxBattleManager` fields, both chara states, MoveVM state, KHit/body collision state, round timers, input mirrors, RNG state, and stage/barrier state. | This is the main determinism oracle. Start broad, then only exclude bytes after a named investigation proves they are nondeterministic and non-gameplay. |
+| Input-history log | Local input, remote input, predicted/confirmed bit, source slot, absolute frame, `nFrameID`, `dwFrameIndex`, and cache cell address. | Lets a mismatch be tied to the exact input the sim consumed, not the input the rollback controller intended to provide. |
+| Snapshot manifest | Snapshot id, source frame, HgCpuDirect blob hash, InputLog/cursor region hashes, extras region hashes, buffer size, restore target pointers, and pointer/lifetime validation result. | Prevents treating "restore succeeded" as proof that the right object graph was restored. |
+| RNG state log | LFSR/xorshift/LCG states before and after each frame, plus optional call counters around `LuxMoveVM_GetRandU32 @ 0x14034F130`, `LuxMoveVM_GetRandXorshift96Gameplay @ 0x14034F1F0`, and related helpers. | Distinguishes missing state from an extra cosmetic/gameplay RNG consume. |
+| Frame-boundary trace | Entry/exit for `LuxBattle_PerFrameTick @ 0x1402DBC60`, `LuxBattleManager_Tick_SimulationLoop_UpdateInputAndRoundState @ 0x1403FE520`, `ALuxBattleFrameInputLog` tick/drain sites, `InputLog+0x3A4`, `BM+0x1488/+0x148C/+0x1490`, and `g_LuxBattle_FrameCounter`. | Proves that every trial advanced exactly the intended number of simulation frames. |
+| Side-effect event ledger | Audio, VFX, camera action, HUD/debug, animation notify, and actor tick events, tagged as visible-frame or hidden-resim. | Rollback can pass gameplay hashes and still double-play visible side effects. |
+| Network fault log | Fault type, affected peer/slot, original arrival frame, injected arrival frame, packet/input contents, packet sequence if available, and whether the cache write was stock drain or test harness. | Makes injected latency/loss/reorder reproducible and separates transport faults from simulation faults. |
+| Rollback/resim metrics | Snapshot save/restore microseconds, frames resimulated, max correction depth, hash compare time, dropped visible frames, side effects suppressed, and final catch-up latency. | Feasibility is not only correctness; the correction path must fit a real frame budget. |
+
+The hash should be canonical, not a raw "hash every byte near the objects"
+shortcut. Pointer values, allocator noise, telemetry counters, and padding bytes
+can cause false failures. Exclude them only after they are listed in the
+snapshot manifest with the reason they are safe to ignore.
+
+### Phased test plan
+
+Each phase should produce machine-readable logs and a short human summary. A
+phase does not prove rollback globally; it only unlocks the next, riskier test.
+
+| Phase | Test | Method | Pass criteria | Fail criteria |
+|---|---|---|---|---|
+| 0 | Baseline capture | In offline active-round play, record a no-rollback run for fixed characters, stage, costumes, settings, mod manifest, and input stream. Capture hashes and instrumentation every frame. | Replaying the same baseline setup without restore produces identical gameplay hashes for the tested window, or all differences are named non-gameplay fields. | Hash drift with no restore, unstable frame counts, unresolved actor pointers, or input-history disagreement. |
+| 1 | Deterministic replay harness | Feed the same recorded input stream through the chosen one-frame boundary, starting with `LuxBattle_PerFrameTick @ 0x1402DBC60` and falling back to the BM/InputLog path if needed. | Frame count, input consumption, RNG state, and gameplay hash match the baseline at each compared frame. | Off-by-one cache reads, master-clock drift, RNG drift, or a match only when comparing coarse fields such as health/position. |
+| 2 | Snapshot/restore hash tests | Capture snapshot `S`, restore it immediately, and compare pre-restore/post-restore hashes before any frame advances. Repeat at quiet frames, active attacks, hitstop, guard impact, wall contact, and camera/VFX-heavy frames. | Immediate restore is byte-for-byte or manifest-equivalent for gameplay state, and no visible side-effect ledger entries are emitted by restore alone. | Restore mutates gameplay state, misses InputLog/cursor/RNG/stage data, revives stale actor pointers, or emits visible events. |
+| 3 | Resimulation equivalence | Capture at frame `N`, advance `K` frames, restore `N`, replay the same inputs for `K = 1, 2, 8, 15, 60`, and compare final and per-frame hashes. | Every final hash matches the no-restore path, and per-frame traces show exactly `K` simulated frames with matching inputs and RNG. | Any unexplained hash mismatch, extra/missing tick, side-effect leak during hidden frames, or a result that only passes for `K = 1`. |
+| 4 | Prediction/correction | Delay a known remote input inside the local lab, predict "held last input" or neutral, then correct the frame when the real input arrives. Compare against a no-delay authoritative baseline. | After restore/resim, final gameplay hash equals the authoritative baseline, prediction age is logged, and hidden resim side effects are suppressed or deduped. | Corrected state diverges, rollback depth is wrong, the wrong cache cell is patched, or visible side effects replay from discarded frames. |
+| 5 | Online-drain isolation | In native hooks, prove the rollback controller owns the input boundary: stock drain either runs before prediction injection or is bypassed in the lab. Never write cache entries from the network thread. | `LuxOnline_DrainRingBuffer_DecodeInputPackets_AndUpdateCache @ 0x1403F6770` and prediction writes have deterministic ordering, cache tags match the intended absolute frame, and late packets cannot overwrite confirmed history incorrectly. | Races between drain and cache readers, stock parser overwriting predictions after simulation consumed them, deque growth hiding test faults, or thread-side writes into live cache. |
+| 6 | Side-effect gating | Run the same correction with side-effect gates enabled and disabled. Use the event ledger to verify audio/VFX/camera/HUD/notifies/actor ticks only escape from final visible frames. | Gameplay hashes match with gates enabled, hidden-resim event counts are zero or explicitly deduped, and final-frame events are not lost. | Duplicate audio/VFX, camera pops caused by hidden frames, actor tick state mutation outside the snapshot, or gameplay hash changes when presentation-only gates are toggled. |
+| 7 | Stress/soak | Run long local sessions with randomized but seeded input, random fault schedules, maximum rollback windows, stage interactions, hitstop-heavy sequences, and repeated round starts that rollback refuses to cross. | No unexplained hash mismatches, bounded memory, stable restore/resim timing, no stale pointers, no rollback across refused lifecycle boundaries, and useful diagnostics on every injected fault. | Intermittent drift, growing snapshot memory, correction time over budget, actor lifecycle crashes, or a failure that cannot be reproduced from logs. |
+
+### Fault injection
+
+Fault injection should be deterministic. Every injected fault needs a seed, a
+frame number, a target slot, the original input/packet metadata, and the exact
+mutation written to the log. A fault that cannot be replayed is only a bug
+report, not a rollback test.
+
+The offline lab in `E:/myMods/HorseMod` can safely inject many faults before
+real networking exists. Use a game-thread test controller that edits the input
+history, `FLuxReplayInputCacheEntry` cells, clocks, or gates at known frame
+boundaries. Do not mutate the live online cache from a network thread.
+
+| Fault | Offline HorseMod lab | Native online/transport hook needed | Pass/fail signal |
+|---|---|---|---|
+| Dropped input packets | Safe to model by withholding the remote input from the rollback controller while retaining the authoritative baseline input in the test script. | Required to prove real packet loss handling before shipping online. | Pass: prediction is used, correction restores the right frame, final hash matches baseline. Fail: stall, wrong rollback depth, or missing correction. |
+| Delayed remote inputs | Safe and essential: deliver frame `F` at `F + delay` with delays from 1 to max rollback window plus one. | Required to measure real jitter and queue behavior. | Pass: delays within the window correct; delays beyond the window trigger a defined stall/desync policy. Fail: silent divergence or unbounded catch-up. |
+| Reordered packets | Safe to model by delivering remote inputs out of order to the input scheduler. | Required if using or extending the stock online parser/deque. | Pass: absolute frame id wins over arrival order. Fail: lower frame-low tags overwrite newer cache cells. |
+| Duplicate packets | Safe to inject as repeated confirmed inputs for the same absolute frame. | Required for real transport dedupe validation. | Pass: duplicate is idempotent and logged. Fail: duplicate increments metrics, rewrites confirmed history differently, or triggers extra rollback. |
+| Corrupted cache tags | Safe in offline cache-path tests by mutating `nFrameID`, `dwFrameIndex`, or `bFilled` in one `FLuxReplayInputCacheEntry`. | Not a transport fault by itself, but online hooks should guard malformed decoded records. | Pass: tag mismatch is detected as missing/invalid input and does not masquerade as neutral unless policy says so. Fail: stale cell is consumed as valid input. |
+| Wrong frame IDs | Safe to inject in the local input-history layer and in cache cells. | Required for stock packet compatibility because opcode 0 only carries a 4-bit frame-low tag. | Pass: rollback protocol rejects or disambiguates the frame. Fail: input lands in the wrong 512-cell ring slot. |
+| Stale predictions | Safe: keep an old predicted remote input across a known change and correct later. | Required to tune prediction age and confirmation policy online. | Pass: stale prediction age is logged, corrected, and bounded. Fail: old prediction becomes confirmed by accident. |
+| Master clock jumps/stalls | Safe with HorseMod-style clock gates around `InputLog+0x3A4` and manual test writes in offline lab. | Required to see how real online stall/drain logic interacts with rollback ownership. | Pass: unexpected jumps/stalls are detected before simulation, and rollback refuses or repairs according to policy. Fail: `BM+0x1488/+0x148C/+0x1490` drift from `InputLog+0x3A4`. |
+| Skipped/double ticks | Safe by deliberately suppressing or double-running one controlled frame in the harness. ActorTickGate-style sites are useful for reproducing sibling-tick leaks. | Required only to validate integration with live UE actor tick order. | Pass: frame-boundary trace catches the extra/missing tick immediately. Fail: hash drift appears later with no clear tick anomaly. |
+| RNG perturbation | Safe in lab by flipping/restoring a logged RNG state or by inserting one extra traced RNG consume in a controlled test build. | Not transport-specific, but online testing must prove both peers keep identical RNG. | Pass: hash mismatch points at the first divergent RNG state/call. Fail: mismatch is delayed or only visible through gameplay later. |
+| Side-effect leaks | Safe by temporarily disabling a side-effect gate for one hidden resim frame. | Required online because correction may happen under real rendering/audio load. | Pass: event ledger identifies the leaked event and gates prevent it in normal tests. Fail: duplicate visible effects, camera discontinuity, or gameplay-affecting notify mutation. |
+| Round transition boundary faults | Safe only as a refusal test: schedule corrections near KO, round end, replay reset, or object teardown and verify rollback does not cross the lifecycle boundary. | Required before any online prototype can survive real rounds. | Pass: rollback refuses, stalls, or resyncs with an explicit reason. Fail: restore into freed/recreated chara or stage objects. |
+| Actor lifecycle invalidation | Do not fake freed pointers. Safe tests are pointer/lifetime validation failures captured from natural transitions or controlled refusal cases. | Required for real online exits, rematches, loading, and disconnects. | Pass: snapshot manifest marks the target invalid and restore is blocked. Fail: restore writes into stale actor memory. |
+| Stage state mutation | Safe if limited to known deterministic stage state, such as the scbattle barrier block, or a tracked lab-only mutation. | Required for modded stages and online stage-object interactions. | Pass: mutation is either snapshotted/restored or detected as unsupported. Fail: same inputs diverge after wall/barrier/contact changes. |
+| Mod mismatch | Safe to model with manifest mismatch, hash mismatch, or altered test constants; avoid silently changing live assets mid-run. | Required in real transport before matchmaking/handshake. | Pass: peers refuse rollback or mark desync before gameplay correction. Fail: different gameplay data produces plausible but divergent hashes. |
+
+Offline-safe does not mean low-risk. Keep these tests behind an explicit lab
+mode and only run them on the game thread at known frame boundaries.
+
+### Where to hook and what not to trust
+
+For the offline lab, the cleanest first hooks are the same ones used by the
+minimal prototype:
+
+- capture before and after `LuxBattle_PerFrameTick @ 0x1402DBC60`;
+- if using the stock cache path, inject after
+  `LuxOnline_DrainRingBuffer_DecodeInputPackets_AndUpdateCache @ 0x1403F6770`
+  and before `LuxBattleChara_UpdatePlayerInputData_FromRoundCache @ 0x1403FCD10`;
+- trace `LuxBattleManager_Tick_SimulationLoop_UpdateInputAndRoundState @ 0x1403FE520`
+  whenever `ALuxBattleFrameInputLog` or BM cursors are involved;
+- use HorseMod's ReplayClockGate/ActorTickGate lessons as a checklist for
+  sibling ticks that can mutate state while the main battle frame is frozen.
+
+Do not trust:
+
+- visual similarity;
+- health/position-only hashes;
+- the HgCpuDirect blob by itself;
+- wall-clock timing as a frame counter;
+- stock online frame-low tags as absolute frame identity;
+- a successful restore return without pointer/lifetime validation;
+- a passing quiet-frame test as proof for hitstop, wall contact, VFX-heavy
+  frames, or round boundaries.
+
+To reduce false positives, pin every variable that is not under test: same SC6
+build, same HorseMod build, same gameplay-affecting mods, same stage files,
+same costumes/equipment, same input device source, same graphics settings where
+presentation can affect actor tick load, and a fixed test seed. Warm up the
+match before recording baseline frames, compare immediate restore before
+longer resim, and keep a list of excluded hash fields with evidence for each
+exclusion.
+
 ## Other ways to improve online play
 
 Rollback is the largest intervention. Lower-risk improvements can still help:
