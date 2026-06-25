@@ -20,6 +20,26 @@ Mods" crash in practice.
 | Hook `UEngine::Tick` for idle / per-frame work | `Hook::RegisterEngineTickPreCallback` |
 | Hook `BeginPlay` / `EndPlay` / `LoadMap` globally | same family of `Register*Callback` helpers |
 
+### SC6 bridge decision guide
+
+Use the smallest bridge that can observe or change the thing you care about:
+
+| Need | First choice | Escalate when |
+|---|---|---|
+| Call a documented battle helper, read an actor transform, or react to a stable reflected UFunction | UE4SS Lua reflection / `RegisterHook` | The call fails because SC6 omitted parameter metadata, or the game calls the native `_Impl` directly. |
+| Discover which reflected events fire for one menu or battle action | Short-lived global `ProcessEvent` spy | The event never appears in the spy log, which means the path is probably native or not UFunction-dispatched. |
+| Read post-dispatch out-params from a BlueprintImplementableEvent | Global `ProcessEvent` post-hook | The BP body is not implemented in SC6, so the hook fires but out fields remain unchanged. |
+| Freeze, step, or replay-control battle simulation | Native tick/clock gates | Lua or global `UEngine::Tick` polling sees frames too late and misses native catch-up paths. |
+| Override AI frame input or suppress audio side effects during hidden frames | Native hook at the documented subsystem boundary | A reflected function only configures high-level state and does not own the per-frame write. |
+
+SC6 examples: BattleManager setup helpers and launcher flow are often good
+reflection targets; see [Battle Manager](../sc6/battle-manager.md#key-ufunctions-call-via-reflection)
+and the [battle launcher startup path](../sc6/battle-manager.md#battle-launcher-startup-path).
+AI input ownership, replay freeze, and audio cue suppression are native-boundary
+problems; see [CPU / AI System](../sc6/ai-cpu-system.md#where-to-hook-for-ai-mods),
+[Replay System](../sc6/replay-system.md#replay-freeze-gates), and
+[Audio System](../sc6/audio-system.md#fast-forward-rollback-side-effect-gating).
+
 !!! note "Per-UFunction post-hooks silently fail for BlueprintImplementableEvents"
     When the game calls a `Receive*`-style event, UE4SS's BP-event path fires the *pre*
     callback but skips the *post*. A global `ProcessEvent` post-hook intercepts at the
@@ -171,6 +191,31 @@ Workflow:
 5. Any fresh `[spy]` lines between the second arm and disarm are UFunctions **unique to
    that action** — breadcrumbs pointing at the right native code.
 
+### SC6 filtering discipline
+
+`ProcessEvent` sees menu widgets, controller events, battle actors, components,
+and Blueprint library calls. Treat every callback as hostile until it passes a
+cheap filter:
+
+1. Check that `fn` and `ctx` are non-null before touching names or classes.
+2. Prefer pointer identity after first discovery. String/name checks are fine
+   while arming the spy; once the target UFunction is known, cache its pointer
+   and bail on `fn != cached`.
+3. If you need a class filter, cache the `UClass*` or a precomputed class-name
+   decision. Do not walk ancestry or build strings on every call.
+4. Avoid UObject discovery inside the callback. Set a flag or append a small
+   scalar record, then resolve `LuxBattleManager`, charas, or helper CDOs from a
+   slower game-thread task.
+5. Rate-limit logs. A one-line log inside a broad PE hook can dominate the
+   frame before the actual diagnostic cost shows up.
+
+For SC6 battle work, record enough context to separate modes: full object name,
+UFunction name, whether a live `LuxBattleManager` exists, and the current
+high-level mode if your mod already tracks it. Runtime-validation boundary:
+this page documents the filter shape, not a guaranteed list of UFunctions for
+every menu, character, or DLC state. Confirm the actual call path on the build
+you are testing.
+
 ## Pattern: post-hook for BP events with out-params
 
 BlueprintImplementableEvents arrive at your global post-hook with `parms` pointing at the
@@ -207,6 +252,35 @@ void on_pe_post(Hook::TCallbackIterationData<void>&,
     don't override it — you get zeros. See the WeaponEventHandler entry under
     [Game Structures](../sc6/structures.md#aluxbattleweaponeventhandler).
 
+## UObject lifetime across map and menu transitions
+
+SC6 rebuilds battle actors aggressively. Returning to character select, loading
+a stage, rematching, exiting replay viewing, or receiving `ClientRestart` can
+leave an old UObject wrapper looking non-null while the object graph under it is
+no longer the active match graph.
+
+Global hooks make that easier to miss because they keep firing across the whole
+process lifetime. Apply these rules to native hook state:
+
+- Do not keep `ALuxBattleManager*`, `ALuxBattleChara*`, training actors, replay
+  actors, or `UAtomComponent*` pointers as long-lived truth. Keep class paths,
+  object names for logging, stable IDs, and your own plain state; re-resolve
+  live UObjects after transitions.
+- Treat `LoadMap`, `BeginPlay`, `EndPlay`, `ClientRestart`, rematch, and replay
+  exit as cache-invalidation boundaries. If your bridge cannot positively prove
+  the cached pointer still belongs to the active world, drop it.
+- A valid outer object does not make child pointers valid. Re-check every
+  UObject hop before calling into BattleManager subsystems, chara state, audio
+  components, or replay actors.
+- Construction callbacks are early. A newly observed BattleManager or chara may
+  not have all subsystem slots populated until later in the mode flow.
+
+The Lua-facing version of these rules lives in
+[Lua API Overview](lua-api.md#minimal-safety-helpers) and
+[Hooks & Events](hooks.md#lifecycle-and-restart-gotchas). Native hooks should
+follow the same model: observe transition, clear caches, then reacquire only
+when the target object passes the current-mode checks your mod needs.
+
 ## Performance considerations
 
 - When the spy's `m_active` flag is **false**, the callback is just an atomic load and a
@@ -217,6 +291,22 @@ void on_pe_post(Hook::TCallbackIterationData<void>&,
 - Filtered post-hooks — those that do real work on one *specific* function — bail after a
   single pointer comparison for the 99.99% of calls that don't match, so they're
   effectively free.
+- `UEngine::Tick` callbacks are per-frame, not per-simulation-frame. In SC6,
+  replay catch-up, training playback, AI input, MoveVM, VFX, and audio side
+  effects can advance through native subsystem paths that a global engine tick
+  only observes from the outside. Use tick callbacks for UI polling, deferred
+  cleanup, and coarse diagnostics; use the documented native gates for replay
+  freeze and frame-step work.
+- Never scan `GUObjectArray`, `FindAllOf`-equivalent object sets, or every
+  `LuxBattleChara` from a hot tick. Cache the need to refresh, run the lookup at
+  a bounded cadence, and stop once the current transition settles.
+
+!!! warning "Tick hooks are not SC6 simulation ownership"
+    A global engine tick hook is convenient, but it is not the owner of SC6's
+    battle frame. Replay tools need the gate stack in
+    [Replay System](../sc6/replay-system.md#replay-freeze-gates); pause tools
+    should start with [Battle Manager](../sc6/battle-manager.md#pausing-the-simulation-gates-not-dt-multiply).
+    Audio and AI side effects have their own native boundaries.
 
 ## See also
 
@@ -225,3 +315,7 @@ void on_pe_post(Hook::TCallbackIterationData<void>&,
   C++ but not from Lua reflection.
 - [Drawing 3D Debug Lines](../sc6/line-batching.md) — a concrete "other" path that
   doesn't rely on any hook at all once you have the pointer.
+- [Battle Manager](../sc6/battle-manager.md), [Replay System](../sc6/replay-system.md),
+  [CPU / AI System](../sc6/ai-cpu-system.md), and
+  [Audio System](../sc6/audio-system.md) — SC6 subsystem boundaries where a
+  native hook may be the correct bridge.

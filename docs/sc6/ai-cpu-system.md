@@ -123,6 +123,55 @@ bodies emit fixed input sequences instead of consulting personality or condition
 record a custom CPU behavior, attaching a scripted SubVM through this framework
 is the lowest-friction path.
 
+## Practical recipe: scripted CPU drill boundaries
+
+Use a scripted `HgCpuDirect*`-style SubVM only when the dummy needs native,
+frame-perfect behavior that is more than a pre-recorded input stream: reacting
+to distance, move state, ring position, or a drill-specific success/fail flag.
+For simple canned sequences, prefer the training-mode UFunctions below. For
+external bot logic that owns every frame, prefer the `LuxBattle_TickCharaInput`
+override recipe below.
+
+### What the boundary guarantees
+
+| Boundary | Practical meaning |
+|---|---|
+| SubVM output | A scripted drill should emit the same 32-bit frame-input command at `pSubVM+0x08` that stock AI emits. The downstream MoveVM still decides whether that input starts a move. |
+| MoveVM boundary | Do not treat a CPU drill as a direct move-lane editor. Move selection, transition timing, hit reactions, and active lane state belong to the [Move System](move-system.md). |
+| Replay boundary | A scripted SubVM can tick during replay viewing, but replay input can still replace the final raw input before consumption. See [Replay System](replay-system.md). |
+| UE4SS boundary | Installing or replacing a SubVM is native-code work, not a Lua reflection call. UE4SS reflection is useful for training UFunctions; custom SubVM construction needs a C++ plugin/detour path. |
+
+### Conservative implementation checklist
+
+1. Mirror the tutorial pattern first: construct a `CCpuDirectCommand`-derived
+   object, initialize the known base fields, and let the existing dispatcher call
+   `Tick`, `OnTickPost`, `OnTickFinalize`, and `OnTickMoveChange`.
+2. Keep custom drill state inside verified per-derived storage or an external
+   native side table keyed by the owning chara/sched-state pointer. Do not assume
+   a wider class layout just because one tutorial class has spare-looking bytes.
+3. Emit ordinary frame-input commands unless you have explicitly chosen the
+   special-move route. The special route uses command id `0x69` and the
+   scheduler commit path documented above, so its params need per-character
+   runtime validation.
+4. Preserve the stock chara/opponent/sched-state pointers. If a drill swaps the
+   SubVM after `LuxMoveVM_CreateCpuDirectState`, verify those back-pointers before
+   the first tick.
+5. Add an escape path that restores the stock factory choice or clears the drill
+   when the match restarts. Battle objects are rebuilt across rematch and menu
+   transitions, so stale SubVM pointers are not reusable.
+6. Test under pause, frame-step, training playback, and replay viewing. The
+   scripted SubVM may tick while another source wins the final input, and that is
+   expected behavior rather than proof that the SubVM failed.
+
+### Use the simpler layer when it fits
+
+| Goal | Better layer |
+|---|---|
+| "Block after this recorded string" | Training recording/playback UFunctions |
+| "Press this command every frame while a condition is true" | Native frame-input override |
+| "Run a tutorial-style drill with counters and branchy native state" | Scripted `HgCpuDirect*` SubVM |
+| "Force a move for presentation or move-list tooling" | BattleManager / MoveCommandPlayer UFunctions; see [battle-manager.md](battle-manager.md#key-ufunctions-call-via-reflection) and [move-system.md](move-system.md#actor-class-aluxbattlemovecommandplayer) |
+
 ## Training-mode UFunctions
 
 The training-mode actor exposes 11 UFunctions — all with live native bodies, all
@@ -157,6 +206,50 @@ enum class ELuxTrainingScrubMode : uint32 {
 };
 ```
 
+## Practical recipe: drive the training dummy
+
+Use the training-mode UFunction surface when the goal is a programmable dummy,
+not a new CPU personality. This keeps the mod above the native AI SubVM layer and
+uses the same training queues the game already knows how to record, play back,
+and clear. For UE4SS call mechanics, use the normal reflected-call safety rules
+in [UE4SS Lua API](../ue4ss/lua-api.md#reflected-ufunction-calls) and keep the
+[reflection caveats](../ue4ss/reflection-gotchas.md) nearby when a parameterized
+call fails.
+
+### Pick the smallest control surface
+
+| Need | Prefer | Notes |
+|---|---|---|
+| Replay a human-recorded setup | `StartRecording` / `StartPlayback` / `StopAndReset` | Best for quick training-lab automation because the game captures the same frame-input stream it later consumes. |
+| Feed a known raw input command | `QueueCommand_Slot0` or `QueueCommand_AtSlot` | Use after you have validated the 32-bit command word at runtime. This page does not define the bit packing. |
+| Force a special-move command | `QueueSpecialMove1Param` / `QueueSpecialMove2Param` | Native route for command id `0x69`; parameters are move-specific and should be treated as runtime-validated data, not portable constants. |
+| Clear a wedged queue | `StopAndReset`, then `ResetGlobalState` | `ResetGlobalState` clears the special-move globals as well as the normal training queue state. |
+
+### Safe call order
+
+1. Enter a live Training match and re-resolve the live training-mode actor after
+   every rematch, character change, or return from replay/menu flow. The
+   BattleManager's training subsystem slots are mapped in
+   [battle-manager.md](battle-manager.md#training-mode-managers).
+2. Call `StopAndReset` before switching from recording to queued commands, or
+   from special-move commands back to normal input playback.
+3. Use `GetMode` as the state check after `StartRecording`, `StartPlayback`, and
+   `StopAndReset`; do not infer the mode only from your mod's last call.
+4. For command queues, queue a minimal known action first, then confirm the same
+   value appears through `GetCurrentCommand_*` before building a longer script.
+5. For special moves, validate both the visible move transition and the queued
+   params in one training session before assuming they survive character,
+   stance, or weapon changes.
+6. If the dummy does not move, check whether playback/recording won the same
+   frame over the CPU output. The training playback path can discard live AI
+   choices in `LuxBattle_TickCharaInput`, exactly like replay input does.
+
+!!! note "No portable Lua snippet here"
+    The UFunctions are reflectable, but this page intentionally does not provide
+    hard-coded UE4SS Lua calls or raw command words. Resolve the live UObject and
+    parameter metadata in your runtime environment, then use the call pattern
+    documented in the UE4SS pages above.
+
 ## Replay behavior summary
 
 | Scenario | AI ticks? | Effect |
@@ -165,6 +258,50 @@ enum class ELuxTrainingScrubMode : uint32 {
 | Replay viewing (match replay) | Yes | AI ticks, but replay decoder overwrites `chara+0x2150` first — AI's choice silently discarded |
 | Training mode (dummy in PLAYBACK) | Yes | Recorded inputs win over AI in `LuxBattle_TickCharaInput`; AI's choice discarded |
 | WorldTickGate freeze | **No** | Site 9 on `LuxBattle_PerFrameTick` is upstream of the entire AI tick chain — no separate gate needed |
+
+## Practical recipe: override frame input
+
+Use this when the mod needs a hard per-frame input override, such as a bot that
+reacts to the opponent in real time, a deterministic punish trainer, or a test
+harness that should ignore the stock CPU choice. This is a **native hook job**:
+`LuxBattle_TickCharaInput @ 0x140312510` is not a UFunction, so UE4SS
+`RegisterHook` is the wrong tool. Use a native UE4SS plugin, global detour, or
+equivalent code hook; the UE4SS hook boundary is summarized in
+[hooks.md](../ue4ss/hooks.md#when-lua-hooks-are-not-enough).
+
+### Override checklist
+
+1. Decide whether this is a soft override or a hard override. A soft override
+   can use training-mode queues above. A hard override writes the final
+   `chara+0x2150` frame-input value after the game has selected the frame's
+   source input.
+2. Instrument one side first. Log the value produced by the AI SubVM
+   (`pSubVM+0x08`), the scheduler copy, and the final `chara+0x2150` value for
+   a few frames before writing anything.
+3. Place the write late enough that the source picker has already run. In live
+   CPU play that source is usually the AI path; in replay viewing and training
+   playback the recorded-input path can overwrite the AI output before the move
+   system consumes it. The replay overwrite is the same determinism rule
+   described in [replay-system.md](replay-system.md#lux-input-replay-opcodes).
+4. Keep the override to one frame at a time. Recompute or re-copy the command
+   every tick instead of assuming the previous value will be held for you.
+5. Treat `chara+0x2158` as part of the raw-input pair until its exact role for
+   your scenario is verified. If your override only changes `+0x2150`, log
+   `+0x2158` across held inputs, releases, and simultaneous button presses so
+   edge/hold behavior is not accidentally broken.
+6. Verify the downstream move result through the MoveVM rather than only the
+   input value. The move system page documents the scheduler and active move
+   lanes that are useful for "did this input become the expected move?" checks:
+   [move-system.md](move-system.md).
+
+### Priority traps
+
+| Symptom | Likely cause | Check |
+|---|---|---|
+| Value is written, but the dummy follows the recording | Training playback wins later in `LuxBattle_TickCharaInput` | Disable playback or move the native write after the playback source write. |
+| Value is written during replay, but the character follows the replay file | Replay decoder overwrote the live AI/override value | Confirm whether the session is replay viewing; see [Replay System](replay-system.md). |
+| First frame works, held direction/button does not | Hold/edge state is split across the raw-input pair | Compare `+0x2150` and `+0x2158` while holding and releasing a known input. |
+| Move starts one frame late | Hook is before the final source write or after the move consumer | Add frame counters around `LuxBattle_TickCharaInput` and the MoveVM scheduler path. |
 
 ## Where to hook for AI mods
 
@@ -175,6 +312,27 @@ enum class ELuxTrainingScrubMode : uint32 {
 | Replace a CPU behavior wholesale | Patch the SubVM at the per-slot sched state — either patch `LuxMoveVM_CreateCpuDirectState` to construct your derived class, or swap the vftable pointer at `pSubVM+0x00` post-construct |
 | Add a scripted CPU drill | Mirror the `HgCpuDirectTutorial*_Init` pattern: construct a 0x70-byte CCpuDirectCommand-derived object with your Tick body and install at the sched-state SubVM slot |
 | Freeze AI during a custom pause | None needed — gate `LuxBattle_PerFrameTick` (see [replay-system.md](replay-system.md)); AI tick is downstream |
+
+## Runtime verification checklist
+
+Before calling a dummy/CPU mod "working", verify the layer you think is in
+control is actually the final input source for the frame.
+
+| Check | What to verify |
+|---|---|
+| Live object resolution | Re-find the BattleManager, charas, and training actor after rematch/menu transitions. Follow the UObject validity rules in [UE4SS Lua API](../ue4ss/lua-api.md#minimal-safety-helpers). |
+| Mode state | `GetMode` agrees with the intended `OFF` / `RECORDING` / `PLAYBACK` state before and after the test action. |
+| Input source priority | In one instrumented run, compare the SubVM output, scheduler copy, and final `chara+0x2150` value for the same side/frame. This catches replay and training playback overwrites. |
+| Raw-input pair behavior | For held inputs and releases, compare both `chara+0x2150` and `chara+0x2158`; do not assume a single dword covers every edge/hold case. |
+| Move-system effect | Confirm the expected move or state change in the MoveVM layer, not only the raw input write. Use the active-lane and scheduler notes in [move-system.md](move-system.md). |
+| Replay/training separation | Repeat the same test in live training, dummy playback, and replay viewing if the mod supports all three. The final input owner changes by mode; this is expected. |
+| Pause/frame-step behavior | If the mod interacts with pause or stepping, test both `SetBattlePause` and native tick gates. BattleManager pause semantics and replay freeze gates are documented in [battle-manager.md](battle-manager.md#pausing-the-simulation-gates-not-dt-multiply) and [replay-system.md](replay-system.md#replay-freeze-gates). |
+| Reset path | Stop playback, clear queued commands, restart the round, and confirm no stale SubVM pointer, queued command, or special-move param survives unintentionally. |
+
+Good evidence is a short trace that ties one frame together: selected source
+input -> final raw input -> MoveVM-visible move/state result. If any link in
+that chain is inferred rather than observed, label the mod behavior as
+runtime-validated only for the scenarios you actually tested.
 
 ## Function quick reference
 

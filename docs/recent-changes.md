@@ -13,6 +13,25 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-06-26 - Practical Cookbook and UE4SS Expansion Pass
+
+### Added
+
+- Expanded the UE4SS Lua, hook, global-hook, and reflection-gotcha pages with
+  SC6-specific safety patterns for live object discovery, reflected helper calls,
+  ProcessEvent filtering, map/menu transition invalidation, and native-boundary
+  escalation.
+- Expanded the wholly-new custom-stage cookbook into a fuller implementation
+  checklist covering stage-code selection, pak layout, load-path routing,
+  picker integration, metadata/collision validation, troubleshooting, and online
+  desync risks.
+- Added practical CPU/training-dummy guidance for scripted SubVM drills,
+  training-mode UFunction usage, native frame-input overrides, and runtime
+  verification.
+- Added practical audio-modding guidance for ACB/cue-sheet routing, weapon SE,
+  voice replacement, costume-part SE relevance, stage foley, muting/ducking, and
+  fast-forward/rollback side-effect gating.
+
 ## 2026-06-26 - Stage Collision Replacement Notes
 
 ### Added
