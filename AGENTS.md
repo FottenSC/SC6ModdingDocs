@@ -10,8 +10,9 @@ The bridge auto-discovers tools from `/mcp/schema`; if a tool name isn't in the 
 
 ## Documentation commit workflow
 
-- Every time you create a repository commit, refresh `docs/recent-changes.md` from the current branch history before staging. Use `git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30`, keep entries newest first, and do not include non-branch checkpoint refs from `git log --all`.
-- If the commit being created should appear in `docs/recent-changes.md`, add it on the next commit; its final hash does not exist before the commit is made.
+- Every time you create a repository commit, refresh `docs/recent-changes.md` before staging. Treat it as a curated changelog, not a raw commit log: group related work by date/topic, summarize user-visible documentation changes, and keep newest entries first.
+- Use `git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30` only as source material. Do not paste the raw log as the page body, and do not include non-branch checkpoint refs from `git log --all`.
+- If the commit being created changes user-visible docs, add or update the top changelog entry with a human-readable summary before committing. Add final commit links on a later commit if the hash is not known yet.
 
 ## Ghidra MCP conventions
 
