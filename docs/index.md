@@ -74,6 +74,10 @@ make an edit, this is the navigation contract:
 
     How to add a new page — designed so humans *and* AI agents can contribute.
 
+-   :material-history: **[Recent Changes](recent-changes.md)**
+
+    Current branch change history pulled from Git commits.
+
 </div>
 
 ## Quick links

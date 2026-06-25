@@ -85,7 +85,9 @@ plugins:
 # Navigation — add new pages here as the docs grow.
 # Folder-level index.md files render as section landing pages.
 nav:
-  - Home: index.md
+  - Home:
+      - Overview: index.md
+      - Recent Changes: recent-changes.md
   - UE4SS Framework:
       - ue4ss/index.md
       - Lua API Overview: ue4ss/lua-api.md

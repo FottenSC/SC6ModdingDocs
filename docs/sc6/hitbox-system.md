@@ -19,14 +19,16 @@ see [Reaction System](reaction-system.md).
 | Body / pushbox list head | `chara+0x44478` | Chara-to-chara physical pushing only — not part of hit resolution. |
 | Attack list head | `chara+0x44498` | Entries that DEAL damage or initiate a grab. |
 | Hurtbox list head | `chara+0x444B8` | Entries that RECEIVE damage / reactions. |
-| Classifier mask | `chara+0x44048` | Opponent's active-attack cell, copied each tick. |
-| Own active-attack mask | `chara+0x44058` | Own move's per-frame mask cell. |
+| Opponent active attack cell copy | `chara+0x44048` | Copy of opponent's current `FLuxMoveBankCell*`, copied each tick. |
+| Own active attack cell | `chara+0x44058` | Own current `FLuxMoveBankCell*` for the active move-slot. |
+| Frame-window phase | `chara+0x1980` | `0=None`, `1=Startup`, `2=Active`, `3=Recovery`; written by `LuxMoveVM_ClassifyHitboxFrameState`. |
+| In-master-window flag | `chara+0x16EA` | Boolean active-frame gate: phase is active and the sub-window inhibitors are clear. |
 | Aggregation array | `chara+0x44078` (`u64[22]`) | `PerHurtboxBitmask` — one slot per kind tag. |
 | Reaction output | `chara+0x1C74` (`i32[22]`) | `PerHurtboxReactionState` — `LuxHitReactionState` enum. |
 | Node storage | Sphere `0x80`; Area/FixArea `0xA0` | Mixed-size intrusive nodes; `+0x20` stores the relative next-node delta. |
 | Subclass tag | `node+0x16` | `0=Sphere`, `1=Area`, `2=FixArea`. |
 | Geometry gate | `node+0x14` | Attack list: `(hotMask >> KindTag) & 1` per tick. Hurtbox list: written on demand by MoveVM opcode `0x13AC`. See [per-frame hot-mask](#per-frame-hot-mask). |
-| Damage gate | `(hotMask & (1 << KindTag)) AND (*(u64*)(chara+0x44048))` | Both must be set for a hit to fire. |
+| Damage / reaction gate | `node+0x14 && (node+0x08 & activeCell->u64SlotMask) && attacker+0x16EA` | Geometry, category mask, and active-frame phase must all pass before a reaction can fire. |
 
 > Source: Ghidra reverse-engineering of the SC6 Steam build, cross-validated by HorseMod's
 > `KHitWalker.hpp` and `dllmain.cpp` plate comments.
@@ -47,9 +49,9 @@ List counts live at the matching `head - 0x8` offsets (`+0x44470`, `+0x44490`, `
 
 | Offset | Type | Name |
 |-------:|------|------|
-| `+0x44048` | `KHitBase*` | `OpponentActiveAttackCellCopy` — copy of opponent's `+0x44058`. The pointee's first `u64` is the live attacker-slot mask the classifier reads. |
+| `+0x44048` | `FLuxMoveBankCell*` | `OpponentActiveAttackCellCopy` — copy of opponent's `+0x44058`. The pointee's first `u64` is the live attacker-slot/category mask the classifier reads. |
 | `+0x44050` | `short(*)[3]` | Mirror of opponent's `+0x44060` (downstream classifier reads only). |
-| `+0x44058` | `KHitBase*` | `OwnActiveAttackCell` — own move's per-frame mask cell. |
+| `+0x44058` | `FLuxMoveBankCell*` | `OwnActiveAttackCell` — own current move-slot cell. Its `u64SlotMask` stays fixed while that cell is selected; `chara+0x1980/+0x16EA` supplies the active-frame timing. |
 | `+0x44060` | `short(*)[3]` | `NonAttackMoveDescrPtr` — `(DamageMultiplier, PassthroughTag, DurationTicks)` for non-damaging supers / SC finishers / stance / GI / parry transitions. Set by `LuxMoveVM_TransitionToMove`. |
 | `+0x44068` | `FLuxMoveLane*` | `ActiveLaneStateCursorPtr` — points at the running lane block (one of the three at `+0x444F0/+0x44958/+0x44DC0`). Was `LuxMoveLaneState*`. |
 | `+0x44070` | `u8[6]` | `LastHitSourceCellLo48` — opaque 48-bit packed hit-id snapshot. |
@@ -57,6 +59,12 @@ List counts live at the matching `head - 0x8` offsets (`+0x44470`, `+0x44490`, `
 | `+0x44494` | `i32` | `ClassifierHurtboxBound` — loop count for the per-kind walk (= attack list's max kind-tag + 1; reused as hurtbox iter bound). |
 | `+0x444B4` | `i32` | `HurtboxMaxSlot` — hurtbox list's own max kind-tag + 1. **Not read by hit pipeline.** |
 | `+0x1C74` | `i32[22]` | `PerHurtboxReactionState` — classifier output. See [reaction-state values](#reaction-state-values). |
+
+Naming note: older notes and HorseMod aliases call `+0x44048` the
+"current active attack cell." In this build it is specifically the
+**opponent copy** read by the defender-side classifier. `+0x44058` is the
+chara's own current attack cell. Both are pointers to 0x70-byte move-bank
+cells, not `KHitBase` nodes.
 
 <a id="khit-node-layout"></a>
 
@@ -161,41 +169,85 @@ The `0x3FFFD` floor (`0b11_1111_1111_1111_1101`) forces slots `0, 2..17` on ever
 structural / passive kinds (foot-anchored / body-attached volumes). Slot `1` is excluded:
 it's the move-driven active-attack kind, the only one that genuinely toggles per move.
 
+This is a **geometry / overlap** gate only. It says the attack node is eligible
+for the overlap pass in `LuxBattleChara_UpdateAllKHitWorldCenters`; it does not
+mean the move is inside its authored active frames. Use `chara+0x1980 == 2`
+or the stricter byte `chara+0x16EA != 0` for that timing distinction.
+
 ### Hurtbox list (`chara+0x444B8`)
 
 Written **on demand** by the move-VM bytecode via opcode `0x13AC`
-(`LuxMoveVM_SetHurtboxSlotsActiveMask @ 0x140308D70`). The opcode carries a slot bitmask;
-the writer iterates the chara's hurtbox list and, for each node, ORs or clears the `+0x14`
-byte depending on whether the node's `KindTag` bit is set in the bitmask.
+(`LuxMoveVM_SetHurtboxSlotsActiveMask @ 0x140308D70`). The leaf uses an
+**inverted disable mask**:
 
-There is **no per-tick floor** on the hurtbox side. A hurtbox authored with `+0x14 = 0`
-stays at zero until a move's VM script flips it on, then reverts to zero when a later move
-flips it off — the engine never ORs a default-on bit per frame. Most hurtboxes are
-authored with `+0x14 = 1` and are never touched by `0x13AC`, so they appear "always on".
-Moves with VM-gated extension hurtboxes (e.g. Geralt's two large rectangles) sit at
-zero by default and are enabled only for the frames that move's script asks for.
+```
+for slot in 0..22:
+    if slot < *(int*)(chara + 0x444B4):       // HurtboxMaxSlot
+        for (KHitBase* n in HurtboxList):
+            if (n->KindTag == slot)
+                n->ActiveThisFrame = (~disableMask) & 1;
+    disableMask >>= 1;
+```
 
-The body list (`chara+0x44478`) is not iterated by either writer — its `+0x14` is whatever
-the move's KHit deserializer authored.
+So a mask bit of `1` **disables** matching hurtbox nodes (`+0x14 = 0`), and
+a bit of `0` enables them (`+0x14 = 1`). The dispatcher can pack the mask into
+one or two 15-bit command words, but this leaf only consumes the low 23 slots.
 
-### Damage requires both gates
+There is **no per-tick floor** on the hurtbox side. The Sphere, Area, and
+FixArea deserializers initialize `+0x14 = 1`; later move-script opcodes can
+disable or re-enable selected slots for invulnerability, armor, parry, or
+extension-hurtbox windows. A hurtbox with `+0x14 = 0` this frame is skipped by
+the overlap pass and cannot contribute to `PerHurtboxBitmask` until a later VM
+opcode enables its slot again.
+
+High-slot extension/meta hurtboxes can also look "present but inert" for a
+separate reason: the overlap pass may write `PerHurtboxBitmask[slot]`, but
+`LuxBattle_ResolveAttackVsHurtboxMask22` only reads slots below
+`chara+0x44494` (clamped to the 22-slot reaction array). For overlays, keep
+`overlap_active` (`+0x14 != 0`) separate from `classifier_addressable`
+(`KindTag < min(chara+0x44494, 22)`).
+
+The body list (`chara+0x44478`) is not iterated by the attack hot-mask writer
+or by the hurtbox opcode above. A sister body/pushbox opcode exists for the
+intro/body stream, but body nodes are a pushbox-physics concern, not part of
+damage resolution.
+
+### Damage requires geometry, mask, and phase
 
 `+0x14` is a **geometry-live / overlap-test** gate, not a damage-live gate. The defender's
 overlap loop in `LuxBattleChara_UpdateAllKHitWorldCenters @ 0x14030D6A0` skips any
 hurtbox with `+0x14 == 0`, so no `PerHurtboxBitmask` bits get OR'd and no reaction can fire.
 
-For a hit to actually fire damage, both must pass:
+For a hit to actually fire damage, all of these must pass:
 
 1. `node->ActiveThisFrame != 0` (geometry/overlap pass)
-2. The node's `KindTag` bit also set in `*(u64*)(chara + 0x44048)[0]` (classifier mask)
+2. The overlap pass must OR the attack node's `node+0x08` bit into the
+   defender's `PerHurtboxBitmask[defenderKindTag]`.
+3. The defender-side resolver must be allowed to run (global battle gate,
+   defender not incapacitated, defender not in no-react state).
+4. The attacker must be inside its active frame window: `attacker+0x16EA != 0`
+   (equivalent to `attacker+0x1980 == 2` with the sub-window inhibitors clear).
+5. The active attack cell mask must select the attack category:
+   `node->PerAttackerBit & activeCell->u64SlotMask` is non-zero. From the
+   defender's perspective, `activeCell` is the pointer copied to
+   `defender+0x44048`.
+
+After those KHit gates, `LuxMoveVM_EvaluateMoveTransition` still decides
+whether the overlap becomes hit, block, tech, whiff, guard-break, or another
+transition type based on stance and `cell+0x32 wAttackFlags`.
 
 ### Practical consequence for hitbox overlays
 
-If a mod displays both lists with a single `+0x14`-based filter, the filter behaves
-correctly on the attack side (per-tick rewrite) but will *under-show* the hurt side for
-moves with VM-gated hurtbox extensions: the extension boxes appear only when their move
-enables them and disappear otherwise. That is the engine truth — those hurtboxes are not
-vestigial, they are gated geometry the move turns on per-frame.
+If a mod displays both lists with a single `+0x14`-based filter, the filter is
+only showing **overlap eligibility**:
+
+- On the attack side, `+0x14` includes the `0x3FFFD` floor and can stay true
+  through startup/recovery. Add `catMask & activeCell->u64SlotMask` and
+  `chara+0x16EA` / `chara+0x1980 == 2` for "can actually fire damage now."
+- On the hurtbox side, `+0x14 == 0` means the overlap pass skips that slot this
+  frame, usually because move bytecode disabled it via opcode `0x13AC`.
+- A hurtbox with `+0x14 == 1` can still be classifier-invisible when its
+  `KindTag` is outside `min(chara+0x44494, 22)`.
 
 ## Attack cell (`FLuxMoveBankCell`)
 
@@ -238,29 +290,31 @@ The cell carries the move's damage, hitstun, and hit-property values. Each cell 
     use `DA_MoveListTable.AttributeTag` — see
     [Character Data: Move-list metadata](character-data.md#move-list-text-and-metadata).
 
-### Cell lifetime: ONE cell per move
+### Cell lifetime: current cell per move-slot
 
-`LuxMoveVM_TransitionToMove @ 0x1402FE350` sets `chara+0x44058` from the move's
-bank-slot record (`bank + bank[+0x10] + cellBone * 0x70`) and **does not change
-it again** for the duration of the move. Verified two ways:
+`LuxMoveVM_TransitionToMove @ 0x1402FE350` resolves the initial cell from the
+move-bank slot table (`bank + bank[+0x10] + cellBone * 0x70`) and writes both:
 
-1. The bank-slot record carries a 6-entry short table at `+0x3C` — the
-   "AnimVariant → cellBone" mapping. The lane state's `AnimVariantIndex`
-   (`lane+0x460`) selects which entry to use. `TransitionToMove` resets that
-   index to 0 at move start and never advances it natively.
-2. `LuxMoveVM_SetActiveMoveSlot @ 0x140300C70` is the only function that
-   re-resolves `chara+0x44058` mid-move via the variant table, and it has zero
-   native callers — only a `UFunction` wrapper. A variant change therefore
-   requires an explicit reflection call from script (Lua / Blueprint); the
-   engine's bytecode VM (`LuxMoveVM_ExecuteAndDumpOpcode @ 0x140365900`) never
-   emits one. **Within a single native move, the cell is fixed.**
+- `chara+0x44040 PrimaryAttackCellPtr` — the move-start cell, frozen for the
+  move and later used by damage/push branches as a "window still open?" source.
+- `chara+0x44058 OwnActiveAttackCell` — the **current** attack cell that the
+  hot-mask writer and classifier read.
 
-Practical consequence: every shape that hits while a given move is playing
-applies the SAME `nBaseDamage` value. Damage does not vary mid-move.
+`LuxMoveVM_SetActiveMoveSlot @ 0x140300C70` can re-resolve `+0x44058` through the
+same 6-entry variant table at `slot+0x3C + AnimVariantIndex*2`, then mirrors
+the cell's `+0x5A/+0x5E/+0x60` tags to chara state and calls
+`LuxMoveVM_ClassifyHitboxFrameState`. Treat `+0x44058` as the current
+**move-slot / sub-slot** cell, not as a per-render-frame pulse and not as a
+guaranteed whole-move constant.
+
+Practical consequence: every KHit shape selected by one current cell uses that
+cell's single `nBaseDamage`, `wAttackFlags`, and reaction metadata. Damage can
+change only when the VM selects a different cell or transitions to another
+move; it does not vary per individual KHit shape inside one cell.
 
 ### Cell mask bit-pattern decoding (`u64SlotMask`)
 
-`LuxMoveVM_TickHitResolutionAndBodyCollision` and `LuxMoveVM_TransitionToMove`
+`LuxBattle_TickHitResolutionAndBodyCollision` and `LuxMoveVM_TransitionToMove`
 do double-duty on the cell's `u64SlotMask`:
 
 1. As a **bitmap of which KHit shape slots are live** (used by the per-frame
@@ -364,15 +418,16 @@ This is what the cell model actually supports:
 - **Sub-window timing.** The cell can author up to 4 named sub-windows (one per
   bank) within its master window via `wHitboxGroupBitfield`, but BaseDamage
   is still single-valued.
-- **Damage variation across moves, not within one.** A character action whose
-  damage genuinely differs depending on what hit (tip vs hilt vs body) is
-  authored as **multiple separate moves**, with the move-VM bytecode chaining
-  between them via `LuxMoveVM_EvaluateIfOpcode @ 0x1403732F0` predicates. Known
-  IF subkeys that read chaining-relevant state:
+- **Damage variation across cells / moves, not within one cell.** A character
+  action whose damage genuinely differs depending on what hit (tip vs hilt vs
+  body) must switch to another attack cell or chain to another move. The move-VM
+  can route through `LuxMoveVM_SetActiveMoveSlot @ 0x140300C70` or through
+  `LuxMoveVM_EvaluateIfOpcode @ 0x1403732F0` predicates. Known IF subkeys that
+  read chaining-relevant state:
   - `0x1389` — compares an immediate against `lane+0x460 AnimVariantIndex`.
   - The hit-window state at `chara+0x1980` (master-window phase 1/2/3) and the
     per-bank group ids at `chara+0x20BC..+0x20EE` are also exposed as predicates.
-  Different sub-moves carry their own cell with their own `nBaseDamage`.
+  Different cells / sub-moves carry their own `nBaseDamage`.
 
 > The visual weapon trail (FLuxCapsule) does NOT modulate damage based on
 > hilt-vs-tip contact distance. Damage is purely cell-driven.
@@ -413,7 +468,7 @@ still has only one `nBaseDamage`.
 
 ### Runtime cell mutation
 
-The only field on a live cell known to change after move start is
+The only field on an already-selected live cell known to mutate in place is
 `wRuntimePropagateField` at `+0x6A`. `LuxMoveVM_PropagateFieldToHitboxGroup
 @ 0x140303590` writes it across the 8 cells of a hitbox-group entry (stride
 `0x40`, 8 cell pointers at `+0x50/+0x58/+0x60/+0x68/+0x70/+0x78/+0x80/+0x88`).
@@ -428,7 +483,7 @@ Its semantics are not yet pinned down — an open question for further RE.
 | `LuxMoveVM_EvaluateMoveTransition` | `0x33E140` | `wAttackFlags` `wInputCond` |
 | `LuxBattle_ComputeHitReactionParams` | `0x343B90` | `wAttackFlags`, the full `+0x44 .. +0x54` block |
 | `LuxBattle_ResolveAttackVsHurtboxMask22` | `0x33C100` | `u64SlotMask` (read as `attackerMask`), `wAttackFlags` (block-tier test) |
-| `LuxMoveVM_SetActiveMoveSlot` | `0x300C70` | `u64SlotMask` (gates `KHitBase.+0x14`), `wPassthroughTag*` (mirrors to chara state) |
+| `LuxMoveVM_SetActiveMoveSlot` | `0x300C70` | Re-resolves `chara+0x44058`, reads `u64SlotMask` for attack `+0x14`, mirrors `+0x5A/+0x5E/+0x60`, then re-runs `ClassifyHitboxFrameState` |
 | `LuxMoveVM_ClassifyHitboxFrameState` | `0x300620` | `nMasterWindowStart` `nMasterWindowEnd` `wHitboxGroupBitfield` |
 | `LuxMoveVM_PropagateFieldToHitboxGroup` | `0x303590` | writes `wRuntimePropagateField` |
 
@@ -454,9 +509,16 @@ initiator's grab animation.
 
 ## Throw connection: the size / height-bucket gate
 
-Even when geometry overlaps AND the throw pre-scan stamps the yarareId,
-the throw can still fail to connect. The downstream gate lives in
-`LuxMoveVM_TickPickAndDispatchReaction @ 0x1402DEF50`.
+There are two separate failure points for throws:
+
+1. **KHit / classifier connect**: geometry overlap, throw bits 31/55,
+   active-frame phase, and `LuxMoveVM_EvaluateMoveTransition` must pass. This
+   path has no per-character height test; if `defender+0x212E` never gets
+   stamped, inspect the attack cell's `wAttackFlags` / stance match first.
+2. **Yarare dispatch**: even after the classifier stamps `defender+0x212E`,
+   `LuxMoveVM_TickPickAndDispatchReaction @ 0x1402DEF50` can drop the reaction
+   before `LuxBattle_DispatchYarareReaction` commits animation/damage. The
+   height-bucket gate below lives in this downstream dispatch layer.
 
 ### `LuxMoveVM_GetCharaEffectiveHeight @ 0x140309470`
 
@@ -775,6 +837,10 @@ list heads:
 | HURTBOX | (same three helpers) | `chara+0x444B8` | `chara+0x444B4` |
 | ATTACK | (same three helpers) | `chara+0x44498` | `chara+0x44494` |
 
+All three init paths set `KHitBase.+0x14 = 1` when a node is emitted. Attack
+nodes are then refreshed by `TickHitResolutionAndBodyCollision` / `SetActiveMoveSlot`;
+hurtbox nodes are toggled by opcode `0x13AC`; body nodes use the body/pushbox path.
+
 Per-frame world-center updates run in `LuxBattleChara_UpdateAllKHitWorldCenters @
 0x14030D6A0`, which dispatches to the subclass updater:
 
@@ -785,37 +851,63 @@ Per-frame world-center updates run in `LuxBattleChara_UpdateAllKHitWorldCenters 
 
 ## Reading hit volumes from a mod
 
-Resolve a bone-attached node's world-space geometry through `GetBoneTransformForPose`,
-which returns an `FMatrix` (4×4 row-major affine — **not** an `FTransform` despite the
-name):
+Do **not** rebuild KHit collision geometry through
+`ALuxBattleChara_GetBoneTransformForPose`. That helper returns a render-space
+pose-bank matrix and can disagree with the live battle-pose matrix array that
+`LuxBattleChara_UpdateAllKHitWorldCenters` uses for collision. It also returns
+identity if called with the static battle slot instead of the UObject-shaped
+chara context.
+
+Read the native world buffers that the engine has already written into each
+node, then convert battle-world coordinates to UE render coordinates once:
 
 ```
-// 1) Internal bone id → UE4 bone index
-//    For hurt/body nodes: remap the KindTag.
-//    For sphere subclass:  use node[+0x7C] BoneIndexUe4 (already remapped).
-int32 ueBone = LuxSkeletalBoneIndex_Remap(node->KindTag);
-
-// 2) Bone matrix at this chara's pose (PoseSelector = playerIndex 0 or 1)
-FMatrix M;
-ALuxBattleChara_GetBoneTransformForPose(&M, chara, /*pose=*/playerIndex, ueBone);
-
-// 3) World-space transform of bone-local point P (row-vector convention):
-FVector world;
-world.X = P.X*M.M[0][0] + P.Y*M.M[1][0] + P.Z*M.M[2][0] + M.M[3][0];
-world.Y = P.X*M.M[0][1] + P.Y*M.M[1][1] + P.Z*M.M[2][1] + M.M[3][1];
-world.Z = P.X*M.M[0][2] + P.Y*M.M[1][2] + P.Z*M.M[2][2] + M.M[3][2];
+UE.X = battle.X * 100.0f;
+UE.Y = battle.Z * 100.0f;
+UE.Z = battle.Y * 100.0f;
 ```
 
-`g_LuxCmToUEScale = 10.0f @ 0x143E8A418` applies to the bone-local point **before** the
-matrix multiply — the rotation rows of `M` have extracted-scale ≈ 1.0 and do not include
-the cm→UE conversion.
+Use these subclass buffers:
 
-## Frame-accurate damage gate
+| Subclass | Native fields to read | Render note |
+|----------|----------------------|-------------|
+| `KHitSphere` | `+0x50` current world center, `+0x60` previous world center, `+0x70` live radius | Convert center with the axis remap above; radius is `+0x70 * 100.0f`. |
+| `KHitArea` | Current and previous endpoint buffers at `+0x50..+0x6F` and `+0x70..+0x8F` | `g_LuxKHitArea_DoubleBufferToggle @ 0x14470DEC4` selects which buffer is current this tick. Draw both halves when visualising CCD sweep. |
+| `KHitFixArea` | `+0x60`, `+0x70`, `+0x80` world reference points | Convert the three points; derive/draw the OBB axes from `P1->P2` and `P1->P3`. |
 
-The mask in `**(chara+0x44058)` is set **once per move-slot** (by `LuxMoveVM_SetActiveMoveSlot
-@ 0x140300C70`) and stays constant across that slot's startup / active / recovery frames. For
-a per-sub-frame "is this slot dealing damage RIGHT NOW" answer, mirror the lookup
-`TickHitResolutionAndBodyCollision` performs each tick:
+`ConvertBattlePoseMatrixToUERenderMatrix @ 0x1404555A0` explains the same
+render-space convention: it applies `g_LuxMoveVM_FrameDivisor60 @ 0x143E8A4C8`
+(`100.0f`) to translation. `g_LuxCmToUEScale @ 0x143E8A418` (`10.0f`) belongs
+to the visual Trace/`FLuxCapsule` pipeline; do not use it for KHit drawing.
+
+## Frame-accurate attack visibility
+
+The mask in `**(chara+0x44058)` is set per current move-slot and can stay
+constant across that slot's startup, active, and recovery frames. For an overlay
+predicate that matches the engine's "can this attack fire a reaction now?" use:
+
+```c
+primaryMask = cell ? cell->u64SlotMask : 0;
+
+active = attackNode->ActiveThisFrame != 0              // node+0x14, geometry gate
+      && (attackNode->PerAttackerBit & primaryMask)    // node+0x08 vs cell+0x00
+      && *(uint8_t*)(chara + 0x16EA) != 0;             // active-frame window
+```
+
+For the phase display, `chara+0x1980` is:
+
+```c
+0 = no active cell / classifier disabled
+1 = startup
+2 = active
+3 = recovery
+```
+
+`chara+0x16EA` is the stricter boolean form of `phase == 2`: it is cleared when
+the sub-window inhibitors at `+0x16EB` or `+0x16FE` are set.
+
+`TickHitResolutionAndBodyCollision` also looks up a sub-frame cell while building
+the attack-list `+0x14` hot mask:
 
 ```
 moveSubId = *(uint16_t*)(chara + 0x44dc2);     // current sub-frame id
@@ -830,9 +922,20 @@ if (frameIdx < subCnt) {
     cell     = (uint64_t*)(bankBase
                           + *(uint32_t*)(bankBase + 0x10)
                           + cellBone * 0x70);
-    perFrameMask = *cell;   // <-- per-frame damage gate
+    subFrameMask = *cell;   // OR'd into the attack-list +0x14 hot mask
 }
 ```
+
+That sub-frame mask is a hot-mask layer, not a complete active-damage predicate;
+many SC6 moves keep this layer empty and rely on the current `+0x44058` cell plus
+the `+0x1980/+0x16EA` frame-window classifier.
+
+Lane 2 alt-classify can add a second attacker mask for Soul Charge, GI/parry,
+and stance-tech paths. `LuxBattle_ResolveAttackVsHurtboxMask22` opens that pass
+when `attacker+0x1725 != 0`, `+0x1726 != 0`, `+0x1727 == 0`, and `+0x1728 == 0`,
+then resolves the Lane 2 cell from `attacker+0x44DC2`, `+0x45220`, and
+`+0x455C0`. A strict overlay should OR that Lane 2 mask into `primaryMask` while
+the alt gate is open.
 
 ---
 
@@ -856,6 +959,7 @@ if (frameIdx < subCnt) {
 |--------|-----|-------------|
 | `LuxBattle_TickHitResolutionAndBodyCollision` | `0x33CCA0` | Master hit-resolution tick. Plate comment in Ghidra documents the full hot-mask logic. |
 | `LuxBattle_ResolveAttackVsHurtboxMask22` | `0x33C100` | Classifier; reads `OpponentActiveAttackCellCopy` and walks `PerHurtboxBitmask`. |
+| `LuxMoveVM_ClassifyHitboxFrameState` | `0x300620` | Writes `chara+0x1980` phase and `+0x16EA` active-frame byte from `cell+0x36/+0x38`. |
 | `LuxBattle_SolvePhysBodyCollision` | `0x30CCF0` | Body / pushbox physics. Reads `BodyList`. |
 | `LuxBattleChara_UpdateAllKHitWorldCenters` | `0x30D6A0` | Per-tick world-center refresh; runs the OR-aggregation that fills `PerHurtboxBitmask`. |
 
@@ -874,6 +978,7 @@ if (frameIdx < subCnt) {
 |--------|-----|-------------|
 | `KHitSphere_UpdateWorldCenter` | `0x30E1A0` | Per-tick sphere-node world refresh. |
 | `KHitArea_UpdateWorldCenters` | `0x30E480` | Per-tick area-node world refresh (double-buffer toggle). |
+| `g_LuxKHitArea_DoubleBufferToggle` | `0x14470DEC4` | Selects current vs previous Area endpoint buffer. |
 
 ### Hit / damage / state transitions
 
@@ -882,8 +987,8 @@ if (frameIdx < subCnt) {
 | `LuxBattleChara_ProcessHit` | `0x342780` | Defender-side post-hit handler; mirrors anim-frame into `chara+0x1360`. |
 | `LuxBattle_ApplyDamageFromPendingHit` | (see Ghidra) | Damage application; checks `PrimaryAttackCellPtr +0x44040` for "damage window expired". |
 | `LuxMoveVM_TransitionToMove` | `0x2FE350` | Move-transition writer; sets per-lane state and `+0x44060` non-attack descriptor. |
-| `LuxMoveVM_SetActiveMoveSlot` | `0x300C70` | Sets the per-move-slot mask at `**(chara+0x44058)`. |
-| `LuxMoveVM_SetHurtboxSlotsActiveMask` | `0x308D70` | Hurtbox-list `+0x14` writer. Called by VM opcode `0x13AC`; iterates `chara+0x444B8` and toggles each node's `+0x14` against an authored slot mask. |
+| `LuxMoveVM_SetActiveMoveSlot` | `0x300C70` | Re-resolves `chara+0x44058`, refreshes attack `+0x14`, mirrors cell tags, and re-runs `ClassifyHitboxFrameState`. |
+| `LuxMoveVM_SetHurtboxSlotsActiveMask` | `0x308D70` | Hurtbox-list `+0x14` writer. Called by VM opcode `0x13AC`; inverted disable mask (`1` disables, `0` enables). |
 | `LuxMoveVM_AdvanceLaneFrameStep` | `0x2FFEB0` | Per-tick lane frame-step advance. |
 | `LuxMoveVM_CommitMoveEnd` | `0x2FCFB0` | Move-end finaliser. |
 | `LuxBattleChara_SetStartPosition` | `0x301E60` | Canonical chara-teleport call. Writes `+0xA0` / `+0xC0` / `+0x2090` triples. |
@@ -911,9 +1016,11 @@ cast, `iVar7 >= 5` and the throw is silently dropped.
 
 | Symbol | RVA | Description |
 |--------|-----|-------------|
-| `ALuxBattleChara_GetBoneTransformForPose` | `0x462760` | `(chara, pose, boneIdx) → FMatrix`. Returns 4×4 affine, NOT FTransform. |
+| `ALuxBattleChara_GetBoneTransformForPose` | `0x462760` | Render-pose helper. Returns 4×4 affine, NOT FTransform; do not use it to rebuild KHit collision buffers. |
+| `ConvertBattlePoseMatrixToUERenderMatrix` | `0x4555A0` | Applies the KHit-compatible battle-to-UE render axis/translation convention (`*100` translation). |
 | `LuxSkeletalBoneIndex_Remap` | `0x898140` | 8-bit internal idx → UE skeleton bone idx. Returns `0xFFFFFFFF` on failure. |
-| `g_LuxCmToUEScale` | `0x143E8A418` | Scale constant; value is `10.0f`. |
+| `g_LuxMoveVM_FrameDivisor60` | `0x143E8A4C8` | `100.0f`; render translation scale used by `ConvertBattlePoseMatrixToUERenderMatrix` and HorseMod's KHit buffer conversion. |
+| `g_LuxCmToUEScale` | `0x143E8A418` | `10.0f`; visual Trace/`FLuxCapsule` scale, not the KHit buffer scale. |
 
 ### Subclass vtables
 

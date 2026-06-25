@@ -8,6 +8,11 @@ The bridge auto-discovers tools from `/mcp/schema`; if a tool name isn't in the 
 
 - SoulCalibur VI runs on Unreal Engine 4.17.2.
 
+## Documentation commit workflow
+
+- Every time you create a repository commit, refresh `docs/recent-changes.md` from the current branch history before staging. Use `git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30`, keep entries newest first, and do not include non-branch checkpoint refs from `git log --all`.
+- If the commit being created should appear in `docs/recent-changes.md`, add it on the next commit; its final hash does not exist before the commit is made.
+
 ## Ghidra MCP conventions
 
 The MCP enforces conventions in the tool layer (auto-fix / warn / reject tiers). Don't fight them - they exist because the codebase outgrew prompt-only discipline.
