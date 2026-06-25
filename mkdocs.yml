@@ -116,6 +116,7 @@ nav:
       - Dev / Debug Hooks: sc6/dev-debug-hooks.md
   - Cookbook:
       - cookbook/index.md
+      - Rollback Netcode Feasibility: cookbook/rollback-netcode-investigation.md
       - Replace a Stage: cookbook/replace-stage.md
       - Custom Stage (new code): cookbook/custom-stage.md
   - Reference:

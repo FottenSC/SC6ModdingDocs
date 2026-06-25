@@ -6,6 +6,12 @@ Short, copy-pasteable recipes. Each one is self-contained: what it does, the cod
 !!! tip "Adding a recipe"
     Create a new `.md` file in this folder, add it to `nav:` in `mkdocs.yml`, and follow the template below.
 
+## Investigations
+
+- [Rollback Netcode Feasibility Investigation](rollback-netcode-investigation.md) -
+  Ghidra-backed decision record for SC6's online input path, snapshot state,
+  replay reuse, and a minimal rollback prototype plan.
+
 ## Recipe template
 
 ```markdown

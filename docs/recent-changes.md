@@ -13,6 +13,23 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-06-25 - Rollback Netcode Feasibility Investigation
+
+### Added
+
+- Added a Cookbook investigation page for rollback netcode feasibility, grounded
+  in Ghidra MCP evidence from SC6's online input, replay, simulation, RNG, and
+  snapshot paths.
+- Added a practical minimal prototype plan for validating deterministic
+  restore/resimulation locally under `E:/myMods`.
+
+### Changed
+
+- Linked the new rollback investigation from the Cookbook navigation and index.
+- Documented why `InputDelay+0x390` is not the live online delay control, where
+  delay/catch-up is actually enforced, and why native hooks are required beyond
+  pure UE4SS Lua.
+
 ## 2026-06-25 - Home Changelog and Hitbox Documentation Pass
 
 ### Added
