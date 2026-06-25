@@ -32,6 +32,8 @@ git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
   voice replacement, costume-part SE relevance, stage foley, muting/ducking, and
   fast-forward/rollback side-effect gating.
 
+Related commit: [`7868995`](https://github.com/FottenSC/SC6ModdingDocs/commit/7868995)
+
 ## 2026-06-26 - Stage Collision Replacement Notes
 
 ### Added
