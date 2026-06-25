@@ -13,6 +13,17 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-06-26 - Stage Collision Replacement Notes
+
+### Added
+
+- Expanded the stage replacement cookbook with practical collision-layer guidance
+  for visual `BodySetup` collision, breakable wall/barrier actors, the fixed
+  scbattle barrier block, and paired `J_StgHitChkData` raw hit-data blobs.
+- Added a community exploration workflow for testing wall collision changes,
+  donor hit-data swaps, and possible extra breakable wall experiments without
+  implying that actor placement alone creates deterministic wall cells.
+
 ## 2026-06-25 - Rollback Netcode Feasibility Investigation
 
 ### Added

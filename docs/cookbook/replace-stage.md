@@ -16,6 +16,7 @@ flow. You are only overriding assets that the stock stage already resolves.
 |---|---|---|
 | Visible level | Override `/Game/Stage/<code>/Maps/<code>.umap` | Enough for a visual reskin. |
 | UE4 mesh collision | Cook replacement static meshes with valid `BodySetup.AggGeom` | Used by camera, particles, overlaps, and visual collision. |
+| Breakable wall/barrier actors | Author matching `ALuxStageBreakableWallActor` / `ALuxStageBreakableBarrierActor` placements in the replacement `.umap` | Needed for visible set pieces and event registration, but not enough by itself to create new deterministic wall cells or unlimited barrier segments. |
 | Spawn/camera row | Edit the `StageInfoTable` row for the stock code | Does not rewrite deterministic ring/wall collision by itself. |
 | Terrain/wall/ring tags | Override the stock `ULuxStageAssetPaths` object and its `ESA_HitData` / `ESA_HitData2` raw assets | This is the no-DLL path for `J_StgHitChkData`, but the raw blob format must be valid. |
 | Cosmetic stage flags | Override `ULuxStageAssetPaths.Setting` | `bWet` is the best verified flag; anomaly VFX and breath also copy through stage/VFX refresh. |
@@ -96,11 +97,18 @@ This fixes ordinary UE4 collision: camera avoidance, particles, actor overlaps,
 and visual proximity. It does **not** automatically rewrite the deterministic
 ring-out or wall grid.
 
-The deterministic ring-out boundary is also stored in
-`g_aScbattleStageInfoBarrierEntries @ 0x144844070`: exactly 12
-`scbattle_BarrierEntry` records, `0xC0` bytes total. Barrier actors still run
-through the stage setup path, but verify the runtime scbattle entries after load
-instead of assuming actor count maps one-to-one to that fixed buffer.
+For replacement work, keep the collision layers separate:
+
+| Layer | Content path | Good for | Limit |
+|---|---|---|---|
+| UE4 `BodySetup` / actors | Replacement `.umap` and cooked static meshes | Visual floor contact, camera avoidance, particles, overlap triggers, wall props. | Fighters can still obey stock ring/wall rules. |
+| scbattle barrier block | Runtime `g_aScbattleStageInfoBarrierEntries @ 0x144844070` | Deterministic ring-boundary segments. | Exactly 12 `scbattle_BarrierEntry` records, `0xC0` bytes total. `g_dwScbattleStageInfoBarrierValid` is a valid flag, not a count. |
+| `J_StgHitChkData` terrain/wall grid | `ULuxStageAssetPaths.RawAssets` entries `ESA_HitData` and `ESA_HitData2` | Terrain height, wall contacts, ring-edge tags, and Move VM geometry predicates. | Raw blob format is only partially documented; replacement blobs must attach cleanly. |
+| Breakable wall/barrier actors | `ALuxStageBreakableWallActor` / `ALuxStageBreakableBarrierActor` in the map | Visible breakable set pieces and event-class `0x19` registration. | Actor placement alone has not been proven to author new rollback-safe wall cells. |
+
+Barrier actors still run through the stage setup path, but verify the runtime
+scbattle entries after load instead of assuming actor count maps one-to-one to
+the fixed 12-entry buffer.
 
 ## Optional: replace raw hit data
 
@@ -144,6 +152,79 @@ class ULuxStageAssetPaths {        // native size 0x58
 The slot builder strips each loaded candidate path down to its `Battle/` suffix
 before matching it against `RawAssets.Path`. If you override `ULuxStageAssetPaths`,
 keep paths consistent with the raw assets you actually ship in the pak.
+
+Treat `ESA_HitData` and `ESA_HitData2` as an A/B pair. For experiments, replace
+both entries from the same source stage or from the same custom build; do not
+mix one stock blob with one edited blob unless the mismatch is the thing being
+tested. The serialized `J_StgHitChkData` header, cell headers, pool chunks, and
+runtime frame-bounds grid are partially documented in
+[Structures](../sc6/structures.md#j_stghitchkdata-serialized-terrainwall-blob),
+but the docs do not yet define a complete authoring schema for wall-break
+regions or every terrain tag.
+
+## Explore wall and breakable-wall replacement
+
+Use this when the goal is more than stage skinning: moving wall collision,
+making the existing wall behavior follow new geometry, or testing whether a
+stage slot can support extra breakable walls.
+
+What is known:
+
+- Visual replacement is solved by `.umap` and `BodySetup` overrides.
+- `ALuxStageBreakableWallActor` and `ALuxStageBreakableBarrierActor` are real
+  stage actors collected by the actor manager and registered through stage event
+  class `0x19`.
+- Deterministic ring barriers are capped by the fixed 12-entry scbattle buffer.
+  Adding more barrier actors is not the same thing as adding more deterministic
+  ring segments.
+- Terrain height, wall contacts, and ring-edge tags flow through the
+  `ULuxStageAssetPaths.RawAssets` -> `ESA_HitData` / `ESA_HitData2` ->
+  `J_StgHitChkData` path.
+
+What is still unproven:
+
+- Whether a newly added breakable wall actor becomes gameplay-active without a
+  matching entry in the raw hit data.
+- Which raw `J_StgHitChkData` fields bind wall-break regions to wall actors,
+  wall names, indices, stage state, or Soul Charge break behavior.
+- Whether any stock stage slot has spare deterministic wall capacity beyond the
+  data already present in its shipped raw hit blobs.
+
+Practical community workflow:
+
+1. Pick a donor that already has the behavior you want to study. Use `STG009`
+   for breakable-wall behavior and `STG004` for barrier/ring-boundary behavior
+   before trying a stage with no similar stock feature.
+2. Build a visual-only replacement first. Keep the stock `ULuxStageAssetPaths`
+   and raw hit data unchanged, then verify that camera/particle collision follows
+   the new meshes while fighter ring/wall behavior still matches stock.
+3. Add or move one `ALuxStageBreakableWallActor` in the `.umap` while leaving
+   raw hit data stock. If the prop appears or breaks visually but fighter wall
+   contact stays stock, record that as actor-layer success and deterministic
+   collision failure.
+4. Prove raw asset routing before editing bytes. Override the stock
+   `ULuxStageAssetPaths` object with paths that still point to the original
+   stock raw assets, then verify the stage behaves identically.
+5. Try a stock-blob swap next. Point both `ESA_HitData` and `ESA_HitData2` for
+   the target stage at another stock stage's paired hit-data blobs. If wall or
+   ring behavior follows the donor while visuals do not, the no-DLL content path
+   is working.
+6. Only then try raw hit-data edits. Change one variable at a time, keep before
+   and after hashes, and test both A/B blobs through round start, wall contact,
+   wall break, ring-out, rematch, and stage reload.
+7. Treat "more breakable walls" as unverified until a test shows all three
+   layers agree: visible actor exists, deterministic wall contact occurs at the
+   new wall, and the break state stays stable across round transitions.
+
+Read failures by layer:
+
+| Result | Interpretation |
+|---|---|
+| Camera stops at the new mesh, fighters do not | UE4 `BodySetup` changed; deterministic collision did not. |
+| Fighters hit a stock invisible wall after the visual wall moved | scbattle / `J_StgHitChkData` still describes the stock layout. |
+| A wall breaks visually but still blocks or never blocks fighters | Breakable actor/event path and deterministic wall grid are out of sync. |
+| Donor raw hit data changes gameplay under target visuals | `ULuxStageAssetPaths` raw-hit routing is confirmed; the remaining work is valid `J_StgHitChkData` authoring. |
+| More than 12 ring segments are ignored or collapse oddly | The fixed scbattle barrier buffer was exceeded; reduce to 12 or use a runtime patch. |
 
 ## Optional: edit StageInfoTable
 
@@ -200,7 +281,9 @@ and the `_P` suffix gives this pak priority over the stock asset.
    `BodySetup` and Blender collision prefixes.
 6. If ring-out or wall behavior still matches stock, the deterministic scbattle
    barrier block or `J_StgHitChkData` path is still stock.
-7. If wet/breath/anomaly effects do not change, verify the stock
+7. For breakable-wall tests, check contact before break, the break trigger, post-break
+   traversal, rematch, and a full stage reload.
+8. If wet/breath/anomaly effects do not change, verify the stock
    `ULuxStageAssetPaths` object for id `"004"` was overridden and not just the
    `.umap`.
 
@@ -211,7 +294,8 @@ and the `_P` suffix gives this pak priority over the stock asset.
 | Stock map still loads | Pak path mismatch or pak priority too low | Confirm destination path is `/Content/Stage/STG004/Maps/STG004.*` and filename ends in `_P.pak`. |
 | Map loads, but floor collision fails | Static mesh `BodySetup` did not cook | Reimport with `UCX_`, `UBX_`, `USP_`, or `UCP_` collision meshes and recook. |
 | Visual collision works, ring-out stays stock | Only UE4 collision changed | Override `ULuxStageAssetPaths` raw hit data or use a runtime hook for scbattle / `J_StgHitChkData`. |
-| Breakable walls are visible but not gameplay-active | Wall actors are present, but deterministic wall data still stock | Check the wall actor registration path and raw hit data. |
+| Breakable walls are visible but not gameplay-active | Wall actors are present, but deterministic wall data still stock or missing matching wall regions | Check the wall actor registration path, then prove the paired `ESA_HitData` / `ESA_HitData2` blobs route correctly. |
+| Extra barrier or wall segments are ignored | The deterministic storage does not grow from actor count alone | Collapse ring barriers to 12 scbattle entries, or treat extra wall capacity as raw-hit-data/runtime-hook research. |
 | Stage select entry name is still stock | Replacement keeps the stock stage code and loc id | This is expected for a no-DLL replacement. Use a custom-stage mod for new UI entries. |
 | DLC variant also changed | Target code shares a base/DLC route | Use a simpler target such as `STG004`, `STG003`, or `STG013`. |
 
@@ -225,5 +309,7 @@ replacement route intentionally reuses the stock code and stock UI flow.
 
 - [Stage System](../sc6/stage-system.md) - full reference for stage loading,
   collision storage, `ULuxStageAssetPaths`, and scbattle globals.
+- [Structures](../sc6/structures.md#j_stghitchkdata-serialized-terrainwall-blob)
+  - partial `J_StgHitChkData` and frame-bounds-grid structure notes.
 - `LuxBattle_CreateStageInfoHandler @ 0x1403c3010` - Ghidra plate documents the
   Blender-side collision pipeline and the fixed scbattle barrier buffer.
