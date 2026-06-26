@@ -380,7 +380,7 @@ routes:
    `LuxDataTable_LookupByKey` calls inside it) and rewrite
    `StageSetting.StageCode` to your custom code before the preload kick. This
    needs no UI changes: pick "Free Stage" in the menu and get your custom map.
-2. **Inject into the Blueprint picker** — a UE4SS BP hook on the picker widget
+2. **Inject into the Blueprint picker** — a native hook at the picker widget
    or stage-code setter path that adds your code to the picker list. The
    picker's validation calls
    `execIsValidStageCodeStr`, which *does* check the master enum — so this

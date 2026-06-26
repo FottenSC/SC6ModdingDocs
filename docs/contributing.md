@@ -36,8 +36,8 @@ When an AI agent is adding or editing pages, it should:
       Body text.
   ```
   Supported: `note`, `tip`, `info`, `warning`, `danger`, `example`, `question`, `success`, `failure`.
-- **Label code fences** with a language (`lua`, `cpp`, `ini`, `json`, `text`) so syntax highlighting works.
-- **Link relatively** between pages (`../ue4ss/hooks.md`), never absolute URLs for in-site links.
+- **Label code fences** with a language (`cpp`, `ini`, `json`, `text`) so syntax highlighting works.
+- **Link relatively** between pages (`../sc6/stage-system.md`), never absolute URLs for in-site links.
 - **Anchor links** must match the rendered slug — em-dashes (`—`) collapse, parentheses drop, backticks drop, spaces become `-`. When in doubt, check `site/<page>/index.html` after a build.
 - **Keep page titles as H1** at the top of the file (`# Title`).
 - **Update `mkdocs.yml` `nav:`** whenever you add a new page — otherwise it's orphaned.

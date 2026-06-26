@@ -274,7 +274,7 @@ and the `_P` suffix gives this pak priority over the stock asset.
 1. Launch the game.
 2. Pick `STG004` in stage select. The replacement map should load instead of
    Free Stage.
-3. If using UE4SS logging, look for `UUILoadManager` preload lines for `STG004`.
+3. In game or native hook logs, look for `UUILoadManager` preload lines for `STG004`.
 4. Walk the whole arena and test camera collision, floor collision, ring edge,
    wall interaction, and round transitions.
 5. If characters fall through visual geometry, check the cooked static mesh

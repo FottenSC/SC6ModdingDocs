@@ -5,17 +5,17 @@ title: SoulCalibur VI Modding Docs
 # SoulCalibur VI Modding Docs
 
 Reverse-engineering notes for **SoulCalibur VI**, written primarily as a
-knowledge base for AI coding agents working on mods via
-[UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) (Unreal Engine 4/5 Scripting System).
+knowledge base for AI coding agents working on native DLL mods and binary
+analysis tasks.
 
 Pages are auto-generated from Ghidra analysis of the shipping Steam binary
 (class layouts, function RVAs, struct offsets, UFunction trampolines) and
-cross-checked against live UE4SS runtime introspection. The content is dense,
+cross-checked against live runtime probes. The content is dense,
 offset-accurate, and carries explicit source citations — optimised for machine
 readers but still readable by humans.
 
 !!! warning "Unofficial"
-    This project is **not** affiliated with BANDAI NAMCO or the UE4SS maintainers.
+    This project is **not** affiliated with BANDAI NAMCO.
     Mod at your own risk — never mod files online and keep clean backups of your game.
 
 ## For AI agents — start here
@@ -54,10 +54,6 @@ make an edit, this is the navigation contract:
 
 <div class="grid cards" markdown>
 
--   :material-code-braces: **[UE4SS Framework](ue4ss/index.md)**
-
-    Lua API, hooks, UObject reflection, and dumper usage.
-
 -   :material-sword-cross: **[SoulCalibur VI Internals](sc6/index.md)**
 
     Game-specific structures, character data, and notable functions.
@@ -82,5 +78,4 @@ make an edit, this is the navigation contract:
 
 ## Quick links
 
-- UE4SS upstream: <https://github.com/UE4SS-RE/RE-UE4SS>
 - SoulCalibur VI on Steam: <https://store.steampowered.com/app/544750/>

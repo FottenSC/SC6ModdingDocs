@@ -266,7 +266,7 @@ apply this transform when reading any embedded name.
 ## Editing safety
 
 `.khd` / `.mot` / `.dtp` / `.dat` files are pak-loaded, so disk edits need
-a pak-injection workflow. Runtime patching via UE4SS or native hooks is
+a pak-injection workflow. Runtime patching via native hooks is
 simpler: the loaded `FLuxMoveBank` sits at `chara+0x455C0`, and the
 attack-cell array can be edited in place between matches without
 invalidating the engine's cached pointers (each cell pointer is set

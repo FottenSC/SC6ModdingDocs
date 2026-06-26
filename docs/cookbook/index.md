@@ -19,12 +19,12 @@ Short, copy-pasteable recipes. Each one is self-contained: what it does, the cod
 
 **Goal**: one-sentence description of what the user ends up with.
 
-**Requires**: UE4SS version, any other mods, dumper output, etc.
+**Requires**: native hook framework or injector, any other mods, Ghidra/dumper output, etc.
 
 ## Code
 
-```lua
--- your snippet
+```cpp
+// your snippet
 ```
 
 ## How it works

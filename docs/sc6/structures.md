@@ -120,7 +120,7 @@ Alphabetical jump table. Click through for full layout.
 
 - **Path**: `/Script/<Module>.<Class>`
 - **Size**: 0x???
-- **Discovered via**: <UE4SS dumper / hook / xref / …>
+- **Discovered via**: <Ghidra xref / runtime probe / native hook / ...>
 
 | Offset | Type | Name | Notes |
 |-------:|------|------|-------|
@@ -170,13 +170,13 @@ UFunction map and the hierarchical config-tree path convention.
 - **Path**: `/Script/LuxorGame.LuxBattleChara`
 - **Size**: 0x568 (1384)
 - **Class CRC**: `0x5BDCD706`
-- **Registered via**: short-form `UE4_RegisterClass` (no property builder — see
-  [Reflection Gotchas](../ue4ss/reflection-gotchas.md))
+- **Registered via**: short-form `UE4_RegisterClass` (no property builder for
+  parameter metadata)
 - **Discovered via**: `ALuxBattleChara__StaticClass @ 0x14015EA40`
 
 !!! warning "Layout verified at runtime on the Steam build (2026-04-19)"
     The field table below was corrected against the **actual running
-    binary** using UE4SS class-name introspection on a live chara.
+    binary** using runtime class-name introspection on a live chara.
     Earlier versions of this page described `chara+0x388` as the
     `ULuxBattleMoveProvider` pointer — that is **wrong on the shipping
     Steam build**. `+0x388` and `+0x390` are actually the `CharaMesh0`
@@ -774,7 +774,7 @@ ignores the result, and falls through unconditionally to
 `ALuxBattleChara::GetTracePosition_Impl` — so any "hitbox" value a mod reads from the
 hook is garbage by construction.
 
-This is documented here so the next person who sees the class in a `ProcessEvent` spy log
+This is documented here so the next person who sees the class in a `ProcessEvent` diagnostic log
 can skip the RE chase. The real hit-detection geometry lives in the
 [Hitbox System (KHit linked lists)](hitbox-system.md), not on this UFunction. And the
 weapon-tip query path the event was meant to feed —
@@ -1370,7 +1370,7 @@ returned pointer**, not to the absolute slot start.
 | +0x34 | 2 | i16 | `nAnimLengthFlag_34` | `-2` = use computed length from playback speed; otherwise the length itself in 60ths |
 | +0x36 | 2 | i16 | `nHitWindowStart_36` | hit-window start frame (cell.MasterWindowStart for primary cell) |
 | +0x38 | 4 | u32 | `dwBytecodeOffset_38` | **bank-relative bytecode offset** for the slot's per-tick / move-start script. Resolved as `bank + dwBytecodeOffset_38` when `!= -1`. Both `TransitionToMove` and `ExecuteOpStream` read this. |
-| +0x3C..+0x46 | 12 | i16[6] | `nCellBoneIndexPerVariant[6]` | Variant index → AttackCell index. `-1` = no attack on this variant. The lane's `dwVariantIndex_460` (default 0) selects which entry to use. See [Cell lifetime](hitbox-system.md#cell-lifetime-one-cell-per-move). |
+| +0x3C..+0x46 | 12 | i16[6] | `nCellBoneIndexPerVariant[6]` | Variant index → AttackCell index. `-1` = no attack on this variant. The lane's `dwVariantIndex_460` (default 0) selects which entry to use. See [Cell lifetime](hitbox-system.md#cell-lifetime-current-cell-per-move-slot). |
 
 #### `FLuxMoveDefEntry` (16 bytes)
 

@@ -30,7 +30,7 @@ All addresses on this page are absolute (image base `0x140000000`).
 Full subsystem map of all 43 slots in `+0x00..+0x800`: see
 [BattleManager subsystem layout](#battlemanager-subsystem-layout).
 
-### Key UFunctions (call via reflection)
+### Key UFunctions (native-call candidates)
 
 | UFunction | RVA | Behaviour |
 |-----------|-----|-----------|
@@ -46,8 +46,8 @@ Full subsystem map of all 43 slots in `+0x00..+0x800`: see
 
 ### Pause / inspection BP API — `ULuxBattleFunctionLibrary`
 
-CDO at `/Script/LuxorGame.Default__LuxBattleFunctionLibrary`. Reflection-callable. The key
-function is **`SetBattlePause(bPause, inType, WorldContext)`**: it runs the same path the
+CDO at `/Script/LuxorGame.Default__LuxBattleFunctionLibrary`. The key function
+is **`SetBattlePause(bPause, inType, WorldContext)`**: it runs the same path the
 in-game pause menu uses, cleanly halting the replay timer, replay cursor, round timer, and
 chara hitstop in one call. Sibling UFunctions:
 
@@ -92,7 +92,7 @@ chara hitstop in one call. Sibling UFunctions:
 ## BattleManager subsystem layout
 
 Runtime-verified map of UObject-pointer slots on `ALuxBattleManager`,
-captured 2026-04-19 via UE4SS class-name introspection of every 8-byte
+captured 2026-04-19 via runtime class-name introspection of every 8-byte
 slot in `BM+0x00..+0x800`. The list covers all 43 subsystem pointers
 that were live in a training match. Addresses in the middle column are
 from one particular run; read them as "this slot holds a pointer to an
@@ -231,7 +231,7 @@ explains why stopping one actor tick may leave downstream managers alive.
 | +0x1458 | `void*` (TSharedPtr.Ctrl)       | Refcount control block for the `+0x1450` pair (classic TSharedPtr layout: weak-count at +0x8, strong-count at +0xC). |
 | +0x1463 | `uint8`                         | Global match move-state byte (`5 = playing`, `6 = stopping`) — written by `ALuxBattleManager_SetMoveState @ 0x1403F8370` |
 
-> source: UE4SS class-name introspection of every 8-byte-aligned slot
+> source: runtime class-name introspection of every 8-byte-aligned slot
 > in `BM+0x00..+0x800` on a live training-match instance, captured by
 > HorseMod's BattleManager slot-map diagnostic (2026-04-19).
 > `Z_Construct_UClass_ALuxBattleManager @ 0x140949450` registered size.

@@ -120,19 +120,19 @@ FMemory::Realloc(ptr, size, align)
   -> (*GMalloc)->vtable[0x18](GMalloc, ptr, size, align)   // FMalloc::Realloc
 ```
 
-UE4SS exposes the same `GMalloc` symbol (`RC::Unreal::GMalloc`, an `FMalloc**`). Using
-that to grow / reallocate the array is safe — when the component's own `Flush` later tries
-to free the buffer, it calls the same `FMalloc::Realloc` on the same instance and sees a
-normal allocation header.
+Resolve the game's `GMalloc` data symbol (`DAT_1441971C8`) from your native DLL
+and use that `FMalloc**` to grow / reallocate the array. When the component's own
+`Flush` later tries to free the buffer, it calls the same `FMalloc::Realloc` on
+the same instance and sees a normal allocation header.
 
 ```cpp
-#include <Unreal/FMemory.hpp>
-using RC::Unreal::GMalloc;
+FMalloc** g_pGMalloc = ResolveGMalloc(); // DAT_1441971C8
+
 void reserveAtLeast(TArrHdr* arr, int32_t needed_count) {
     if (arr->Max >= needed_count) return;
     int32_t new_max = (arr->Max == 0) ? 64
                                       : (needed_count + (needed_count / 4) + 16);
-    arr->Data = (*GMalloc)->Realloc(
+    arr->Data = (*g_pGMalloc)->Realloc(
         arr->Data,
         static_cast<size_t>(new_max) * sizeof(FBatchedLine),
         alignof(FBatchedLine));
@@ -208,11 +208,11 @@ struct FBatchedLine {
 One-time priming (call with any UObject — a cockpit widget, a chara, anything with a world):
 
 ```cpp
-RC::Unreal::UObject* foreground_batcher = nullptr;
-void prime(RC::Unreal::UObject* pivot) {
+UObject* foreground_batcher = nullptr;
+void prime(UObject* pivot) {
     auto* world = pivot->GetWorld();
     if (!world) return;
-    auto** slot = reinterpret_cast<RC::Unreal::UObject**>(
+    auto** slot = reinterpret_cast<UObject**>(
         reinterpret_cast<uint8_t*>(world) + 0x50);
     foreground_batcher = *slot;
 }
@@ -253,5 +253,5 @@ every line you want visible on the current frame. The component's tick does the 
 | `UActorComponent::MarkRenderStateDirty` | `0x1D4E910` | Sets `bRenderStateDirty` (bit 0x20 at `+0x188`) and queues an end-of-frame proxy rebuild. Call directly after appending to `BatchedLines`. |
 | `UActorComponent::MarkForNeededEndOfFrameRecreate` | `0x1D4E7B0` | Tail-called from `MarkRenderStateDirty`; do not call directly. |
 | `UWorld::Exec("FLUSHPERSISTENTDEBUGLINES")` | `0x21B9ED0` | Routes to `ULineBatchComponent::Flush` on `UWorld+0x48`; proves the pipeline is live in shipping. |
-| `GMalloc` (data) | `DAT_0x1971C8` | The `FMalloc**` used by both the game and UE4SS. |
+| `GMalloc` (data) | `DAT_0x1971C8` | The game's `FMalloc**`. |
 | `FMemory::Realloc` | `0xD51430` | Thin wrapper over `GMalloc::vtable[0x18]`. |

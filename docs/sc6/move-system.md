@@ -933,7 +933,7 @@ absolute slot start.
 The variant table at `+0x3C` is the per-variant cell-bone-id picker:
 calling `LuxMoveVM_SetActiveMoveSlot(chara, variantIdx)` from
 script-side reflection re-resolves `chara+0x44058` to a different
-`AttackCell`. See [Cell lifetime](hitbox-system.md#cell-lifetime-one-cell-per-move)
+`AttackCell`. See [Cell lifetime](hitbox-system.md#cell-lifetime-current-cell-per-move-slot)
 for why this is rarely exercised at runtime.
 
 ### Sub-table inventory

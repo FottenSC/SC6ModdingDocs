@@ -102,7 +102,7 @@ thunks are not bound:
 | `Z_Construct_UFunction_UKismetSystemLibrary_DrawDebugLine` | `0x142558090` | UFunction reflected, no `execDrawDebugLine` bound |
 | `Z_Construct_UFunction_DrawDebugBox` | `0x142552640` | Same — reflection only |
 
-Calling either through UE4SS reflection lands on an unbound exec slot — a silent no-op at
+Calling either through reflected dispatch lands on an unbound exec slot — a silent no-op at
 best, a crash at worst. This is the universal result of building UE4 with
 `ENABLE_DRAW_DEBUG = 0`, which `UE_BUILD_SHIPPING` implies by default.
 

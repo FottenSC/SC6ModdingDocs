@@ -18,7 +18,7 @@ All addresses absolute (image base `0x140000000`).
 | Does AI tick during replay viewing? | Yes — but the replay decoder overwrites `chara+0x2150` before consumption, so the AI's choice is silently discarded |
 | Does the WorldTickGate freeze gate AI? | **Yes, automatically** — Site 9 (`LuxBattle_PerFrameTick`) is the parent of the entire AI tick chain |
 | Are tutorials a separate AI? | No — same `HgCpuDirect*` SubVM framework, just with scripted Tick bodies instead of personality-picked ones |
-| Can a mod drive the training dummy? | Yes — 11 UFunctions on the training-mode actor, all UE4SS-reflectable |
+| Can a mod drive the training dummy? | Yes — 11 UFunctions on the training-mode actor, all with native bodies |
 
 ## Per-frame call chain
 
@@ -139,7 +139,7 @@ override recipe below.
 | SubVM output | A scripted drill should emit the same 32-bit frame-input command at `pSubVM+0x08` that stock AI emits. The downstream MoveVM still decides whether that input starts a move. |
 | MoveVM boundary | Do not treat a CPU drill as a direct move-lane editor. Move selection, transition timing, hit reactions, and active lane state belong to the [Move System](move-system.md). |
 | Replay boundary | A scripted SubVM can tick during replay viewing, but replay input can still replace the final raw input before consumption. See [Replay System](replay-system.md). |
-| UE4SS boundary | Installing or replacing a SubVM is native-code work, not a Lua reflection call. UE4SS reflection is useful for training UFunctions; custom SubVM construction needs a C++ plugin/detour path. |
+| Native-code boundary | Installing or replacing a SubVM is native-code work. Training UFunctions are useful native-call bridge points; custom SubVM construction needs a DLL detour path. |
 
 ### Conservative implementation checklist
 
@@ -170,13 +170,13 @@ override recipe below.
 | "Block after this recorded string" | Training recording/playback UFunctions |
 | "Press this command every frame while a condition is true" | Native frame-input override |
 | "Run a tutorial-style drill with counters and branchy native state" | Scripted `HgCpuDirect*` SubVM |
-| "Force a move for presentation or move-list tooling" | BattleManager / MoveCommandPlayer UFunctions; see [battle-manager.md](battle-manager.md#key-ufunctions-call-via-reflection) and [move-system.md](move-system.md#actor-class-aluxbattlemovecommandplayer) |
+| "Force a move for presentation or move-list tooling" | BattleManager / MoveCommandPlayer UFunctions; see [battle-manager.md](battle-manager.md#key-ufunctions-native-call-candidates) and [move-system.md](move-system.md#actor-class-aluxbattlemovecommandplayer) |
 
 ## Training-mode UFunctions
 
-The training-mode actor exposes 11 UFunctions — all with live native bodies, all
-UE4SS-reflectable. They are the easiest hook for any "drive the dummy
-programmatically" mod (record-and-replay, frame-trap setup, combo-trial scripts):
+The training-mode actor exposes 11 UFunctions, all with live native bodies. They
+are the easiest native-call surface for any "drive the dummy programmatically"
+mod (record-and-replay, frame-trap setup, combo-trial scripts):
 
 | UFunction | Address | What |
 |---|---|---|
@@ -211,10 +211,9 @@ enum class ELuxTrainingScrubMode : uint32 {
 Use the training-mode UFunction surface when the goal is a programmable dummy,
 not a new CPU personality. This keeps the mod above the native AI SubVM layer and
 uses the same training queues the game already knows how to record, play back,
-and clear. For UE4SS call mechanics, use the normal reflected-call safety rules
-in [UE4SS Lua API](../ue4ss/lua-api.md#reflected-ufunction-calls) and keep the
-[reflection caveats](../ue4ss/reflection-gotchas.md) nearby when a parameterized
-call fails.
+and clear. Call these from a native bridge that re-resolves the live
+training-mode actor after transitions and validates parameter metadata before
+relying on a portable call shape.
 
 ### Pick the smallest control surface
 
@@ -244,11 +243,11 @@ call fails.
    frame over the CPU output. The training playback path can discard live AI
    choices in `LuxBattle_TickCharaInput`, exactly like replay input does.
 
-!!! note "No portable Lua snippet here"
-    The UFunctions are reflectable, but this page intentionally does not provide
-    hard-coded UE4SS Lua calls or raw command words. Resolve the live UObject and
-    parameter metadata in your runtime environment, then use the call pattern
-    documented in the UE4SS pages above.
+!!! note "No portable call snippet here"
+    The UFunctions are callable, but this page intentionally does not provide
+    hard-coded object lookups or raw command words. Resolve the live UObject and
+    parameter metadata in your runtime environment, then call through your native
+    bridge.
 
 ## Replay behavior summary
 
@@ -264,10 +263,9 @@ call fails.
 Use this when the mod needs a hard per-frame input override, such as a bot that
 reacts to the opponent in real time, a deterministic punish trainer, or a test
 harness that should ignore the stock CPU choice. This is a **native hook job**:
-`LuxBattle_TickCharaInput @ 0x140312510` is not a UFunction, so UE4SS
-`RegisterHook` is the wrong tool. Use a native UE4SS plugin, global detour, or
-equivalent code hook; the UE4SS hook boundary is summarized in
-[hooks.md](../ue4ss/hooks.md#when-lua-hooks-are-not-enough).
+`LuxBattle_TickCharaInput @ 0x140312510` is not a UFunction, so reflected
+UFunction hooks are the wrong tool. Use a native DLL detour or equivalent code
+hook at the documented function boundary.
 
 ### Override checklist
 
@@ -307,7 +305,7 @@ equivalent code hook; the UE4SS hook boundary is summarized in
 
 | Goal | Hook |
 |---|---|
-| Drive training dummy programmatically | Call the 11 UFunctions above via UE4SS Lua reflection |
+| Drive training dummy programmatically | Call the 11 UFunctions above from a native bridge |
 | Override an AI's input each frame | Hook `LuxBattle_TickCharaInput @ 0x140312510` and write your own value to `chara+0x2150` before it returns (replay decoder uses the same primitive) |
 | Replace a CPU behavior wholesale | Patch the SubVM at the per-slot sched state — either patch `LuxMoveVM_CreateCpuDirectState` to construct your derived class, or swap the vftable pointer at `pSubVM+0x00` post-construct |
 | Add a scripted CPU drill | Mirror the `HgCpuDirectTutorial*_Init` pattern: construct a 0x70-byte CCpuDirectCommand-derived object with your Tick body and install at the sched-state SubVM slot |
@@ -320,7 +318,7 @@ control is actually the final input source for the frame.
 
 | Check | What to verify |
 |---|---|
-| Live object resolution | Re-find the BattleManager, charas, and training actor after rematch/menu transitions. Follow the UObject validity rules in [UE4SS Lua API](../ue4ss/lua-api.md#minimal-safety-helpers). |
+| Live object resolution | Re-find the BattleManager, charas, and training actor after rematch/menu transitions. Do not reuse stale UObject pointers across rematch or menu flow. |
 | Mode state | `GetMode` agrees with the intended `OFF` / `RECORDING` / `PLAYBACK` state before and after the test action. |
 | Input source priority | In one instrumented run, compare the SubVM output, scheduler copy, and final `chara+0x2150` value for the same side/frame. This catches replay and training playback overwrites. |
 | Raw-input pair behavior | For held inputs and releases, compare both `chara+0x2150` and `chara+0x2158`; do not assume a single dword covers every edge/hold case. |

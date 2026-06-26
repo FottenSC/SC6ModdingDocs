@@ -239,16 +239,12 @@ A mod that wants to visualise everything should scan at least 1..31, and possibl
 
 ---
 
-## Calling the trace UFunctions from Lua
+## Trace UFunction call caveat
 
-`ALuxBattleChara::Active` / `Inactive` / `GetTracePosition` cannot be called via UE4SS Lua
-reflection in the current public UE4SS builds. The class was registered with the short
-`UE4_RegisterClass` variant (no `Ex`), so its UFunction parameter UProperty metadata is
-missing. UE4SS surfaces this as the misleading *"Tried calling a member function but the
-UObject instance is nullptr"* error on any call that takes arguments. Inherited AActor
-UFunctions such as `K2_GetActorLocation` still work.
-
-See [UE4SS Reflection Gotchas](../ue4ss/reflection-gotchas.md) for the diagnosis.
+`ALuxBattleChara::Active` / `Inactive` / `GetTracePosition` were registered
+with the short `UE4_RegisterClass` variant (no `Ex`), so their UFunction
+parameter UProperty metadata is missing. Treat them as native `_Impl` or
+lower-level trace-data targets instead of portable reflected-call APIs.
 
 ## `ReceiveGetWeaponTip` — promising-looking dead end
 
@@ -257,7 +253,7 @@ SC6 registers a `BlueprintImplementableEvent` named `ReceiveGetWeaponTip` on
 moves like Cervantes's gun — so it looks like a universal weapon-endpoint query.
 
 It is not useful: **no SC6 character's Blueprint subclass overrides the event.** Every
-`ProcessEvent` post-hook arrives with `outRoot == outTip == (0,0,0)` and `bReturnValue == 0`.
+observed dispatch arrives with `outRoot == outTip == (0,0,0)` and `bReturnValue == 0`.
 The native caller (`ALuxBattleManager::GetTracePositionForPlayer @ 0x1403F4960`) ignores
 the result and falls through to `GetTracePosition_Impl` unconditionally. The event is a BP
 extension point that no one ever shipped an implementation for.
@@ -278,7 +274,7 @@ paths were compiled out via `UE_BUILD_SHIPPING`. Setting these flags does nothin
 
 `UKismetSystemLibrary::DrawDebugLine` is also non-functional: the UFunction reflection
 entry survives (`Z_Construct_UFunction_UKismetSystemLibrary_DrawDebugLine @ 0x142558090`)
-but its native exec handler is unbound. Calling it via reflection from UE4SS is a silent
+but its native exec handler is unbound. Calling it through reflected dispatch is a silent
 no-op.
 
 The one drawing path that **is** live is `ULineBatchComponent` on the `UWorld` — see
@@ -289,7 +285,7 @@ hooks, see [Dev / Debug Hooks](dev-debug-hooks.md).
 
 ## What's still unfound
 
-- **Public `GetTracePosition_Impl` remains stale / unreliable for reflection callers.**
+- **Public `GetTracePosition_Impl` remains stale / unreliable as a trace data source.**
   For weapon-capsule visualization, prefer hooking
   `ALuxTraceManager_UpdateActiveAttackSlotPositions @ 0x1408D8490` or
   `ALuxTraceManager_ComputeCapsuleAndDirection @ 0x1408D1100`.

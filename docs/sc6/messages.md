@@ -387,7 +387,7 @@ and the class name strongly implies it. This has not been confirmed from the
 ### Path A — broadcast through the interface (most likely workable)
 
 Build an `FLuxBattleMessageParam` on the stack and call
-`LuxBattle_BroadcastToSiblingActors` directly from a UE4SS hook:
+`LuxBattle_BroadcastToSiblingActors` directly from a native hook:
 
 ```cpp
 // addr = 0x1403cc980 (LuxBattle_BroadcastToSiblingActors)
@@ -427,16 +427,12 @@ flow internally.
 
 That method has not been located yet (see Unverified).
 
-### Path C — Blueprint message router
+### Path C — native `ProcessEvent` diagnostic
 
 If the HUD is implemented partially in `BP_BattleHUDManager.uasset`, the
-firing path is the `OnReceiveMessage` BP event handler. UE4SS can hook BP
-events:
-
-```lua
-RegisterHook("/Game/HUD/Battle/BP_BattleHUDManager.BP_BattleHUDManager_C:OnReceiveMessage",
-    function(self, Message) print("HUD received:", Message) end)
-```
+firing path is the `OnReceiveMessage` BP event handler. A temporary native
+detour on `UObject::ProcessEvent` can filter for that UFunction and dump the
+receiver plus parameter buffer while you trigger a known message.
 
 This does not *send* messages — it intercepts whatever path is already in use.
 Useful for verifying which struct type the HUD actually expects.
@@ -452,8 +448,8 @@ Useful for verifying which struct type the HUD actually expects.
 2. Use a `lea r??, [rip+disp32]` search to locate the call site for
    `0x143276258` (`"BattleMessage(%s): "`) — almost certainly a
    `UE_LOG(LogBattle, …)` inside `ALuxBattleHUDManager::SetMessage` or similar.
-3. If neither step identifies the firing path, hook
-   `ProcessEvent(self, ufunc, params)` from a UE4SS Lua script and filter for
-   `ufunc.Name == "OnReceiveMessage"` while triggering a throw escape in a
-   training-room match. The hooked frame's `params` buffer reveals both the
-   struct layout the HUD actually receives and which actor is calling.
+3. If neither step identifies the firing path, install a temporary native
+   `UObject::ProcessEvent` detour and filter for `OnReceiveMessage` while
+   triggering a throw escape in a training-room match. The captured `params`
+   buffer reveals both the struct layout the HUD actually receives and which
+   actor is calling.

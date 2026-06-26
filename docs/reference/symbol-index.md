@@ -29,7 +29,7 @@ Words used consistently across these docs:
 
 | Marker | Meaning |
 |---|---|
-| **verified** | Read directly from the SC6 Steam binary via Ghidra decompile or runtime UE4SS introspection. Trust this. |
+| **verified** | Read directly from the SC6 Steam binary via Ghidra decompile or runtime memory/introspection probes. Trust this. |
 | **unverified** | Plausible but not directly read. May be cite-by-analogy or general fighting-game knowledge. Don't build on without checking. |
 | **stale on this build** | Function/path exists in the binary but isn't reached at runtime. The shipping codepath has moved elsewhere. Don't use. |
 | `> source:` blockquote | Specific Ghidra address / function plate-comment the claim is built on. Treat as the authoritative pointer. |

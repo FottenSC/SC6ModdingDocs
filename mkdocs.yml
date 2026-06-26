@@ -1,5 +1,5 @@
 site_name: SoulCalibur VI Modding Docs
-site_description: Community documentation for modding SoulCalibur VI with the UE4SS framework.
+site_description: Community documentation for SoulCalibur VI reverse engineering and native modding.
 site_url: https://example.com/  # TODO: replace with your GH Pages or CF Pages URL
 repo_url: https://github.com/FottenSC/SC6ModdingDocs
 repo_name: SC6ModdingDocs
@@ -88,12 +88,6 @@ nav:
   - Home:
       - Overview: index.md
       - Recent Changes: recent-changes.md
-  - UE4SS Framework:
-      - ue4ss/index.md
-      - Lua API Overview: ue4ss/lua-api.md
-      - Hooks & Events: ue4ss/hooks.md
-      - Global Hooks: ue4ss/global-hooks.md
-      - Reflection Gotchas: ue4ss/reflection-gotchas.md
   - SoulCalibur VI Internals:
       - sc6/index.md
       - Game Structures: sc6/structures.md
@@ -131,4 +125,4 @@ extra:
       link: https://github.com/FottenSC/SC6ModdingDocs
   generator: false
 
-copyright: Community-maintained documentation. Not affiliated with BANDAI NAMCO or the UE4SS team.
+copyright: Community-maintained documentation. Not affiliated with BANDAI NAMCO.

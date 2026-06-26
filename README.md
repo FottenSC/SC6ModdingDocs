@@ -1,14 +1,14 @@
 # SoulCalibur VI Modding Docs
 
 Reverse-engineering notes for **SoulCalibur VI**, written primarily as a
-knowledge base for AI coding agents working on mods via
-[UE4SS](https://github.com/UE4SS-RE/RE-UE4SS).
+knowledge base for AI coding agents working on native DLL mods and binary
+analysis tasks.
 
 Pages are auto-generated from Ghidra analysis of the shipping Steam binary
 (class layouts, function RVAs, struct offsets, UFunction trampolines) and
-cross-checked against live UE4SS runtime introspection. Content is written
-for machine readers first — dense, offset-accurate, with explicit source
-citations — and stays readable to humans as a side effect.
+cross-checked against live runtime probes. Content is written for machine
+readers first — dense, offset-accurate, with explicit source citations — and
+stays readable to humans as a side effect.
 
 Built with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/).
 Every page is plain Markdown under `docs/`. To add a page:
@@ -71,4 +71,4 @@ back then.
 
 ## License / disclaimer
 
-Community project. Not affiliated with BANDAI NAMCO or the UE4SS team.
+Community project. Not affiliated with BANDAI NAMCO.

@@ -388,16 +388,11 @@ matches afterward upload smaller numbers and Steam discards them.
 
 ### What the cheat looks like
 
-Anyone with a UE4SS Lua mod can dispatch the UFunction directly:
-
-```lua
-local PC = UEHelpers.GetPlayerController()
-local KSL = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
-KSL:WriteLeaderboardInteger(PC, FName("RankmatchWorld"), 999999999)
-```
-
-That is the whole exploit — one BP UFunction call. There is nothing on the
-client side to detect, validate, or undo it.
+Any client-side mod that can invoke the BP UFunction can submit an arbitrary
+value through `UKismetSystemLibrary::WriteLeaderboardInteger`, for example to
+`RankmatchWorld` with a score such as `999999999`. That is the whole exploit:
+one client-authoritative BP UFunction call. There is nothing on the client side
+to detect, validate, or undo it.
 
 ## Can you fix the cheater's score?
 
@@ -503,10 +498,11 @@ Three options, listed from most authoritative to coarsest:
 | Read `uint32` at `FrameInputLog+0x4400` (`dwOnlineActive_at0x4400`) | per-InputLog | Set by `LuxBattleChara_InitPlayerBitmask_FromOnlineSession @ 0x1403FA330` at round init. `0` = offline / spectator (the drain early-exits), `1` = local is PLAYER_SIDE_B, `2` = local is PLAYER_SIDE_A, `3` = hidden lobby. Same field the network drain function uses as its entry guard. |
 | Read `bool` at `BM+0x1640` | per-BM | Set by `LuxBattleManager_InitOnlineSession_SetFlag1640 @ 0x1403FB400`, cleared by `LuxOnline_DisconnectAndClearSession @ 0x1403EDD00`. Coarser — only `true` between explicit init/teardown calls. |
 
-If your mod tests online status from Lua via UE4SS, the BP UFunction
-`ALuxBattleManager::IsBattleOnline @ 0x1403F1A60` is a world-context-aware
-wrapper around `CheckOnlineSessionActive` — it looks up the chara's
-WorldContext first, then defers to it.
+For native mods, `ALuxBattleManager_CheckOnlineSessionActive @ 0x1403F2590` is
+the cleanest predicate. The BP UFunction
+`ALuxBattleManager::IsBattleOnline @ 0x1403F1A60` is only a world-context-aware
+wrapper around the same check: it looks up the chara's WorldContext first, then
+defers to it.
 
 ### Delay-based, no rollback
 
@@ -578,7 +574,8 @@ region alongside chara state.
 
 ### Lobby / matchmaking entry points
 
-These are the BP-callable lobby actions you can hook from UE4SS:
+These BP-callable lobby actions are useful native hook targets or reflected-call
+candidates:
 
 | Function | RVA | What it does |
 |---|---|---|

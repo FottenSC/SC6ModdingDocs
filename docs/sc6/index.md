@@ -11,8 +11,7 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 | Module | `SoulcaliburVI.exe` (monolithic — no separate `LuxorGame.dll`) |
 | Source-path prefix in strings | `D:\dev\sc6\UE4_Steam\LuxorProto\Source\LuxorGame\...` |
 | Internal codename | **Luxor** (first-party classes are `ALux*` / `ULux*` / `FLux*`) |
-| Engine version | Unreal Engine 4.17.2 (verify via `[PS] Found EngineVersion: 4.17.2` in `UE4SS.log`) |
-| Recommended UE4SS build | `LessEqual421` (compatible with SC6's UE 4.17.2 runtime) |
+| Engine version | Unreal Engine 4.17.2 |
 
 ## Pages
 
@@ -66,7 +65,7 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 | "Why are my custom-costume footsteps / cloth silent?" | [Audio System: PartsSE](audio-system.md#costume-part-se-partsse-partsbreak) — costume parts have their own cue trigger family. |
 | "Why does my fast-forward UX flood the player with overlapping voices?" | [Audio System: thread model](audio-system.md#thread-model-what-runs-where) — burst-playback warning + mitigations. |
 | "How does the CPU opponent decide what to do?" | [CPU / AI System](ai-cpu-system.md) — AI emits frame inputs, not MoveVM commands; selected by personality + condition vector. |
-| "How do I drive the training-mode dummy from a mod?" | [CPU / AI System: Training-mode UFunctions](ai-cpu-system.md#training-mode-ufunctions) — 11 live UFunctions, all UE4SS-reflectable. |
+| "How do I drive the training-mode dummy from a mod?" | [CPU / AI System: Training-mode UFunctions](ai-cpu-system.md#training-mode-ufunctions) — 11 live UFunctions with native bodies. |
 | "Does AI tick during replay viewing?" | [CPU / AI System: Replay behavior](ai-cpu-system.md#replay-behavior-summary) — yes, but the AI's output is silently discarded by the replay decoder. |
 | "How do I draw a debug line?" | [Drawing 3D Debug Lines](line-batching.md) |
 | "How do I pause the game?" | [Battle Manager: `SetBattlePause`](battle-manager.md#pause-inspection-bp-api-uluxbattlefunctionlibrary) |
@@ -87,7 +86,7 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 - `InputLog+0xNNN` always means relative to `ALuxBattleFrameInputLog*`.
 - Struct sizes given as both decimal and `0x` hex where useful.
 - **Status markers** applied consistently:
-    - **verified** — read directly from Ghidra decompile or live UE4SS introspection. Trust.
+    - **verified** — read directly from Ghidra decompile or live runtime memory/introspection probes. Trust.
     - **unverified** — plausible but not directly confirmed. Don't build on without checking.
     - **stale on this build** — present in the binary but not on the live codepath. Don't use.
     - `> source:` blockquote — points at the authoritative Ghidra address/function.
@@ -96,12 +95,10 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 For cross-cutting lookups across all SC6 pages, see
 [Reference: Symbol Index](../reference/symbol-index.md).
 
-## UE4SS reflection caveat
+## Reflected-call caveat
 
-Some live UFunctions can't be called from UE4SS Lua reflection. They were registered
-with the short `UE4_RegisterClass` variant (no `Ex`), so their parameter UProperty
-metadata is missing — and UE4SS misreports the failure as
-*"Tried calling a member function but the UObject instance is nullptr"*. Notable
-cases: `ALuxBattleChara::Active` / `Inactive` / `GetTracePosition`. Inherited
-`AActor` UFunctions (e.g. `K2_GetActorLocation`) still work. See
-[UE4SS Reflection Gotchas](../ue4ss/reflection-gotchas.md).
+Some live UFunctions were registered with the short `UE4_RegisterClass` variant
+(no `Ex`), so their parameter UProperty metadata is missing. Notable cases:
+`ALuxBattleChara::Active` / `Inactive` / `GetTracePosition`. Treat those as
+native `_Impl` call or lower-level data-hook targets instead of reflected-call
+APIs.

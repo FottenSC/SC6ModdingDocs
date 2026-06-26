@@ -10,7 +10,7 @@ implementation context, not proof by themselves.
 
 ## Verdict
 
-Rollback is plausible as a native prototype, but not as a pure Lua/Blueprint
+Rollback is plausible as a native prototype, but not as a Blueprint/reflection-only
 mod. SC6 already has a deterministic-looking fixed-frame Lux battle simulation,
 input caches, replay input streams, per-round reset blobs, and native
 HgCpuDirect save/restore helpers. Those are the right ingredients.
@@ -33,7 +33,7 @@ Practical verdict:
 | Is rollback theoretically feasible? | Yes, if native hooks can own the input boundary and state restore boundary. |
 | Is it proven deterministic from inputs alone? | Not yet. Static analysis says "likely within a round"; a hash round-trip test is still required. |
 | Can the stock online protocol be reused unchanged? | No. It only carries small input packets and 4-bit frame-low tags; rollback needs prediction, absolute frames, confirmations, and state hashes. |
-| Is UE4SS Lua enough? | No. Lua can configure/log/control UI, but frame stepping, snapshots, cache injection, and side-effect gates need native DLL hooks. |
+| Is a scripting/reflection layer enough? | No. Frame stepping, snapshots, cache injection, and side-effect gates need native DLL hooks. |
 | Best first prototype | Offline/local rollback lab in `E:/myMods/HorseMod`: snapshot, advance N frames, restore, resimulate, compare hashes. |
 
 ## Current online input path
@@ -414,16 +414,14 @@ blindly.
 The safest first prototype runs with side effects muted during hidden
 resimulation and compares only gameplay-state hashes.
 
-## UE4SS versus native hooks
+## Native hooks, not reflection wrappers
 
-Pure UE4SS Lua is not enough for rollback.
-
-Lua can help with:
+A lightweight tool layer can still help with:
 
 - configuration
 - UI/debug overlays
 - logging and test controls
-- calling exposed UFunctions, where they exist
+- calling exposed UFunctions through a native bridge, where that is useful
 
 Native hooks are required for:
 
@@ -435,8 +433,7 @@ Native hooks are required for:
 - transport integration beyond stock 3-byte packets
 
 Current local context under `E:/myMods` already points the prototype path toward
-HorseMod/native DLL work, with UE4SS Lua as support tooling rather than the
-rollback core.
+HorseMod/native DLL work rather than a reflected-call control layer.
 
 ## Minimal feasibility prototype
 

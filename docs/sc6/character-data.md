@@ -278,7 +278,7 @@ generic command id into this character's table index before lookup.
 ## Editing safety
 
 - **Pak-loaded DataTables** (above): no anti-tamper gates confirmed, but disk edits need
-  a pak-injection workflow — UE4SS `HookProperty` won't help.
+  a pak-injection workflow — runtime property hooks won't help.
 - **Runtime config** at `BattleManager+0x50` (`ConfigTable`): always safe — see the
   [DataTable path tree](battle-manager.md#lux-datatable-path-tree).
 - **`ChangeBattleLife`** UFunction is the recommended path for per-player life scaling;

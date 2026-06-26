@@ -9,8 +9,9 @@ nonnumeric code such as `STGMOD` may still be useful for a map-load experiment,
 but validate `ParseStageCodeStrToId` and any packed-id consumers before treating
 it as production-safe.
 
-**Requires**: UE4 4.17.2 editor, UnrealPak.exe, UE4SS or a native injector for
-the runtime hook, and optional UAssetGUI/FModel for table or data-asset edits.
+**Requires**: UE4 4.17.2 editor, UnrealPak.exe, a native DLL injector/toolchain
+for the runtime hook, and optional UAssetGUI/FModel for table or data-asset
+edits.
 
 ## What has to line up
 
@@ -224,10 +225,10 @@ native path is `ULuxUIBattleLauncher::Start @ 0x1405eeb50`, which copies
 `ULuxUIBattleLauncher::GetBattleStageCode @ 0x1405b0c60`, which reads
 `StageSetting.StageCode`.
 
-This can be a good UE4SS route if your runtime inspection can see the relevant
-UFunction or launcher object. The exact Blueprint widget/property path that
-writes the stage selection is not documented here; discover it at runtime rather
-than hardcoding an unverified path.
+This can be a good native hook route if your runtime inspection can identify the
+relevant launcher object or setter call site. The exact Blueprint
+widget/property path that writes the stage selection is not documented here;
+discover it at runtime rather than hardcoding an unverified path.
 
 Quality gate: prove the final `StageSetting.StageCode` value immediately before
 `ApplyBattleSettingDataTableToBattleManager` runs.
@@ -279,7 +280,7 @@ Use this checklist in order:
 2. The pak filename ends in `_P.pak` and the game log shows it mounted from
    `Content/Paks/~mods/`.
 3. Your hook logs the final selected code as `STG042` before stage preload.
-4. UE4SS or game logs show the expected load sequence:
+4. Native hook or game logs show the expected load sequence:
 
    ```text
    [UUILoadManager]:LoadMap:STG042

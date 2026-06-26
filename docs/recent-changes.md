@@ -13,14 +13,25 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
-## 2026-06-26 - Practical Cookbook and UE4SS Expansion Pass
+## 2026-06-26 - Native Hook Documentation Cleanup
+
+### Changed
+
+- Removed the legacy scripting/reflection API pages from the docs navigation and
+  site tree.
+- Reworked SC6 and cookbook cross-links so runtime guidance points at native DLL
+  hooks, direct `_Impl` calls, runtime probes, and native `ProcessEvent`
+  diagnostics instead of scripting API helpers.
+- Updated the README, homepage, glossary, cookbook template, and MkDocs metadata
+  to describe the project as native modding and reverse-engineering documentation.
+
+## 2026-06-26 - Practical Cookbook and Runtime Hooking Pass
 
 ### Added
 
-- Expanded the UE4SS Lua, hook, global-hook, and reflection-gotcha pages with
-  SC6-specific safety patterns for live object discovery, reflected helper calls,
-  ProcessEvent filtering, map/menu transition invalidation, and native-boundary
-  escalation.
+- Expanded SC6-specific runtime-hooking notes for live object discovery,
+  reflected helper boundaries, `ProcessEvent` filtering, map/menu transition
+  invalidation, and native-boundary escalation.
 - Expanded the wholly-new custom-stage cookbook into a fuller implementation
   checklist covering stage-code selection, pak layout, load-path routing,
   picker integration, metadata/collision validation, troubleshooting, and online
@@ -63,7 +74,7 @@ Related commit: [`7868995`](https://github.com/FottenSC/SC6ModdingDocs/commit/78
 - Linked the new rollback investigation from the Cookbook navigation and index.
 - Documented why `InputDelay+0x390` is not the live online delay control, where
   delay/catch-up is actually enforced, and why native hooks are required beyond
-  pure UE4SS Lua.
+  a scripting/reflection-only control layer.
 
 ## 2026-06-25 - Home Changelog and Hitbox Documentation Pass
 
@@ -125,7 +136,7 @@ Related commits: [`114a7a9`](https://github.com/FottenSC/SC6ModdingDocs/commit/1
 ### Changed
 
 - Optimized the site layout for AI-agent navigation with stronger landing pages, quick-find links, and reference paths.
-- Ran a broad cleanup pass across cookbook, reference, UE4SS, and SC6 pages.
+- Ran a broad cleanup pass across cookbook, reference, runtime-hooking, and SC6 pages.
 
 Related commits: [`d8561dc`](https://github.com/FottenSC/SC6ModdingDocs/commit/d8561dc), [`9330f21`](https://github.com/FottenSC/SC6ModdingDocs/commit/9330f21), [`e3edce0`](https://github.com/FottenSC/SC6ModdingDocs/commit/e3edce0)
 
