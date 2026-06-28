@@ -13,6 +13,16 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-06-28 - DotVanisher Cookbook Recipe
+
+### Added
+
+- Added a standalone DotVanisher cookbook article explaining the host spectator
+  timeout issue, the `HandleHostTickWatchEventQueues` detour, binary/prologue
+  guard checks, pending-watch epoch tracking, 90-second grace behavior,
+  packaging layout, verification logs, and troubleshooting notes.
+- Linked the DotVanisher recipe from the Cookbook index and MkDocs navigation.
+
 ## 2026-06-26 - Native Hook Documentation Cleanup
 
 ### Changed

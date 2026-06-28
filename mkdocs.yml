@@ -111,6 +111,7 @@ nav:
   - Cookbook:
       - cookbook/index.md
       - Rollback Netcode Feasibility: cookbook/rollback-netcode-investigation.md
+      - DotVanisher Spectator Timeout: cookbook/dotvanisher.md
       - Replace a Stage: cookbook/replace-stage.md
       - Custom Stage (new code): cookbook/custom-stage.md
   - Reference:

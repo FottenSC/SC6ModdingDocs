@@ -12,6 +12,12 @@ Short, copy-pasteable recipes. Each one is self-contained: what it does, the cod
   Ghidra-backed decision record for SC6's online input path, snapshot state,
   replay reuse, and a minimal rollback prototype plan.
 
+## Native DLL recipes
+
+- [DotVanisher spectator timeout grace](dotvanisher.md) - standalone UE4SS
+  hook that gives pending host-side watch spectators a bounded grace window
+  during slow match loads.
+
 ## Recipe template
 
 ```markdown
