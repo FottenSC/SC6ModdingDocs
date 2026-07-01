@@ -85,7 +85,8 @@ separate from cids.
 
 The literal seed table is 29 rows: one menu/header row plus 28 character rows.
 If a `MoveProvider` is available, the function then keeps the header row and
-intersects the character rows with `FUN_140638290 @ 0x140638290`, the shared
+intersects the character rows with
+`FilterCharaCodesByRuntimeAvailability @ 0x140638290`, the shared
 runtime-available cid filter. If no game-flow / world context is available,
 the helper copies the input list and the literal seed rows remain unfiltered.
 
@@ -142,10 +143,10 @@ Direct code callers of the table builder:
 
 | Caller | Call site | Observed role |
 |---|---:|---|
-| `FUN_1405CDF70` | `0x1405CE099` | Builds a `LuxSEMPlayerMenuCompanionsListItem` menu data table. |
-| `FUN_1405D3070` | `0x1405D324C` | Builds a player-menu weapon/list submenu using `LuxSEMPlayerMenuWeaponListItem`. |
-| `FUN_1405D4E20` | `0x1405D4FEC` | Variant of the player-menu weapon/list submenu builder with extra command/delete parameters. |
-| `FUN_140C84E60` | `0x140C84E81` | UFunction/exec-style wrapper that commits the roster table directly. |
+| `BuildCompanionsListMenuDataTable` | `0x1405CE099` | Builds a `LuxSEMPlayerMenuCompanionsListItem` menu data table. |
+| `BuildPlayerMenuWeaponListTable` | `0x1405D324C` | Builds a player-menu weapon/list submenu using `LuxSEMPlayerMenuWeaponListItem`. |
+| `BuildPlayerMenuWeaponListTableWithDeleteCommand` | `0x1405D4FEC` | Variant of the player-menu weapon/list submenu builder with extra command/delete parameters. |
+| `SetCharaSelectRosterTable` | `0x140C84E81` | UFunction/exec-style wrapper that commits the roster table directly. |
 
 No direct battle-launch / battle-setup caller xrefs this table. Treat it as UI
 menu data, not as the authoritative battle setup whitelist. The validity filter

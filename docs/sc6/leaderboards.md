@@ -157,7 +157,7 @@ A live capture — or the strings `value`, `lang`, `style`, `rank`, `point`,
 
 ### Raw details column layout
 
-`LuxUploadReplay_FillLeaderboardColumnsFromMatchData @ 0x1405EFF60` writes the
+`FillReplayLeaderboardColumnsFromMatchData @ 0x1405EFF60` writes the
 per-entry detail columns from `ULuxorMatchData`. The important correction is
 that `ULuxorMatchData+0x48` is **style id**, not rank id. Rank id and rank
 points are derived from the per-player match-data slot using that style id.
@@ -637,7 +637,8 @@ index, but that field is permanently 0 in observed builds:
   for the online subclass) returns 1 in normal play, so the `SUB` *does* fire —
   it just subtracts 0.
 - The "InputDelayFrame" UProperty at `LuxBattleOptionParam+0x00` (registered by
-  `FUN_140992DA0`) is a separate training-mode config field and is never
+  `InitializeLuxBattleOptionParamStruct @ 0x140992DA0`) is a separate
+  training-mode config field and is never
   propagated to `FrameInputLog+0x390`.
 
 **Implication for mods:** don't waste a patch slot on `0x1403F0751`. To
@@ -656,22 +657,76 @@ game, with no install needed.
 ### Architecture
 
 ```text
-Player chooses "Register" in the in-game replay menu
+Player opts into replay upload and chooses "Register" in the replay menu
    ↓
 ULuxUploadReplay::FlushReplayFile(MatchData, inDataArray)        @ UFunction (BP)
    ↓
-Steam Cloud FileWrite        ← writes binary replay to per-user namespace
+Steam Cloud FileWrite("ReplayData")        ← writes binary replay to per-user namespace
    ↓
 ISteamRemoteStorage::FileShare(filename) → UGCHandle_t  (uint64)
    ↓
-ISteamUserStats::WriteLeaderboard("NewReplayBoard")
+Leaderboard write/update for "NewReplayBoard"
    - score        = match score (or 0 if no scoring)
    - 16 columns   = match metadata (chars, ranks, region, date)
-   - UGC handle   = the FileShare handle (gets written as one of the columns)
+   - UGC handle   = attached with ISteamUserStats::AttachLeaderboardUGC
 ```
 
 The leaderboard entry's XML response includes a `<ugcid>` field with the
 handle. Anyone with a Steam Web API key can resolve it to a download URL.
+
+### Upload eligibility and gates
+
+The native upload function is intentionally thin:
+`LuxUploadReplay_FlushReplayFile_Native @ 0x1405AC400` accepts a
+`ULuxorMatchData*` plus a `TArray<uint8>` replay blob, fills a
+leaderboard-write row, and hands both to SC6's Steam replay-file interface. It
+does **not** contain a native match-type filter such as "ranked only", "winner
+only", or "only if both players are high rank". Those choices must be made by
+the replay-menu / Blueprint caller before the UFunction is invoked.
+
+Verified gates before and during upload:
+
+- **User opt-in**: `BuildNetworkSettingOptionsMenuData @ 0x1408B6230` builds the
+  network options row `ELuxNetworkSettingItem::REPLAY_UPLOAD`, bound to
+  `NetworkSetting.bReplayUpload`. The native upload function trusts the caller,
+  so this option is an upstream UI/BP gate rather than a re-check inside
+  `FlushReplayFile`.
+- **A replay row has to be registerable**:
+  `BuildReplayRowRegistrationCommandData @ 0x14082C110` only emits
+  `LuxReplayMenu::Register` / `LuxReplayMenu::Unregister` command data when the
+  row contains `registrationEnabled`. Static native xrefs stop at this
+  UI-command layer because the final UFunction call is routed through UE
+  reflection / Blueprint.
+- **Valid replay bytes and match data**: `FlushReplayFile` serializes nothing
+  by itself. It expects the caller to pass the replay byte array and a live
+  `ULuxorMatchData`; then
+  `FillReplayLeaderboardColumnsFromMatchData @ 0x1405EFF60` writes
+  the metadata columns.
+- **Steam services must be available**: `LuxOnline_GetUploadReplayInterface
+  @ 0x1405B4BB0` resolves SC6's custom Steam replay-file interface from the
+  online subsystem (`IOnlineSubsystem` vtable slot `+0x1A0`). If that shared
+  pointer is null, `FlushReplayFile` returns without queuing an upload.
+- **Steam async task must fully complete**:
+  `FOnlineAsyncTaskSteamUpdateReplay_Tick @ 0x1429E1B80` writes the fixed cloud
+  file name `ReplayData`, calls `FileShare`, waits for
+  `RemoteStorageFileShareResult_t == OK`, finds `NewReplayBoard`, calls
+  `AttachLeaderboardUGC`, then waits for `LeaderboardUGCSet_t == OK`. Any failed
+  step marks the upload unsuccessful; `LuxUploadReplay_OnFlushComplete_Cb
+  @ 0x1405E0C60` dispatches failure and shows `Notice_INFO_0000`.
+
+The post-match **Save Replay** button is a different path:
+`LuxLicenseMenu_OnSaveReplay_CopyBattleLogToMyReplay @ 0x1405FCC90` promotes the
+current BattleLog entry into a local MyReplay slot. It checks that the save
+manager exists, the replay is not already in MyReplay, the 100-slot MyReplay
+limit is not hit, and the active BattleLog id matches the selected entry. That
+path does not call the Steam upload interface.
+
+There is also an object-backed Steam upload worker,
+`ProcessSerializedReplayUploadTask @ 0x1429E1990`, which serializes a replay
+entry object before taking the same `ReplayData` FileShare -> `NewReplayBoard`
+UGC attach path. Treat it as a sibling implementation for "upload this replay
+object"; it does not reveal an extra public destination or a separate match-type
+filter.
 
 ### Step-by-step archival
 
@@ -768,6 +823,15 @@ stages are flagged in the `MatchData` so the correct ring/wall config loads.
 | `Z_Construct_UFunction_FlushReplayFile` | `0x140ce14b0` | Defines `FlushReplayFile(MatchData, inDataArray)` |
 | `Z_Construct_UFunction_InitalizeReplay` | `0x140ce18b0` | (sic — typo in original: "Initalize") |
 | `Z_Construct_UFunction_FinalizeReplay` | `0x140ce1360` | |
+| `LuxUploadReplay_Initalize_Native` | `0x1405bcda0` | Registers the on-flush-complete delegate with the Steam replay-file interface |
+| `LuxUploadReplay_FlushReplayFile_Native` | `0x1405ac400` | Upload entry point: takes replay bytes + `ULuxorMatchData`, fills leaderboard metadata, and queues Steam upload |
+| `LuxUploadReplay_Finalize_Native` | `0x1405ac2f0` | Unregisters the upload-complete delegate |
+| `LuxUploadReplay_OnFlushComplete_Cb` | `0x1405e0c60` | Dispatches upload result; failure shows `Notice_INFO_0000` |
+| `FOnlineAsyncTaskSteamUpdateReplay_Tick` | `0x1429e1b80` | Byte-array replay upload task: FileWrite/FileShare `ReplayData`, find `NewReplayBoard`, attach UGC |
+| `ProcessSerializedReplayUploadTask` | `0x1429e1990` | Object-backed sibling upload task; serializes a replay entry before the same Steam UGC attach path |
+| `BuildNetworkSettingOptionsMenuData` | `0x1408b6230` | Builds the `NetworkSetting.bReplayUpload` option row |
+| `BuildReplayRowRegistrationCommandData` | `0x14082c110` | Emits replay row `Register` / `Unregister` UI commands when `registrationEnabled` is present |
+| `LuxLicenseMenu_OnSaveReplay_CopyBattleLogToMyReplay` | `0x1405fcc90` | Post-match Save Replay path; copies BattleLog to local MyReplay, not Steam upload |
 | `ULuxorMatchData_StaticClass` | `0x142e1f800` | Class registration (`LuxorMatchData`, size `0x300`, 37 native UFunctions) |
 | `ULuxorMatchData_RegisterNativeFunctions` | `0x142e1fd80` | Binds the 37 BP-callable accessors |
 
@@ -788,7 +852,7 @@ stages are flagged in the `MatchData` so the correct ring/wall config loads.
 | `FOnlineLeaderboardsSteam_FindLeaderboardByName_Locked` | `0x1429c9d10` | Name → handle cache lookup |
 | `UFunction_RequestReadLeaderboards_Register` | `0x140ab3f30` | BP read entry point |
 | `FOnlineLeaderboardRead_Init_AddAllSteamColumns` | `0x140579600` | Adds the 16 metadata column FNames |
-| `LuxUploadReplay_FillLeaderboardColumnsFromMatchData` | `0x1405eff60` | Writes leaderboard detail columns from `ULuxorMatchData`. Confirms `StyleId` columns before rank columns. |
+| `FillReplayLeaderboardColumnsFromMatchData` | `0x1405eff60` | Writes leaderboard detail columns from `ULuxorMatchData`. Confirms `StyleId` columns before rank columns. |
 | `GetLuxorMatchDataStyleId` | `0x142e1a270` | Reads `StyleId` from `ULuxorMatchData+0x48 + playerIndex*4`. |
 | `GetLuxorMatchDataRankId` | `0x142e192e0` | Calls player-slot vfunc `+0x90` with style id. |
 | `GetLuxorMatchDataRankPoint` | `0x142e19310` | Calls player-slot vfunc `+0x80` with style id. |

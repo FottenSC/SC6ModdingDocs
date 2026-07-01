@@ -13,6 +13,19 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-07-01 - Ghidra Validation Pass
+
+### Changed
+
+- Replaced stale `FUN_*` references for character-select menu builders,
+  pause-delegate metadata, camera pose writers, weapon-tip event dispatch, and
+  move-bank event-tree setup with confirmed Ghidra symbol names.
+- Added the reflected `FLuxBattleOptionParam` layout and clarified that its
+  `InputDelayFrame` property does not drive the live `FrameInputLog+0x390`
+  online-input delay path.
+- Clarified that `FLuxMoveCommandPlayer` is represented as a sparse Ghidra
+  struct applied at `g_LuxMoveVM_CommandPlayerArray`.
+
 ## 2026-07-01 - Rollback Testing and Diagnostics Expansion
 
 ### Added

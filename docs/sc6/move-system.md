@@ -299,7 +299,8 @@ Parallel, concurrent per-tick paths (not under TickDriver):
   → LuxMoveVM_TickPickAndDispatchReaction   (picks yarare id from context)
       → LuxBattle_DispatchYarareReaction
           switch on yarareId (0x01..0x4F):
-            per-reaction setup (FUN_1403566D0 stumble, FUN_140354370, ...)
+            per-reaction setup (`LuxBattle_InitYarare_0x1F`,
+            `LuxBattle_InitYarare_0x22`, ...)
             writes active state to +0xACC (current reaction),
                    +0xACD (frame counter), +0xAB6 (duration)
 ```
@@ -943,7 +944,7 @@ for why this is rarely exercised at runtime.
 | Slot table | `bank+0x30` | 0x48 | walked by `ResolveBankSlot` to find a slot |
 | AttackCell array | `bank + bank[+0x10]` | 0x70 | `FLuxMoveBankCell` rows; one cell per move-bone-id |
 | Non-attack descriptor table | `bank + bank[+0x14]` | 6 | `(i16 DamageMultiplier, i16 PassthroughTag, i16 Duration60ths)` — non-attack movedef payloads (see [Non-attack ALT-path](hitbox-system.md#non-attack-alt-path)) |
-| Event record table | `bank + bank[+0x18]` | 0x30 | `LuxMoveVM_CollectHitEventsForFrame` walks this per-frame for sound/VFX/hit events; built into a Red-Black BST at `chara+0x455C8` by `FUN_1402F8310` (event-setup) |
+| Event record table | `bank + bank[+0x18]` | 0x30 | `LuxMoveVM_CollectHitEventsForFrame` walks this per-frame for sound/VFX/hit events; built into a Red-Black BST at `chara+0x455C8` by `LuxMoveVM_BuildMoveBankEventRecordTree` (event-setup) |
 
 ### Bank readers
 
@@ -955,7 +956,7 @@ for why this is rarely exercised at runtime.
 | `LuxBattle_TickHitResolutionAndBodyCollision` | `0x33CCA0` | bank+0x10 cell array |
 | `LuxBattle_ComputeHitContactVFXCode` | `0x30FC20` | bank+0x10 |
 | `LuxChara_ResolveBankSlotEntry` | `0x309D40` | bank+0x10 |
-| `FUN_1402F8310` (event setup) | `0x2F8310` | bank+0x18 + bank+0x0E |
+| `LuxMoveVM_BuildMoveBankEventRecordTree` (event setup) | `0x2F8310` | bank+0x18 + bank+0x0E |
 
 ---
 

@@ -527,7 +527,8 @@ remain useful for inspection or single-target overrides:
 
 `SetBattlePause` does **not** stop everything. SC6 has a deliberate "tick during pause"
 delegate (signature class `OnBattleTickWhenPaused__DelegateSignature`, lazy-initialised
-in `FUN_140957D80`, stored in `DAT_14414D0B0`).
+in `InitializeOnBattleTickWhenPausedDelegateSignature @ 0x140957D80`, stored in
+`DAT_14414D0B0`).
 `LuxBattleManager_RegisterOnTickWhenPaused_Delegates @ 0x1403F8E70` binds **six** handlers
 onto the world's PlayerController-equivalent (BM+0x410):
 

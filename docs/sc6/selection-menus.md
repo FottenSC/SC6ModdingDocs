@@ -43,10 +43,10 @@ Direct native callers observed so far:
 
 | Caller | Call site | Role |
 |---|---:|---|
-| `FUN_1405CDF70` | `0x1405CE099` | Builds a `LuxSEMPlayerMenuCompanionsListItem` menu data table. |
-| `FUN_1405D3070` | `0x1405D324C` | Builds a player-menu weapon/list submenu using `LuxSEMPlayerMenuWeaponListItem`. |
-| `FUN_1405D4E20` | `0x1405D4FEC` | Variant of the player-menu weapon/list submenu builder with extra command/delete parameters. |
-| `FUN_140C84E60` | `0x140C84E81` | UFunction/exec-style wrapper that commits the roster table directly. |
+| `BuildCompanionsListMenuDataTable` | `0x1405CE099` | Builds a `LuxSEMPlayerMenuCompanionsListItem` menu data table. |
+| `BuildPlayerMenuWeaponListTable` | `0x1405D324C` | Builds a player-menu weapon/list submenu using `LuxSEMPlayerMenuWeaponListItem`. |
+| `BuildPlayerMenuWeaponListTableWithDeleteCommand` | `0x1405D4FEC` | Variant of the player-menu weapon/list submenu builder with extra command/delete parameters. |
+| `SetCharaSelectRosterTable` | `0x140C84E81` | UFunction/exec-style wrapper that commits the roster table directly. |
 
 Modding implication: adding a row here can make a character appear in this menu
 data, but it does **not** create a full playable character by itself. The battle

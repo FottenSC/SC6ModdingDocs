@@ -105,7 +105,8 @@ Alphabetical jump table. Click through for full layout.
 
 `ALuxBattleManager_Partial`, `ALuxBattleManager_PropertyLayout`, `FLinearColor`, `FMatrix64`,
 `FTransform64`, `FVector`, `FLuxBattleKeyRecorderSlot`, `FLuxRecordedFrame`,
-`FLuxTraceManagerLayout`, `FLuxTraceComponentLayout`, `FLuxDataTablePath`. See the
+`FLuxTraceManagerLayout`, `FLuxTraceComponentLayout`, `FLuxDataTablePath`,
+`FLuxBattleOptionParam`. See the
 [Other reversed structs](#other-reversed-structs) section.
 
 ### Net / Steam (unrelated to gameplay)
@@ -288,8 +289,9 @@ UFunction map and the hierarchical config-tree path convention.
       `(*(param_1))->vtable[0]` on it to "get world". On a SkeletalMeshComponent,
       `vtable[0]` is the destructor, so the ISA-check at
       `world+0x98 -> ALuxBattleManager` falls through with garbage and
-      the functions early-out. Their many callers in `FUN_1403A66F0`
-      through `FUN_1403AAA60` (~20 adjacent functions) are effectively
+      the functions early-out. Their many callers in
+      `LuxMove_CheckConditions_Type0 @ 0x1403A66F0` through
+      `LuxMove_CheckConditions_Type1 @ 0x1403AAA60` (~20 adjacent functions) are effectively
       dead code on this build.
 
     The live move pipeline routes through `ALuxBattleMoveCommandPlayer`
@@ -509,7 +511,7 @@ registers these reflected fields:
 
 | Offset | Type | Name | Notes |
 |-------:|------|------|-------|
-| +0x38 | `FString` or name-like id | `Identifier` | matched against selected stage id formatted as `"%03X"` by `FUN_14089B2C0` |
+| +0x38 | `FString` or name-like id | `Identifier` | matched against selected stage id formatted as `"%03X"` by `LookupLuxStageAssetPathNameByPackedStageId @ 0x14089B2C0` |
 | +0x40 | `TArray<LuxStageRawAsset>` | `RawAssets` | entries keyed by `ELuxStageAssetType` |
 | +0x50 | `LuxStageSetting` | `Setting` | three cosmetic/content behavior bools |
 
@@ -792,8 +794,9 @@ stale on the shipping build.
 | +0x20 | `bool` | `bReturnValue` | OUT |
 | +0x21 | `bool` | `bGetType` | IN |
 
-> source: `FUN_1409A9A80 @ 0x1409A9A80` (the native caller wrapper that invokes
-> `ReceiveGetWeaponTip` via `FindFunction` + `vtable[0x1F8]::ProcessEvent`) called from
+> source: `ProcessReceiveGetWeaponTipEvent @ 0x1409A9A80` (the native caller
+> wrapper that invokes `ReceiveGetWeaponTip` via `FindFunction` +
+> `vtable[0x1F8]::ProcessEvent`) called from
 > `ALuxBattleManager::GetTracePositionForPlayer @ 0x1403F4960`.
 
 ---
@@ -875,9 +878,9 @@ override (empirical):
 
 | Function | Address | Note |
 |----------|---------|------|
-| `PerTickPOVUpdater` (whole-pose committer despite the name) | `FUN_1420520F0` | NOP the entire 29-byte store block |
-| `TargetFollowRotationWriter` | `FUN_141F935B0` | rotation-only writer |
-| `SetPOV` (combined setter) | `FUN_141D27C80` | another whole-pose writer; called by `FUN_141D5BB90` (camera-follow updater) |
+| `APlayerCameraManager_TickAndCommitFullPose` | `0x1420520F0` | Whole-pose committer; NOP the entire 29-byte store block. |
+| `APlayerCameraManager_WriteTargetFollowRotation` | `0x141F935B0` | Rotation-only writer. |
+| `APlayerCameraManager_SetPOV_LocRotCombined` | `0x141D27C80` | Combined setter; called by `APlayerCameraManager_ApplyFollowCamPOV_PerTick @ 0x141D5BB90`. |
 
 ### Camera structs
 
@@ -1263,8 +1266,9 @@ The per-chara VM context indexed by `g_LuxMoveVM_CommandPlayerArray @
 `ALuxBattleMoveCommandPlayer` actor at `BattleManager+0x4C0` — it is a fixed
 global static array holding the live VM state for each chara.
 
-The struct is sparse: most of the 12 KB is uncovered scratch / cell buffers.
-Only the fields pinned in Ghidra are listed below.
+The Ghidra datatype is a sparse `0x302C` struct applied at
+`g_LuxMoveVM_CommandPlayerArray`. Most of the 12 KB is uncovered scratch / cell
+buffers; only the fields pinned in Ghidra are listed below.
 
 | Offset | Type | Name | Notes |
 |-------:|------|------|-------|
@@ -1695,6 +1699,20 @@ hit-event payload `(side, damage, total, is_critical, is_limited)`.
 The 24-byte hierarchical-path cursor used by every `LuxDataTable*` writer.
 Documented as the vehicle for `BattleManager+0x50` config writes — see
 [Battle Manager: FLuxDataTablePath](battle-manager.md#fluxdatatablepath-24-bytes).
+
+#### `FLuxBattleOptionParam` (16 bytes)
+
+Reflected as `LuxBattleOptionParam` by
+`InitializeLuxBattleOptionParamStruct @ 0x140992DA0`. This is a training/options
+config struct; it is **not** the live online input cache and does not feed
+`ALuxBattleFrameInputLog+0x390` in the observed build.
+
+| Offset | Type | Name | Notes |
+|-------:|------|------|-------|
+| +0x00 | `int32` | `nInputDelayFrame` | Reflected `InputDelayFrame` property. |
+| +0x04 | `int32` | `nInputLagMin` | Reflected `InputLagMin` property. |
+| +0x08 | `int32` | `nInputLagMax` | Reflected `InputLagMax` property. |
+| +0x0C | `int32` | `nInputLagOffset` | Reflected `InputLagOffset` property. |
 
 ### Net / Steam structs (unrelated to hitbox work)
 

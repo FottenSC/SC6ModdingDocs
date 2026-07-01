@@ -232,7 +232,7 @@ void ILuxBattleMessageReceiver_Execute_OnReceiveMessage(UObject* receiver, const
     char paramBuf[20];                          // CDataManager_Impl_InitSlot
     CDataManager_Impl_InitSlot(paramBuf);
     FUN_1408dfa90(paramBuf, Message);           // copy struct/buffer into slot
-    UFunction* fn = FUN_140f6e0e0(receiver,     // UObject::FindFunctionChecked
+    UFunction* fn = UObject_FindFunctionChecked(receiver,
                                   fname_OnReceiveMessage);
     receiver->vtable[0x1f8](receiver, fn, paramBuf); // UObject::ProcessEvent
     FMemory_FreeViaGMalloc(paramBuf);
