@@ -485,6 +485,180 @@ same-mod-set, same-stage, same-round tests unless the test explicitly targets a
 boundary fault. Do not count cross-round restore, actor recreation, or online
 session recovery as supported until those cases have their own passing tests.
 
+### Local automated test topology
+
+A useful rollback lab does not need machines around the world. Start with a
+single-machine deterministic harness that runs the same match script twice:
+
+1. an authoritative no-delay baseline that feeds both players' real inputs on
+   the exact frame they are meant to be consumed;
+2. a faulted rollback run that gives local input immediately, delays or mutates
+   the remote side according to a seeded fault schedule, predicts missing remote
+   input, then restores/resimulates when the confirmed input arrives.
+
+Both runs should start from the same active-round snapshot and consume the same
+scripted input file. The baseline is the oracle. A rollback correction only
+passes when the corrected run reaches the same gameplay hash as the no-delay
+baseline at the same absolute frame.
+
+Recommended local topology:
+
+| Component | Role |
+|---|---|
+| Scenario runner | Loads a fixed character/stage/settings/mod manifest, waits for a stable active-round frame, then starts scripted input playback. |
+| Virtual peer pair | Represents local and remote players inside the lab. The remote peer is not a real socket at first; it is a deterministic input producer behind a fault queue. |
+| Authoritative baseline lane | Runs the same scenario with zero transport delay, no prediction, and full per-frame hashes. This lane never uses rollback correction. |
+| Faulted rollback lane | Runs the scenario through the rollback controller, prediction policy, snapshot ring, restore/resim path, and side-effect gates. |
+| Fault scheduler | Applies latency, jitter, loss, reorder, duplication, and corruption from a seed and config file. It writes the exact mutation into the fault log. |
+| Input-delay/prediction matrix | Repeats the same scenario with different local input delay, max rollback depth, prediction window, prediction policy, and late-input policy. |
+| Comparator | Aligns baseline and faulted logs by absolute frame, compares canonical gameplay hashes, and prints the first divergent frame plus nearby input/RNG/tick context. |
+| Replayer | Reruns one failure from its seed, scenario id, mod manifest, baseline hash id, and fault schedule without requiring the original live session. |
+
+The first version can be entirely in-process. A later loopback mode can put the
+fault scheduler between two local processes or a local UDP/TCP transport shim,
+but that should be a transport-integration test, not the first determinism
+oracle.
+
+### Harness components
+
+Keep the harness boring and file-driven. A failed run should be reproducible
+from artifacts alone.
+
+| File or module | Contents |
+|---|---|
+| Scenario file | Character ids, stage, round settings, equipment/costume assumptions, startup wait, input script, expected supported/refused lifecycle boundaries, and tags such as `hitstop`, `wall`, or `round_end_refusal`. |
+| Input script | Absolute frame, P1 input byte, P2 input byte, optional labels, and optional "hold previous" ranges. Store the post-expansion stream in the artifact so later parser changes cannot change the test silently. |
+| Fault config | Seed, base one-way delay, jitter distribution, loss rate, reorder window, duplicate rate, corruption rules, burst-loss model, and target slot. |
+| Rollback config | Local input delay, max rollback frames, snapshot interval or per-frame snapshot policy, prediction window, prediction policy, late-input policy, and side-effect gate mode. |
+| Run manifest | SC6 build identifier, HorseMod/native DLL build identifier, loaded gameplay-affecting mods, scenario hash, input hash, fault-config hash, and rollback-config hash. |
+| Baseline artifact | Per-frame authoritative inputs, hashes, RNG states, frame-boundary trace, and snapshot hash at the initial frame. |
+| Failure capsule | Minimal rerun command/config, seed, first divergent frame, last matching frame, nearby input cells, RNG delta, snapshot ids, and log excerpts. |
+
+The scenario runner should refuse to start if the manifest changes between
+baseline and faulted runs. Do not compare a faulted rollback run against a
+baseline from a different build, mod set, stage, or expanded input script.
+
+### Configuration matrix
+
+Use a small fixed matrix for quick developer runs and a broader seeded matrix
+for overnight or CI-style runs.
+
+| Axis | Quick values | Soak values |
+|---|---|---|
+| Scenario class | idle, walk/block, simple hit, hitstop | wall/barrier contact, throw, ring edge, camera/VFX-heavy, KO-boundary refusal |
+| Local input delay | 0, 1, 2 frames | 0..4 frames |
+| Max rollback depth | 2, 6, 10 frames | 1..20 frames, plus one over-limit refusal case |
+| Prediction policy | neutral, hold-last | hold-last with age cap, scripted branch predictor if one exists later |
+| Base one-way latency | 0, 2, 5, 8 frames | 0..15 frames |
+| Jitter | none, +/-1 frame | seeded uniform/burst jitter up to the rollback limit |
+| Loss | 0%, 1%, 5% | seeded random and burst-loss windows |
+| Reorder window | none, 2 frames | 2..8 frames |
+| Duplication | off, 1% | 1..10% duplicate inputs/packets |
+| Corruption | off, cache-tag flip | input-bit flip, frame-id flip, malformed decoded record |
+| Side-effect gates | on | on/off comparison, visible-frame-only ledger check |
+
+The quick matrix should be small enough to run before committing a risky change.
+The soak matrix should prefer breadth over random noise: every row must still
+produce a named scenario, seed, config, and reproducible failure capsule.
+
+### CI, headless, and scripted local runs
+
+SC6 itself may not be friendly to true headless CI, so split the automation into
+tiers:
+
+- **Offline parser/comparator CI**: validate scenario files, expand input
+  scripts, replay saved logs, compare existing baseline/faulted artifacts, and
+  verify that failure capsules can reconstruct the intended fault schedule.
+- **Scripted local game run**: launch the game with the lab DLL enabled, run a
+  named matrix, write artifacts, and return a process exit code based on the
+  pass/fail gates. This is the main developer workflow.
+- **Loopback transport run**: use two local peers or two local processes with a
+  deterministic fault shim once the in-process harness is already stable.
+- **Manual online smoke test**: only after local gates pass, run a small number
+  of real matches to inspect NAT/session behavior, real scheduling jitter, UI
+  diagnostics, and presentation side effects.
+
+A useful command shape is:
+
+```text
+rollback_lab run --scenario simple_hit --matrix quick --seed 0x51C6
+rollback_lab replay --failure artifacts/rollback/failures/2026-07-01-001.json
+rollback_lab compare --baseline artifacts/.../baseline.jsonl --run artifacts/.../faulted.jsonl
+```
+
+The exact command names can differ in HorseMod, but the contract should not:
+one command creates artifacts, one command replays a failure, and one command
+compares two existing logs without launching the game.
+
+### Metrics, artifacts, and pass/fail gates
+
+Every run should emit JSONL or another machine-readable format first, with a
+short text summary second. Screenshots or videos are useful for presentation
+bugs, but they are never the determinism oracle.
+
+Minimum artifacts:
+
+- `manifest.json`: build, mod, scenario, input, fault, rollback, and environment
+  hashes;
+- `baseline.jsonl`: authoritative no-delay frame records;
+- `faulted.jsonl`: rollback/prediction/correction frame records;
+- `faults.jsonl`: generated latency/jitter/loss/reorder/duplicate/corruption
+  events after seed expansion;
+- `snapshots.jsonl`: snapshot ids, source frames, region hashes, restore target
+  validation, save/restore timings, and retained/dropped snapshot counts;
+- `events.jsonl`: side-effect ledger entries and whether they happened on a
+  visible frame or hidden resim frame;
+- `summary.txt` or `summary.json`: first failure, gate results, max rollback
+  depth, max prediction age, max correction time, average correction time, and
+  artifact paths.
+
+Useful pass/fail gates:
+
+| Gate | Pass condition |
+|---|---|
+| Baseline determinism | Replaying the no-delay scenario produces identical gameplay hashes for the compared window. |
+| Immediate restore | Restore without frame advance preserves the canonical gameplay hash and emits no visible side-effect events. |
+| Resim equivalence | Restore/resim windows match the no-delay baseline at every compared final frame. |
+| Correction equivalence | Delayed or mispredicted inputs within the configured rollback window correct to the no-delay baseline. |
+| Over-limit policy | Inputs arriving beyond the rollback window trigger the configured stall/desync/refusal path instead of silent divergence. |
+| Input ownership | The consumed `FLuxReplayInputCacheEntry` metadata matches the rollback controller's intended absolute frame and slot. |
+| Side-effect gate | Hidden resim frames do not emit visible audio/VFX/camera/HUD/notify events, or every dedupe is named in the ledger. |
+| Timing budget | Snapshot, restore, resim, and compare times stay under the configured frame-budget threshold for the target hardware. |
+| Reproducibility | A failure capsule reruns to the same first divergent frame with the same seed and artifacts. |
+
+Do not weaken a gate by comparing only health, position, or final winner. Those
+are smoke checks. The rollback claim depends on canonical state hashes and a
+clear reason for every excluded field.
+
+### What local tests cannot prove
+
+The local lab is the right place to prove deterministic rollback mechanics, but
+it is not a substitute for real online testing.
+
+Local automated tests can prove:
+
+- the snapshot contains enough state for the tested active-round windows;
+- the chosen frame boundary consumes the intended inputs exactly once;
+- prediction/correction converges to the no-delay baseline under seeded faults;
+- side-effect gates suppress hidden resim events in controlled conditions;
+- failure logs are reproducible from seeds and artifacts.
+
+Real online tests are still needed for:
+
+- OS scheduler and driver behavior under real rendering/audio/network load;
+- NAT traversal, relay behavior, firewall interference, and Steam/session
+  timing;
+- real Wi-Fi and congested-lan jitter patterns that are not well modeled by a
+  simple seeded distribution;
+- remote peer disconnects, alt-tab stalls, loading hitches, rematches, and
+  process lifetime changes;
+- player-facing UI behavior when the connection is unstable or diagnostics are
+  unavailable.
+
+Treat online tests as integration validation after the local oracle is stable.
+If local rollback cannot match the no-delay baseline, real network tests will
+only make the failure harder to explain.
+
 ### Instrumentation to add first
 
 Build the instrumentation before building correction logic. Otherwise every
@@ -538,9 +712,11 @@ boundaries. Do not mutate the live online cache from a network thread.
 |---|---|---|---|
 | Dropped input packets | Safe to model by withholding the remote input from the rollback controller while retaining the authoritative baseline input in the test script. | Required to prove real packet loss handling before shipping online. | Pass: prediction is used, correction restores the right frame, final hash matches baseline. Fail: stall, wrong rollback depth, or missing correction. |
 | Delayed remote inputs | Safe and essential: deliver frame `F` at `F + delay` with delays from 1 to max rollback window plus one. | Required to measure real jitter and queue behavior. | Pass: delays within the window correct; delays beyond the window trigger a defined stall/desync policy. Fail: silent divergence or unbounded catch-up. |
+| Jittered input delivery | Safe to model as a seeded per-frame delay curve around a base latency, including bursts where several frames arrive at once. | Required to tune queue sizing, prediction age, and adaptive delay under real scheduling noise. | Pass: every correction within the window matches baseline and max prediction age is bounded. Fail: burst arrivals overwrite confirmed history or produce frame-boundary drift. |
 | Reordered packets | Safe to model by delivering remote inputs out of order to the input scheduler. | Required if using or extending the stock online parser/deque. | Pass: absolute frame id wins over arrival order. Fail: lower frame-low tags overwrite newer cache cells. |
 | Duplicate packets | Safe to inject as repeated confirmed inputs for the same absolute frame. | Required for real transport dedupe validation. | Pass: duplicate is idempotent and logged. Fail: duplicate increments metrics, rewrites confirmed history differently, or triggers extra rollback. |
 | Corrupted cache tags | Safe in offline cache-path tests by mutating `nFrameID`, `dwFrameIndex`, or `bFilled` in one `FLuxReplayInputCacheEntry`. | Not a transport fault by itself, but online hooks should guard malformed decoded records. | Pass: tag mismatch is detected as missing/invalid input and does not masquerade as neutral unless policy says so. Fail: stale cell is consumed as valid input. |
+| Corrupted input data | Safe to model by flipping one input bit, opcode-like field, frame id, or decoded-record field before the rollback controller sees it. | Required before trusting any real transport, especially if extending stock packet handling. | Pass: invalid records are rejected or corrected by later confirmation, and the failure is visible in logs. Fail: corrupted data becomes confirmed input without a checksum/state-hash complaint. |
 | Wrong frame IDs | Safe to inject in the local input-history layer and in cache cells. | Required for stock packet compatibility because opcode 0 only carries a 4-bit frame-low tag. | Pass: rollback protocol rejects or disambiguates the frame. Fail: input lands in the wrong 512-cell ring slot. |
 | Stale predictions | Safe: keep an old predicted remote input across a known change and correct later. | Required to tune prediction age and confirmation policy online. | Pass: stale prediction age is logged, corrected, and bounded. Fail: old prediction becomes confirmed by accident. |
 | Master clock jumps/stalls | Safe with HorseMod-style clock gates around `InputLog+0x3A4` and manual test writes in offline lab. | Required to see how real online stall/drain logic interacts with rollback ownership. | Pass: unexpected jumps/stalls are detected before simulation, and rollback refuses or repairs according to policy. Fail: `BM+0x1488/+0x148C/+0x1490` drift from `InputLog+0x3A4`. |
@@ -587,6 +763,121 @@ presentation can affect actor tick load, and a fixed test seed. Warm up the
 match before recording baseline frames, compare immediate restore before
 longer resim, and keep a list of excluded hash fields with evidence for each
 exclusion.
+
+## Player connection diagnostics and Wi-Fi warnings
+
+Rollback testing is developer-facing, but connection diagnostics are
+player-facing. The UI should help players understand unstable matches without
+claiming certainty the mod does not have.
+
+### Detecting Wi-Fi versus wired
+
+Detect the local adapter type when the OS exposes it. On Windows, an external
+launcher, overlay, or native helper can usually ask the networking stack whether
+the active route uses an Ethernet-like interface, an IEEE 802.11 interface, a
+virtual adapter, or an unknown type. That should be treated as a local hint, not
+as proof of match quality.
+
+Useful local categories:
+
+| Category | UI meaning |
+|---|---|
+| Wired | The active local route appears to use Ethernet or another wired-like adapter. |
+| Wi-Fi | The active local route appears to use an IEEE 802.11 adapter. |
+| Virtual/VPN | The active route appears to use a tunnel, VPN, virtual switch, or adapter type that may hide the real link. |
+| Unknown | The OS did not expose enough information, permission was missing, or multiple routes made the result ambiguous. |
+
+Remote Wi-Fi detection is not reliable unless the remote mod voluntarily sends a
+small self-reported adapter category. NAT, Steam/relay paths, VPNs, and OS
+privacy boundaries generally prevent one peer from proving the other peer's
+last-hop connection type. Even with self-reporting, a remote "wired" label does
+not prove the route is clean, and a remote "Wi-Fi" label does not prove the
+match will be bad.
+
+### What to measure when adapter type is unavailable
+
+Prefer live connection quality metrics over adapter labels:
+
+- rolling RTT and p95/p99 RTT;
+- jitter in milliseconds and in 60 fps frame units;
+- packet/input loss rate and burst-loss length;
+- reorder and duplicate counts;
+- resend-window occupancy;
+- stock stall counter behavior such as `BM+0x1638`, where available;
+- rollback depth, prediction age, correction count, and over-window late inputs;
+- desync/state-hash warnings once hashes exist.
+
+Report these as rolling windows, not single samples. A 10 to 30 second window is
+usually more useful than one ping spike. Keep the units visible: milliseconds
+for network time, frames for simulation impact.
+
+### Honest UI wording
+
+Use careful wording:
+
+- "Local connection appears to be Wi-Fi."
+- "Remote connection reports Wi-Fi."
+- "Adapter type unavailable; judging by live connection quality."
+- "Connection quality is unstable: high jitter/loss."
+- "Rollback limit exceeded; match may stall or desync."
+
+Avoid absolute claims:
+
+- "Opponent is on Wi-Fi" unless the remote peer explicitly reports it.
+- "Bad connection because Wi-Fi" when loss/jitter metrics are clean.
+- "Wired connection is good" when RTT, jitter, loss, or stalls are poor.
+- "NAT type caused lag" unless the transport layer has specific evidence.
+
+Do not block matchmaking solely because Wi-Fi is detected. At most, show a
+warning or require confirmation for ranked/competitive modes if the live quality
+metrics are already outside policy.
+
+### Thresholds and warnings
+
+Tune thresholds with real data, but start with frame-aware defaults:
+
+| Signal | Caution | Warning |
+|---|---:|---:|
+| Rolling RTT | above 70 ms | above 120 ms |
+| p95 jitter | above 1 frame / 16.7 ms | above 2 frames / 33.3 ms |
+| Packet/input loss | above 0.2% | above 1% or any burst longer than 3 frames |
+| Reorder/duplicate rate | recurring in the last 30 seconds | enough to trigger corrections or queue pressure |
+| Prediction age | above half the rollback window | reaches the rollback window |
+| Rollback depth | frequent corrections above 3 frames | repeated over-window late inputs |
+| Stall counter | recurring stalls | stalls that coincide with input starvation or correction failure |
+
+Warnings should explain the observable problem, not just the presumed cause:
+
+```text
+Connection unstable: jitter is averaging 2.4 frames over the last 20 seconds.
+Adapter type unavailable.
+```
+
+```text
+Local route appears to be Wi-Fi. Live quality is currently stable.
+```
+
+```text
+Remote peer reports Wi-Fi. Packet loss is 1.3%; rollback corrections may fail.
+```
+
+### Privacy-safe telemetry
+
+If telemetry is collected, keep it aggregate and opt-in where possible. The
+useful diagnostics do not need SSID, BSSID, MAC address, local IP, public IP,
+geolocation, adapter name, raw packet payloads, or per-frame player inputs.
+
+Safe fields are coarse categories and rolling metrics:
+
+- local/remote adapter category: wired, Wi-Fi, virtual, unknown;
+- NAT/session category if already exposed by the transport layer;
+- rolling RTT, jitter, loss, reorder, duplicate, stall, and rollback metrics;
+- SC6/mod build ids, gameplay-affecting mod manifest hash, and scenario/test
+  identifiers for lab runs;
+- whether a warning was shown, dismissed, or followed by a disconnect.
+
+For public logs, hash peer/session ids with a per-session salt or omit them.
+The goal is to debug connection quality, not identify a player's home network.
 
 ## Other ways to improve online play
 

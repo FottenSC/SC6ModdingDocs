@@ -13,6 +13,18 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-07-01 - Rollback Testing and Diagnostics Expansion
+
+### Added
+
+- Expanded the rollback netcode cookbook with a local automated test topology,
+  harness components, config matrix, scripted/headless run tiers, reproducible
+  artifacts, pass/fail gates, and the limits of local testing versus real online
+  play.
+- Added player-facing Wi-Fi and connection diagnostics guidance covering adapter
+  inference, NAT/OS limits, quality metrics, warning thresholds, honest UI
+  wording, and privacy-safe telemetry.
+
 ## 2026-06-28 - DotVanisher Cookbook Recipe
 
 ### Added
