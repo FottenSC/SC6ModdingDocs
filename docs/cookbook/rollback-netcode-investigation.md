@@ -648,8 +648,9 @@ Real online tests are still needed for:
 - OS scheduler and driver behavior under real rendering/audio/network load;
 - NAT traversal, relay behavior, firewall interference, and Steam/session
   timing;
-- real Wi-Fi and congested-lan jitter patterns that are not well modeled by a
-  simple seeded distribution;
+- real jitter patterns from congested LANs, VPN/relay paths, overloaded
+  systems, and unstable routes that are not well modeled by a simple seeded
+  distribution;
 - remote peer disconnects, alt-tab stalls, loading hitches, rematches, and
   process lifetime changes;
 - player-facing UI behavior when the connection is unstable or diagnostics are
@@ -764,42 +765,22 @@ match before recording baseline frames, compare immediate restore before
 longer resim, and keep a list of excluded hash fields with evidence for each
 exclusion.
 
-## Player connection diagnostics and Wi-Fi warnings
+## Player connection instability diagnostics
 
 Rollback testing is developer-facing, but connection diagnostics are
 player-facing. The UI should help players understand unstable matches without
 claiming certainty the mod does not have.
 
-### Detecting Wi-Fi versus wired
+### Primary instability signals
 
-Detect the local adapter type when the OS exposes it. On Windows, an external
-launcher, overlay, or native helper can usually ask the networking stack whether
-the active route uses an Ethernet-like interface, an IEEE 802.11 interface, a
-virtual adapter, or an unknown type. That should be treated as a local hint, not
-as proof of match quality.
+Diagnose the observable connection behavior first. Adapter type is a weak proxy;
+rollback needs to know whether input delivery is stable enough for the current
+rollback window.
 
-Useful local categories:
-
-| Category | UI meaning |
-|---|---|
-| Wired | The active local route appears to use Ethernet or another wired-like adapter. |
-| Wi-Fi | The active local route appears to use an IEEE 802.11 adapter. |
-| Virtual/VPN | The active route appears to use a tunnel, VPN, virtual switch, or adapter type that may hide the real link. |
-| Unknown | The OS did not expose enough information, permission was missing, or multiple routes made the result ambiguous. |
-
-Remote Wi-Fi detection is not reliable unless the remote mod voluntarily sends a
-small self-reported adapter category. NAT, Steam/relay paths, VPNs, and OS
-privacy boundaries generally prevent one peer from proving the other peer's
-last-hop connection type. Even with self-reporting, a remote "wired" label does
-not prove the route is clean, and a remote "Wi-Fi" label does not prove the
-match will be bad.
-
-### What to measure when adapter type is unavailable
-
-Prefer live connection quality metrics over adapter labels:
+Prefer rolling live metrics:
 
 - rolling RTT and p95/p99 RTT;
-- jitter in milliseconds and in 60 fps frame units;
+- rolling jitter in milliseconds and in 60 fps frame units;
 - packet/input loss rate and burst-loss length;
 - reorder and duplicate counts;
 - resend-window occupancy;
@@ -811,26 +792,41 @@ Report these as rolling windows, not single samples. A 10 to 30 second window is
 usually more useful than one ping spike. Keep the units visible: milliseconds
 for network time, frames for simulation impact.
 
+### Optional local adapter hints
+
+Adapter information can be shown as a local troubleshooting hint when the OS
+exposes it, but it should not be treated as the primary diagnostic or a match
+policy input. On Windows, an external launcher, overlay, or native helper may be
+able to tell the local user that the active route appears wireless, wired-like,
+virtual/VPN, or unknown. That hint should stay local unless the player explicitly
+chooses to include it in a support report.
+
+Remote adapter detection is not reliable. NAT, Steam/relay paths, VPNs, virtual
+adapters, and OS privacy boundaries generally prevent one peer from proving the
+other peer's last-hop connection type. Even voluntary self-reporting is weaker
+than live jitter, loss, RTT, stall, and rollback metrics.
+
 ### Honest UI wording
 
 Use careful wording:
 
-- "Local connection appears to be Wi-Fi."
-- "Remote connection reports Wi-Fi."
-- "Adapter type unavailable; judging by live connection quality."
-- "Connection quality is unstable: high jitter/loss."
+- "Connection unstable: high jitter over the last 20 seconds."
+- "Packet loss burst detected; rollback corrections may fail."
 - "Rollback limit exceeded; match may stall or desync."
+- "High jitter suggests one peer may be on Wi-Fi, a congested LAN, VPN/relay,
+  overloaded system, or unstable route."
+- "Local adapter hint: route appears wireless. Live quality is currently stable."
 
 Avoid absolute claims:
 
-- "Opponent is on Wi-Fi" unless the remote peer explicitly reports it.
-- "Bad connection because Wi-Fi" when loss/jitter metrics are clean.
-- "Wired connection is good" when RTT, jitter, loss, or stalls are poor.
+- "Opponent is on Wi-Fi."
+- "Bad connection because Wi-Fi."
+- "Wired connection is good."
 - "NAT type caused lag" unless the transport layer has specific evidence.
 
-Do not block matchmaking solely because Wi-Fi is detected. At most, show a
-warning or require confirmation for ranked/competitive modes if the live quality
-metrics are already outside policy.
+Do not block matchmaking or rank policy based on adapter category. At most, show
+a warning or require confirmation for ranked/competitive modes if rolling jitter,
+loss, stalls, or rollback pressure are already outside policy.
 
 ### Thresholds and warnings
 
@@ -838,9 +834,10 @@ Tune thresholds with real data, but start with frame-aware defaults:
 
 | Signal | Caution | Warning |
 |---|---:|---:|
-| Rolling RTT | above 70 ms | above 120 ms |
 | p95 jitter | above 1 frame / 16.7 ms | above 2 frames / 33.3 ms |
+| Jitter burst | any burst above 2 frames | repeated bursts above rollback delay budget |
 | Packet/input loss | above 0.2% | above 1% or any burst longer than 3 frames |
+| Rolling RTT | above 70 ms | above 120 ms |
 | Reorder/duplicate rate | recurring in the last 30 seconds | enough to trigger corrections or queue pressure |
 | Prediction age | above half the rollback window | reaches the rollback window |
 | Rollback depth | frequent corrections above 3 frames | repeated over-window late inputs |
@@ -850,31 +847,38 @@ Warnings should explain the observable problem, not just the presumed cause:
 
 ```text
 Connection unstable: jitter is averaging 2.4 frames over the last 20 seconds.
-Adapter type unavailable.
+High jitter suggests one peer may be on Wi-Fi, a congested LAN, VPN/relay,
+overloaded system, or unstable route.
 ```
 
 ```text
-Local route appears to be Wi-Fi. Live quality is currently stable.
+Packet loss burst: 5 missing input frames in the last 10 seconds.
+Rollback corrections may fail.
 ```
 
 ```text
-Remote peer reports Wi-Fi. Packet loss is 1.3%; rollback corrections may fail.
+Local adapter hint: route appears wireless.
+Live quality is currently stable.
 ```
 
 ### Privacy-safe telemetry
 
 If telemetry is collected, keep it aggregate and opt-in where possible. The
 useful diagnostics do not need SSID, BSSID, MAC address, local IP, public IP,
-geolocation, adapter name, raw packet payloads, or per-frame player inputs.
+geolocation, adapter name, adapter category, raw packet payloads, or per-frame
+player inputs.
 
-Safe fields are coarse categories and rolling metrics:
+Safe fields are rolling metrics and coarse session outcomes:
 
-- local/remote adapter category: wired, Wi-Fi, virtual, unknown;
 - NAT/session category if already exposed by the transport layer;
 - rolling RTT, jitter, loss, reorder, duplicate, stall, and rollback metrics;
 - SC6/mod build ids, gameplay-affecting mod manifest hash, and scenario/test
   identifiers for lab runs;
 - whether a warning was shown, dismissed, or followed by a disconnect.
+
+Do not upload local or remote adapter categories as routine telemetry. If a
+player chooses to attach a local support bundle, an adapter hint can be included
+as an explicit local note, not as a match-quality verdict.
 
 For public logs, hash peer/session ids with a per-session salt or omit them.
 The goal is to debug connection quality, not identify a player's home network.

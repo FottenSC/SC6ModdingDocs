@@ -21,9 +21,9 @@ git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
   harness components, config matrix, scripted/headless run tiers, reproducible
   artifacts, pass/fail gates, and the limits of local testing versus real online
   play.
-- Added player-facing Wi-Fi and connection diagnostics guidance covering adapter
-  inference, NAT/OS limits, quality metrics, warning thresholds, honest UI
-  wording, and privacy-safe telemetry.
+- Added player-facing jitter-first connection diagnostics guidance covering
+  rolling RTT, jitter, loss, stalls, rollback pressure, cautious likely-cause
+  warnings, honest UI wording, and privacy-safe telemetry.
 
 ## 2026-06-28 - DotVanisher Cookbook Recipe
 
