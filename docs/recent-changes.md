@@ -13,6 +13,19 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-07-03 - PlayFab Party Practical Latency Estimates
+
+### Changed
+
+- Added cautious Norway-to-America and Norway-to-Japan PlayFab Party relay
+  estimates, including Azure Norway East inter-region P50 sanity checks,
+  realistic median-RTT improvement ranges, and guidance to judge routes by
+  p95/p99 jitter, loss, stalls, late inputs, and rollback pressure instead of
+  average ping alone.
+- Documented the relay-only baseline tradeoff: safer peer-IP privacy and a
+  more controlled test path, but potentially worse latency than a good direct
+  route.
+
 ## 2026-07-03 - PlayFab Party Route-Quality Clarification
 
 ### Changed

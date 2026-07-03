@@ -129,6 +129,52 @@ to West Europe is in the high 80 ms range, and East US to North Europe / UK
 South is in the mid-to-high 70 ms range. Residential-player-to-cloud legs must
 be added on top.
 
+### Practical estimate: Norway to America/Japan
+
+For a Norway-based player asking how much PlayFab Party cloud relay might
+improve connections to America or Japan, the cautious answer is: it can improve
+bad routes, but it cannot beat physical lower bounds. A relay only helps when
+it removes avoidable overhead such as poor ISP peering, hairpinning, congestion,
+loss, or queueing jitter. If the existing direct/Steam route is already close
+to the physical floor, adding a Party relay leg can tie or lose.
+
+Azure's public inter-region P50 RTT tables are useful as sanity checks for the
+cloud-backbone part of the path, not as promises for residential players. Around
+the 2026-07 public data, Norway East to candidate destination regions is roughly:
+
+| Azure inter-region path | Public P50 RTT sanity check | Practical meaning |
+|---|---:|---|
+| Norway East to East US | ~95 to 100 ms | US East is the most plausible America-side case where Party/Azure routing might reduce a bad residential route. |
+| Norway East to West US | ~148 to 155 ms | US West has much less room for a relay to feel like a ping improvement because the physical distance and cloud backbone leg are already large. |
+| Norway East to Japan East/West | ~240 to 245 ms | Japan is unlikely to get a large median-RTT win; the main possible benefit is steadier jitter/loss behavior. |
+
+Residential access adds overhead on both sides: Wi-Fi, local ISP routing,
+peering, last-mile congestion, cable/fiber path length, home router queues, and
+the player's distance from the chosen Azure/Party region. The real application
+RTT is the cloud sanity check plus both player-to-cloud legs and any service or
+queueing overhead.
+
+Likely improvement ranges for Norway-based testing:
+
+| Route class | Cautious Party relay expectation |
+|---|---|
+| Norway to US East | Common bad-route improvement target. Expect `0` to `30 ms` median RTT improvement in typical poor-peering cases; `40` to `60+ ms` only when the original path is severely hairpinned, congested, or otherwise pathological. |
+| Norway to US West | Less likely to improve median RTT. Expect `0` to `30 ms` at most unless the baseline route is obviously broken; stability may matter more than average ping. |
+| Norway to Japan | Usually `0` to `30 ms` median RTT improvement, and often no median-ping win at all. The more realistic win is lower p95/p99 jitter, fewer loss bursts, fewer stalls, or smoother late-input behavior. |
+
+For SC6 and rollback-style experiments, measure the route by its gameplay
+pressure, not by average ping alone. The route report should prioritize p95/p99
+jitter, packet loss, burst loss, stalls, late inputs, prediction age, rollback
+depth, and over-window input arrivals. A Party route with the same median RTT
+can still be better if it removes frame-sized spikes; a Party route with a
+lower average ping can still be worse if it creates burst stalls.
+
+Disabling direct peer connectivity and forcing Party cloud relay is a useful
+privacy-safe baseline because it avoids exposing peer IPs and makes the path
+more controlled. That same setting can lose to a good direct path, so the
+baseline should be treated as a safety/stability comparison, not as the
+automatic fastest mode.
+
 ## Relation to SC6 rollback work
 
 The relay question depends on the rollback investigation in three ways:
