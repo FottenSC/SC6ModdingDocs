@@ -13,6 +13,19 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-07-03 - PlayFab Party Route-Quality Clarification
+
+### Changed
+
+- Clarified the PlayFab Party relay cookbook to distinguish unavoidable
+  physical propagation latency from avoidable routing overhead, ISP
+  hairpinning, congestion, jitter, loss, NAT trouble, and route instability.
+- Made the Party framing less dismissive by explaining how QoS measurement,
+  selected Azure regions/backbone paths, transparent relay behavior, session
+  policy, and optional direct-peer mode could plausibly improve bad routes while
+  preserving the requirement to measure against good direct and Steam Datagram
+  Relay paths.
+
 ## 2026-07-03 - PlayFab Party Netcode Relay Revision
 
 ### Changed

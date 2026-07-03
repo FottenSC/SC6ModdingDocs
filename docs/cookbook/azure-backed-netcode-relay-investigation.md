@@ -18,12 +18,21 @@ PlayFab Party is the better lead candidate than a raw Azure VM relay if the goal
 is a managed game-networking path with QoS measurement, region selection,
 session control, transparent cloud relay, and optional direct peer connectivity.
 Treat it as a **measured route-quality and connectivity fallback**, not as a
-magic ping reducer.
+speed-of-light bypass.
 
-PlayFab Party still cannot beat the speed-of-light floor between North America
-and Europe. It also cannot make a good direct peer or Steam Datagram Relay route
-faster just by inserting a cloud relay in the middle. Party only has a chance to
-help when at least one of these is true:
+The important split is physical propagation latency versus avoidable path
+overhead. PlayFab Party cannot make transatlantic packets propagate faster than
+the fiber distance allows. It can plausibly reduce the avoidable part of a bad
+route: poor ISP peering, route hairpinning through distant transit, congestion,
+queueing jitter, packet loss, NAT trouble, or unstable direct connectivity.
+Party's useful claim is that QoS measurement, selected Azure regions, Azure
+backbone paths, transparent cloud relay, session policy, and optional direct
+peer mode can sometimes choose a better route than the one the peers would get
+by default.
+
+Party still cannot make a good direct peer or Steam Datagram Relay route faster
+just by inserting a cloud relay in the middle. It only has a chance to help when
+at least one of these is true:
 
 - the direct ISP path is bad, congested, or hairpinned through poor transit;
 - Steam Datagram Relay chooses a worse path than the measured Party route for
@@ -45,7 +54,8 @@ Practical verdict:
 
 | Question | Current answer |
 |---|---|
-| Can PlayFab Party reduce unavoidable US<->EU propagation delay? | No. Any relay still has physical distance and routing overhead. |
+| Can PlayFab Party reduce unavoidable US<->EU propagation delay? | No. The physical propagation floor remains. |
+| Can Party reduce avoidable route overhead or instability? | Plausibly. QoS-selected regions, Azure backbone/relay paths, session policy, and optional direct peer mode can avoid some ISP hairpinning, congestion, jitter, loss, or NAT failures. |
 | Can Party beat bad direct peering or a bad SDR route? | Sometimes, but only if measured end-to-end jitter/loss/RTT and gameplay metrics improve. |
 | Can this work with stock SC6 transport unchanged? | Unproven and unlikely. Treat stock Steam transport as not redirectable until proven otherwise. |
 | Lead candidate | PlayFab Party as a managed transport/QoS/session experiment, if native integration is possible. |
@@ -60,6 +70,17 @@ Practical verdict:
 For a fighting game, median ping is not enough. A stable 90 ms RTT can feel
 better than a 75 ms route with 40 ms jitter bursts, but the physical floor still
 matters.
+
+Separate the latency budget into two buckets:
+
+- **Physical propagation**: the unavoidable time for the signal to cross the
+  real distance through fiber and access networks. Party, SDR, a custom Azure
+  relay, and direct peer mode all share this floor.
+- **Avoidable overhead**: routing detours, ISP hairpinning, congested peering,
+  queues, retransmission-like stalls above UDP, jitter, loss, NAT fallback
+  behavior, and bad region/session choices. Party can plausibly improve this
+  bucket when its QoS-selected relay or direct path is better than the default
+  peer path.
 
 Rough lower bounds:
 
@@ -94,9 +115,12 @@ relay_rtt ~= client_a_to_region_a_rtt
           + client_b_to_region_b_rtt
 ```
 
-That formula is why a relay usually loses against a good direct route. It wins
-only if the direct route is worse than the sum of the relay legs, or if jitter
-and loss are low enough to justify a similar median RTT.
+That formula is why a relay is not automatically faster than direct play. A
+good direct or SDR path usually wins because it avoids extra relay legs. Party
+or a custom relay can still win when the default path is inefficient enough that
+the measured relay legs are better, or when lower jitter, lower loss, fewer
+burst stalls, or more reliable session connectivity justify a similar or
+slightly higher median RTT.
 
 Party QoS and Azure's public inter-region latency tables are useful sanity
 checks, not player-route guarantees. Azure's 2026-07-02 public inter-region
@@ -164,7 +188,13 @@ Minimum fight-input payload metadata stays the same as a custom UDP protocol:
 Benefits:
 
 - QoS measurements can inform region selection before the match starts.
+- QoS-selected Azure relay paths may avoid bad ISP peering, distant hairpinning,
+  or congested direct routes for some player pairs.
+- Azure backbone routing between selected regions can be more stable than the
+  default residential-transit path, but this must be measured per route.
 - Transparent cloud relay can hide peer IPs when direct peer mode is disabled.
+- Session policy can decide when relay, direct peer, or another measured route
+  is allowed instead of treating connectivity as an accidental side effect.
 - Direct peer connectivity can be tested as an optional performance mode when
   both players accept the IP disclosure tradeoff.
 - Session/auth/control concerns are more game-oriented than a generic VM relay.
@@ -172,6 +202,7 @@ Benefits:
 Limits:
 
 - Party is not a transparent redirector for stock SC6 or Steam packets.
+- Party does not bypass the physical propagation floor between continents.
 - Party still needs native integration, lifecycle handling, and failure policy.
 - Party relay may be slower than Steam Datagram Relay or a good direct route.
 - Direct peer mode changes the privacy/security model because peer IP
@@ -361,9 +392,10 @@ Write down the exact hypothesis before integrating anything:
 
 ```text
 For America-Europe pairs with unstable direct/Steam routing, PlayFab Party can
-reduce p95/p99 jitter, burst loss, connection failures, or over-window late
-inputs enough to improve SC6 match quality, even if median RTT is unchanged or
-slightly worse.
+reduce avoidable route overhead, p95/p99 jitter, burst loss, connection
+failures, or over-window late inputs enough to improve SC6 match quality, even
+though the physical propagation floor is unchanged and median RTT may be
+unchanged or slightly worse.
 ```
 
 This avoids optimizing for a headline ping number that does not matter in
@@ -500,7 +532,7 @@ explicit opt-in support bundles.
 
 | Risk | Consequence | Mitigation |
 |---|---|---|
-| Speed-of-light floor | Party or any relay cannot make US<->EU faster than physical distance allows. | Publish route-quality criteria and refuse to claim impossible ping reductions. |
+| Speed-of-light floor | Party or any relay cannot make US<->EU packets propagate faster than physical distance allows. | Frame the claim around reducing avoidable routing overhead, jitter, loss, and connection failures; refuse to claim impossible propagation reductions. |
 | Stock transport ownership | The mod may not be able to redirect SC6/Steam traffic cleanly. | Build only against a mod-owned transport boundary; stop if that boundary does not exist. |
 | Native Party integration | The SDK may be hard to initialize, authenticate, drive, or ship safely inside this modding environment. | Start with an external native harness, then integrate only after lifecycle and failure behavior are known. |
 | Steam Datagram Relay already helps | Party might be worse than SDR for many users. | Measure direct, SDR-visible, and Party candidates before choosing a route. |
@@ -627,10 +659,11 @@ before spending money or publishing a public relay:
 Prototype PlayFab Party first as a measured managed transport/control option
 for a mod-owned SC6 input transport.
 
-Do not market it as "better America-Europe ping." The honest claim to test is
-that Party might produce a steadier route, better session/region selection, or a
-safer relay fallback for some bad direct/Steam pairs. If the mod cannot own the
-SC6 input transport boundary, if Party cannot be integrated safely, or if Party
-does not improve frame-aware route quality in real tests, stop at documentation
-and local diagnostics. Build a raw Azure VM/VMSS relay only as a lower-level
-custom data-plane fallback with a specific measured reason.
+Do not market it as removing America-Europe propagation latency. The honest
+claim to test is that Party might reduce avoidable route inefficiency and
+produce a steadier route, better session/region selection, or a safer relay
+fallback for some bad direct/Steam pairs. If the mod cannot own the SC6 input
+transport boundary, if Party cannot be integrated safely, or if Party does not
+improve frame-aware route quality in real tests, stop at documentation and local
+diagnostics. Build a raw Azure VM/VMSS relay only as a lower-level custom
+data-plane fallback with a specific measured reason.
