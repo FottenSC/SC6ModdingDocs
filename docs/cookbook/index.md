@@ -8,9 +8,16 @@ Short, copy-pasteable recipes. Each one is self-contained: what it does, the cod
 
 ## Investigations
 
+- [Browser Replay Display Feasibility Investigation](browser-replay-display-feasibility.md) -
+  decision record for browser replay viewing options: local game launch,
+  metadata/timeline display, local streaming, hosted video rendering, and why a
+  WebAssembly SC6 port is not the practical path.
 - [Rollback Netcode Feasibility Investigation](rollback-netcode-investigation.md) -
   Ghidra-backed decision record for SC6's online input path, snapshot state,
   replay reuse, and a minimal rollback prototype plan.
+- [Automated Rollback Netcode Testing on One Machine](automated-rollback-netcode-testing.md) -
+  practical local test topologies, harness gates, fault injection, artifacts,
+  and limits for SC6 online/rollback experiments.
 
 ## Native DLL recipes
 

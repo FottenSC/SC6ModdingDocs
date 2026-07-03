@@ -13,6 +13,23 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-07-03 - Single-Machine Rollback Testing Cookbook
+
+### Added
+
+- Added a practical cookbook page for automated SC6 online/rollback netcode
+  testing on one machine, covering in-process virtual peers,
+  baseline-vs-faulted harnesses, loopback shims, two local game processes,
+  VM/sandbox isolation, Windows network emulation, Steam/relay limitations,
+  replay/log-driven tests, parser/comparator CI, fault injection,
+  instrumentation, artifacts, pass/fail gates, and what local tests cannot
+  prove.
+
+### Changed
+
+- Linked the new rollback testing cookbook from the Cookbook index and MkDocs
+  navigation.
+
 ## 2026-07-01 - Ghidra Validation Pass
 
 ### Changed

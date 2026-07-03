@@ -110,7 +110,9 @@ nav:
       - Dev / Debug Hooks: sc6/dev-debug-hooks.md
   - Cookbook:
       - cookbook/index.md
+      - Browser Replay Display Feasibility: cookbook/browser-replay-display-feasibility.md
       - Rollback Netcode Feasibility: cookbook/rollback-netcode-investigation.md
+      - Automated Rollback Netcode Testing: cookbook/automated-rollback-netcode-testing.md
       - DotVanisher Spectator Timeout: cookbook/dotvanisher.md
       - Replace a Stage: cookbook/replace-stage.md
       - Custom Stage (new code): cookbook/custom-stage.md
