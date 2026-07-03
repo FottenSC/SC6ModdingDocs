@@ -13,6 +13,23 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-07-03 - Azure-Backed Netcode Relay Investigation
+
+### Added
+
+- Added a documentation-only cookbook investigation for whether an Azure-backed
+  UDP relay could improve America-Europe SC6 online route quality, covering
+  speed-of-light limits, why relays cannot beat good direct peering, stock
+  SC6/Steam transport ownership risks, Azure VM/container relay candidates,
+  PlayFab/Party and signaling options, Azure Relay/Web PubSub limitations,
+  TURN-like fallback behavior, telemetry, prototype phases, privacy/ToS
+  boundaries, and decision criteria.
+
+### Changed
+
+- Linked the Azure relay investigation from the Cookbook index and MkDocs
+  navigation.
+
 ## 2026-07-03 - Single-Machine Rollback Testing Cookbook
 
 ### Added

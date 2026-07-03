@@ -15,6 +15,10 @@ Short, copy-pasteable recipes. Each one is self-contained: what it does, the cod
 - [Rollback Netcode Feasibility Investigation](rollback-netcode-investigation.md) -
   Ghidra-backed decision record for SC6's online input path, snapshot state,
   replay reuse, and a minimal rollback prototype plan.
+- [Azure-Backed Netcode Relay Investigation](azure-backed-netcode-relay-investigation.md) -
+  documentation-only decision record for whether an Azure UDP relay could
+  improve America-Europe SC6 route quality, including latency limits,
+  candidate Azure services, telemetry, risks, privacy, and pass/fail criteria.
 - [Automated Rollback Netcode Testing on One Machine](automated-rollback-netcode-testing.md) -
   practical local test topologies, harness gates, fault injection, artifacts,
   and limits for SC6 online/rollback experiments.
