@@ -112,7 +112,7 @@ nav:
       - cookbook/index.md
       - Browser Replay Display Feasibility: cookbook/browser-replay-display-feasibility.md
       - Rollback Netcode Feasibility: cookbook/rollback-netcode-investigation.md
-      - Azure-Backed Netcode Relay: cookbook/azure-backed-netcode-relay-investigation.md
+      - PlayFab Party Netcode Relay: cookbook/azure-backed-netcode-relay-investigation.md
       - Automated Rollback Netcode Testing: cookbook/automated-rollback-netcode-testing.md
       - DotVanisher Spectator Timeout: cookbook/dotvanisher.md
       - Replace a Stage: cookbook/replace-stage.md

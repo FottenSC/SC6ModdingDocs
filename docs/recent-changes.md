@@ -13,6 +13,21 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-07-03 - PlayFab Party Netcode Relay Revision
+
+### Changed
+
+- Reframed the netcode relay cookbook around PlayFab/PlayFab Party as the lead
+  managed transport and control-plane candidate, covering QoS measurement,
+  region selection, transparent cloud relay, optional direct peer policy, and
+  TURN-like fallback behavior.
+- Demoted raw Azure VM/VMSS relay infrastructure to a lower-level custom
+  data-plane fallback, while preserving the caveats that relays cannot beat the
+  speed-of-light floor, cannot outperform good direct peering by default, and
+  still require native transport ownership.
+- Updated the Cookbook index and MkDocs navigation label to match the
+  PlayFab-focused framing.
+
 ## 2026-07-03 - Azure-Backed Netcode Relay Investigation
 
 ### Added
