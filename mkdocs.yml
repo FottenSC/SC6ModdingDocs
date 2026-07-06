@@ -103,6 +103,7 @@ nav:
       - Battle Message System: sc6/messages.md
       - Replay System: sc6/replay-system.md
       - Leaderboards & Online: sc6/leaderboards.md
+      - Online Matchmaking: sc6/online-matchmaking.md
       - Drawing 3D Debug Lines: sc6/line-batching.md
       - Move System (VM): sc6/move-system.md
       - Audio System: sc6/audio-system.md

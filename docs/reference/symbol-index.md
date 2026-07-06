@@ -298,6 +298,11 @@ the page link for full context.
 
 | Symbol | Address | Page |
 |---|---|---|
+| `CreateLuxorPlayerSession` | `0x142E14BD0` | [Online Matchmaking: player room advertisement](../sc6/online-matchmaking.md#player-room-advertisement) |
+| `FindLuxorPlayerSession` | `0x142E17580` | [Online Matchmaking: player room search](../sc6/online-matchmaking.md#player-room-search) |
+| `CreateLuxorRankSession` | `0x142E15850` | [Online Matchmaking: ranked advertisement](../sc6/online-matchmaking.md#ranked-advertisement) |
+| `FindLuxorRankSession` | `0x142E18030` | [Online Matchmaking: ranked search](../sc6/online-matchmaking.md#ranked-search) |
+| `CreatePlayerMatchSessionSearch` | `0x142E18E20` | [Online Matchmaking: session search object](../sc6/online-matchmaking.md#session-search-object) |
 | `ALuxBattleManager_CheckOnlineSessionActive` | `0x1403F2590` | [Leaderboards & Online: detection](../sc6/leaderboards.md#detection-is-this-match-online) — the canonical "are we online" gate |
 | `ALuxBattleManager_IsBattleOnline` | `0x1403F1A60` | [Leaderboards & Online: detection](../sc6/leaderboards.md#detection-is-this-match-online) — world-context-aware wrapper |
 | `GetLocalOnlineSession` | `0x1403F07A0` | [Leaderboards & Online: Steam interface accessors](../sc6/leaderboards.md#steam-interface-accessors) |

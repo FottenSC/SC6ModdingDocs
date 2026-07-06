@@ -13,6 +13,23 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-07-06 - Online Matchmaking Internals
+
+### Added
+
+- Added a dedicated SC6 online matchmaking internals article covering
+  `ULuxorSessionHub` player-room and ranked-session create/find helpers,
+  `FLuxorPlayerMatchSessionSetting` and `FLuxorRankMatchSessionSetting`
+  layouts, UE session metadata keys, and the ranked previous-result filter.
+- Documented the difference between ranked repeated-result filtering
+  (`nPrevBattleResult -> CUSTOMSEARCHINT7`) and `ULuxorMatchData.nRematchType`,
+  which is post-match/rematch UI metadata rather than a session-search key.
+
+### Changed
+
+- Linked the new matchmaking page from the SC6 internals navigation, SC6 index,
+  symbol index, and the existing online/netplay article.
+
 ## 2026-07-03 - PlayFab Party Practical Latency Estimates
 
 ### Changed

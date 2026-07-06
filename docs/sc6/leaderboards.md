@@ -577,6 +577,9 @@ region alongside chara state.
 These BP-callable lobby actions are useful native hook targets or reflected-call
 candidates:
 
+For the create/find session metadata itself, see
+[Online Matchmaking](online-matchmaking.md).
+
 | Function | RVA | What it does |
 |---|---|---|
 | `LuxMatchLobby_RequestReady` | `0x1405EA160` | Host hits "Ready" — advances BattleSync substate to 1, starts handshake |

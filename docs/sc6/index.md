@@ -28,6 +28,7 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 | [Battle Message System](messages.md) | `ELuxBattleMessage` enum, `FLuxBattleMessageParam` struct, `ULuxBattleMessageReceiverInterface`, broadcast dispatchers, modder-feasibility notes. |
 | [Replay System](replay-system.md) | Per-frame replay tick chain, master clock at `FrameInputLog+0x3A4`, Site 9 plus seven Actor::Tick gates for replay freeze, `TimeDilation` fall-through that bypasses `VMFreezeByte`. |
 | [Leaderboards & Online](leaderboards.md) | Steam leaderboards (`Characterboard`, `RankmatchWorld/Asia/...`), BNED Cosmos Channel telemetry, building an external API client. |
+| [Online Matchmaking](online-matchmaking.md) | `ULuxorSessionHub` create/find helpers, player-room and ranked-match session metadata, repeated-result filtering, rematch-data caveats. |
 | [Move System](move-system.md) | Command-script bytecode VM, opcode dispatch, IF predicates. |
 | [Audio System](audio-system.md) | CRI ADX2 middleware + `UAtomComponent`, MoveVM-to-cue routing via `g_pLuxVfxDispatcher`, DramaticVoice triggers, weapon-SE bank routing, DLC ACB folder map, PartsSE / costume-part SE. |
 | [CPU / AI System](ai-cpu-system.md) | Per-frame AI tick chain, frame-input output target, `HgCpuDirect*` SubVM framework, personality / difficulty data, training-mode UFunction API. |
@@ -54,6 +55,7 @@ Reverse-engineering reference for SoulCalibur VI (Steam, monolithic
 | "Why do some stages roll more often in random?" | [Stage System: Random-pool bias](stage-system.md#random-pool-bias) |
 | "How do I read character usage / ranked-match data outside the game?" | [Leaderboards & Online](leaderboards.md) |
 | "What's the difference between rank id, rank point, and style id?" | [Leaderboards & Online: ranking internals](leaderboards.md#ranking-internals) |
+| "How does matchmaking search rooms or handle repeated ranked results?" | [Online Matchmaking](online-matchmaking.md) |
 | "How do I tell if my mod is running in an online match?" | [Leaderboards & Online: detection](leaderboards.md#detection-is-this-match-online) — call `ALuxBattleManager_CheckOnlineSessionActive @ 0x1403F2590` or read `FrameInputLog+0x4400` |
 | "How does opponent input get into the game during online play?" | [Leaderboards & Online: per-frame input chain](leaderboards.md#per-frame-input-chain-channel-5) — Steam P2P → push deque → drain → per-slot cache at `FrameInputLog+0x3C0` |
 | "How does the on-screen *Counter Hit* / *Punish Attack* / *Throw Escape* banner work?" | [Battle Message System](messages.md) |
