@@ -13,6 +13,15 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-07-07 - Ranked Matchmaking Player Guide
+
+### Added
+
+- Added a cookbook player guide that explains SC6 ranked matchmaking in plain
+  language: rank-range tickets, retry-based range expansion, previous-result
+  buckets, and why the recovered search path does not directly blacklist the
+  last opponent by identity.
+
 ## 2026-07-06 - Online Matchmaking Internals
 
 ### Added

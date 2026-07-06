@@ -6,6 +6,13 @@ Short, copy-pasteable recipes. Each one is self-contained: what it does, the cod
 !!! tip "Adding a recipe"
     Create a new `.md` file in this folder, add it to `nav:` in `mkdocs.yml`, and follow the template below.
 
+## Player guides
+
+- [Ranked Matchmaking Player Guide](ranked-matchmaking-player-guide.md) -
+  short, plain-English explanation of ranked search, rank-range expansion,
+  previous-result buckets, and why same-opponent avoidance is not a direct
+  blacklist.
+
 ## Investigations
 
 - [Browser Replay Display Feasibility Investigation](browser-replay-display-feasibility.md) -
