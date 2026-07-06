@@ -27,6 +27,14 @@ git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 
 ### Changed
 
+- Clarified that the verified native ranked search path does not avoid the
+  same opponent by identity: `FindLuxorRankSession` has no opponent-ID query
+  key, `HandleLuxorFindSessionResult` forwards all returned results, and
+  `InvokeFindSessionCallback` only marshals the result array to Blueprint.
+- Added a note tying the Ver. 1.30 official patch notes to the recovered native
+  behavior: the patch notes mention removing Language/Area filters, setting a
+  default 4+ bar connection filter, and removing ranked rematch-option limits,
+  but not same-opponent avoidance.
 - Linked the new matchmaking page from the SC6 internals navigation, SC6 index,
   symbol index, and the existing online/netplay article.
 

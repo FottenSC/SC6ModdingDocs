@@ -303,6 +303,10 @@ the page link for full context.
 | `CreateLuxorRankSession` | `0x142E15850` | [Online Matchmaking: ranked advertisement](../sc6/online-matchmaking.md#ranked-advertisement) |
 | `FindLuxorRankSession` | `0x142E18030` | [Online Matchmaking: ranked search](../sc6/online-matchmaking.md#ranked-search) |
 | `CreatePlayerMatchSessionSearch` | `0x142E18E20` | [Online Matchmaking: session search object](../sc6/online-matchmaking.md#session-search-object) |
+| `HandleLuxorFindSessionResult` | `0x142E1B970` | [Online Matchmaking: find-session result handoff](../sc6/online-matchmaking.md#find-session-result-handoff) |
+| `InvokeFindSessionCallback` | `0x142E1EF40` | [Online Matchmaking: find-session result handoff](../sc6/online-matchmaking.md#find-session-result-handoff) |
+| `GetLuxorRankMatchSessionSettingStruct` | `0x142E46E30` | [Online Matchmaking: same-opponent avoidance check](../sc6/online-matchmaking.md#same-opponent-avoidance-check) |
+| `GetLuxorBlueprintFindSessionResultStruct` | `0x142E44740` | [Online Matchmaking: find-session result handoff](../sc6/online-matchmaking.md#find-session-result-handoff) |
 | `ALuxBattleManager_CheckOnlineSessionActive` | `0x1403F2590` | [Leaderboards & Online: detection](../sc6/leaderboards.md#detection-is-this-match-online) — the canonical "are we online" gate |
 | `ALuxBattleManager_IsBattleOnline` | `0x1403F1A60` | [Leaderboards & Online: detection](../sc6/leaderboards.md#detection-is-this-match-online) — world-context-aware wrapper |
 | `GetLocalOnlineSession` | `0x1403F07A0` | [Leaderboards & Online: Steam interface accessors](../sc6/leaderboards.md#steam-interface-accessors) |

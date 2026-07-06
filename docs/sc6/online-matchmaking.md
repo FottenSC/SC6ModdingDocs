@@ -63,6 +63,32 @@ to the search query. If SC6 avoids some immediate repeats, that behavior would
 have to live above or beside these helpers; it is not visible in the session
 metadata path documented here.
 
+### Same-opponent avoidance check
+
+No native same-opponent avoidance filter has been found in the verified ranked
+session path.
+
+| Checked area | Evidence |
+|---|---|
+| Ranked setting metadata | `GetLuxorRankMatchSessionSettingStruct @ 0x142e46e30` registers only the fields shown in [`FLuxorRankMatchSessionSetting`](#ranked-match-settings). There is no reflected Steam ID, `FUniqueNetId`, recent-opponent, blacklist, or "same match" field. |
+| Ranked query builder | `FindLuxorRankSession @ 0x142e18030` inserts rank-window, area/language, QoS-adjacent, near-class, keyword, presence, and optional previous-result keys. It does not read or insert an opponent identity key. |
+| Search-result collection | `HandleLuxorFindSessionResult @ 0x142e1b970` copies every returned search result pointer from the current `FOnlineSessionSearch` into the callback array. It does not reject, reorder, or compare candidates by identity. |
+| Reflected callback bridge | `InvokeFindSessionCallback @ 0x142e1ef40` copies the native result array into reflected callback parameters and calls `ProcessEvent`. It does not iterate over individual candidates. |
+| `IsSameMatch` string | The recovered `IsSameMatch` metadata belongs to `ALuxBattleReplayPlayer`, not the `ULuxorSessionHub` ranked search path. |
+| `opponent_*` and `revenge_match_num` strings | The recovered uses are post-match KPI/stat fields, not `FindSessions` query keys. |
+
+The remaining place this could exist is higher-level Blueprint/UI code after
+the native callback receives the result list. The native session query and
+native result handoff documented here do not implement "avoid the previous
+opponent" by identity.
+
+Official patch notes line up with that reading: Ver. 1.30 says ranked
+matchmaking quality was changed by removing the "Language" and "Area" search
+filters and defaulting the ping/connection filter to "more than 4 Bars"; the
+same note says ranked rematch-option limits were removed. It does not describe
+a same-opponent avoidance rule during ranked search. See Bandai Namco's
+[SOULCALIBUR VI Patch Notes Ver. 1.30](https://en.bandainamcoent.eu/soulcalibur/news/soulcalibur-vi-patch-notes-ver-130).
+
 ## Player-match settings
 
 `FLuxorPlayerMatchSessionSetting` is `0x68` bytes:
@@ -232,6 +258,9 @@ The recovered partial `FOnlineSessionSearch` layout:
 
 | Offset | Field | Meaning |
 |-------:|---|---|
+| `+0x08` | `pSearchResults` | Backing storage for returned session-result records. |
+| `+0x10` | `nSearchResultCount` | Number of returned result records. |
+| `+0x14` | `nSearchResultCapacity` | Capacity of the result storage. |
 | `+0x1c` | `nMaxSearchResults` | Set from the `Find*Session` `nMaxResults` argument. |
 | `+0x20` | `pQuerySettings` | Embedded UE search-setting map receiving the keys above. |
 | `+0x78` | `fLanQuery` | Set from the `Find*Session` LAN flag. |
@@ -241,6 +270,26 @@ The helper also seeds `EXCUSTOMSEARCHINT4` by calling
 `ComputePlayerMatchSearchInt4 @ 0x142e190c0` with the session name and
 tournament flag. That means tournament/session-name state exists on the search
 object before the caller adds the visible filters.
+
+### Find-session result handoff
+
+`HandleLuxorFindSessionResult @ 0x142e1b970` is shared by player-match and
+ranked search. When the online subsystem reports success, it reads the current
+search object's result storage and appends each result pointer to a temporary
+array:
+
+| Source | Meaning |
+|---|---|
+| `FOnlineSessionSearch+0x08` | First returned result record. |
+| `FOnlineSessionSearch+0x10` | Result count. |
+| result stride `0xc8` | Size of each native search-result record in this build. |
+
+The function then walks `ULuxorSessionHubPartial+0x120/+0x128`, skips invalid
+callback objects, and calls `InvokeFindSessionCallback @ 0x142e1ef40` with the
+same result array. There is no per-result predicate in this native handoff:
+no rank re-check, no Steam ID comparison, no recent-opponent cache, and no
+`IsSameMatch` call. Any post-query choice between candidates would have to
+happen in the reflected callback receiver.
 
 ## Match-data fields adjacent to rematch flow
 
@@ -299,6 +348,10 @@ before calling the helper.
 | `CreateLuxorRankSession` | `0x142e15850` | Advertises ranked metadata, rank bounds, QoS, and previous result. |
 | `FindLuxorRankSession` | `0x142e18030` | Builds ranked query settings and starts `FindSessions`. |
 | `CreatePlayerMatchSessionSearch` | `0x142e18e20` | Allocates the shared search object and seeds `EXCUSTOMSEARCHINT4`. |
+| `HandleLuxorFindSessionResult` | `0x142e1b970` | Copies all returned search results into the callback array; no native candidate filtering. |
+| `InvokeFindSessionCallback` | `0x142e1ef40` | Marshals the result array to the reflected callback object via `ProcessEvent`. |
 | `InitializePlayerMatchSessionSettings` | `0x142e18ef0` | Initializes common advertised session settings. |
 | `ComputePlayerMatchSearchInt4` | `0x142e190c0` | Computes the `EXCUSTOMSEARCHINT4` session/search value. |
+| `GetLuxorRankMatchSessionSettingStruct` | `0x142e46e30` | Registers the reflected ranked setting struct; no opponent identity field. |
+| `GetLuxorBlueprintFindSessionResultStruct` | `0x142e44740` | Registers the 8-byte Blueprint result wrapper used by find-session callbacks. |
 | `GetOnlineSessionInterfaceShared` | `0x142ea0470` | Shared UE OnlineSession interface resolver used by create/find. |
