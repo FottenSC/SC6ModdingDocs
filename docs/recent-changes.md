@@ -31,6 +31,14 @@ git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
   same opponent by identity: `FindLuxorRankSession` has no opponent-ID query
   key, `HandleLuxorFindSessionResult` forwards all returned results, and
   `InvokeFindSessionCallback` only marshals the result array to Blueprint.
+- Expanded the ranked `PrevBattleResult` analysis with the
+  `BP_LuxFightRequest.CreateMatchSetting` producer logic: first ranked searches
+  use bucket `1` for nonzero winning streak and bucket `2` for zero
+  winning-streak/not-winning state, while later retries send `0` and relax the
+  native `CUSTOMSEARCHINT7` filter.
+- Added the profile/style history helpers that back the previous-result bucket:
+  reset clears `dwHistoryFlags`, win updates set bit 0, and non-win updates
+  clear bit 0.
 - Added a note tying the Ver. 1.30 official patch notes to the recovered native
   behavior: the patch notes mention removing Language/Area filters, setting a
   default 4+ bar connection filter, and removing ranked rematch-option limits,

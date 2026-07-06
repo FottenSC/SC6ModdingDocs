@@ -302,6 +302,13 @@ the page link for full context.
 | `FindLuxorPlayerSession` | `0x142E17580` | [Online Matchmaking: player room search](../sc6/online-matchmaking.md#player-room-search) |
 | `CreateLuxorRankSession` | `0x142E15850` | [Online Matchmaking: ranked advertisement](../sc6/online-matchmaking.md#ranked-advertisement) |
 | `FindLuxorRankSession` | `0x142E18030` | [Online Matchmaking: ranked search](../sc6/online-matchmaking.md#ranked-search) |
+| `ResetLuxorMatchDataRecentBattleResult` | `0x142E1D8C0` | [Online Matchmaking: previous-result producer](../sc6/online-matchmaking.md#previous-result-producer) |
+| `ResetProfileStyleHistoryFlags` | `0x142DCC460` | [Online Matchmaking: previous-result producer](../sc6/online-matchmaking.md#previous-result-producer) |
+| `AdvanceProfileStyleHistoryCounters` | `0x142DCB750` | [Online Matchmaking: previous-result producer](../sc6/online-matchmaking.md#previous-result-producer) |
+| `IncrementProfileStyleWinStreak` | `0x142DCE7F0` | [Online Matchmaking: previous-result producer](../sc6/online-matchmaking.md#previous-result-producer) |
+| `ClearProfileStyleCurrentStreak` | `0x142DCB670` | [Online Matchmaking: previous-result producer](../sc6/online-matchmaking.md#previous-result-producer) |
+| `CheckRankedMatchWinningFromProfile` | `0x14050F470` | [Online Matchmaking: previous-result producer](../sc6/online-matchmaking.md#previous-result-producer) |
+| `CheckRankedMatchWinningInBattle` | `0x14050F540` | [Online Matchmaking: previous-result producer](../sc6/online-matchmaking.md#previous-result-producer) |
 | `CreatePlayerMatchSessionSearch` | `0x142E18E20` | [Online Matchmaking: session search object](../sc6/online-matchmaking.md#session-search-object) |
 | `HandleLuxorFindSessionResult` | `0x142E1B970` | [Online Matchmaking: find-session result handoff](../sc6/online-matchmaking.md#find-session-result-handoff) |
 | `InvokeFindSessionCallback` | `0x142E1EF40` | [Online Matchmaking: find-session result handoff](../sc6/online-matchmaking.md#find-session-result-handoff) |

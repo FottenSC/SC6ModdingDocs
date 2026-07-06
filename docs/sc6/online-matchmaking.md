@@ -63,6 +63,26 @@ to the search query. If SC6 avoids some immediate repeats, that behavior would
 have to live above or beside these helpers; it is not visible in the session
 metadata path documented here.
 
+The producer side is in the cooked Blueprint
+`BP_LuxFightRequest.CreateMatchSetting`. It builds
+`FLuxorRankMatchSessionSetting.PrevBattleResult` from the local profile's
+winning-streak state:
+
+| `PrevBattleResult` | Producer-side meaning | Native search behavior |
+|---:|---|---|
+| `0` | Ignore/relaxed search bucket | Do not insert `CUSTOMSEARCHINT7` into the ranked query. |
+| `1` | `GetWinningStreak(profile, StyleId) != 0` | Exact-match `CUSTOMSEARCHINT7 == 1` when the filter gate is active. |
+| `2` | `GetWinningStreak(profile, StyleId) == 0` | Exact-match `CUSTOMSEARCHINT7 == 2` when the filter gate is active. |
+
+That means the first ranked search tries to match the same recent-result
+bucket: winning-streak players with winning-streak advertisements, and
+zero-streak/not-winning players with zero-streak/not-winning advertisements.
+It is not a hard "never match winners with losers" rule, because
+`CreateMatchSetting` gates the finder-side filter with
+`IsSessionCreater ? true : RetryCount < 1`. Creators advertise `1` or `2`,
+but finders switch to `0` after the first retry and the native search then
+stops filtering on previous result.
+
 ### Same-opponent avoidance check
 
 No native same-opponent avoidance filter has been found in the verified ranked
@@ -249,6 +269,46 @@ value is zero, `Equals` otherwise. That matches the query behavior exactly:
 zero means do not filter on previous result; nonzero means exact-match
 `CUSTOMSEARCHINT7`.
 
+### Previous-result producer
+
+The native create/find helpers consume `nPrevBattleResult`; they do not compute
+it. The live producer found so far is the cooked Blueprint function
+`BP_LuxFightRequest.CreateMatchSetting`:
+
+| Bytecode offset in `CreateMatchSetting` export | Recovered operation |
+|---:|---|
+| `0x02f0` | `CallFunc_GetWinningStreak_ReturnValue = GetWinningStreak(CallFunc_GetLocalPlayerProfile_outData, StyleId)` |
+| `0x0318` | `CallFunc_Less_IntInt_ReturnValue2 = RetryCount < 1` |
+| `0x032e` | `CallFunc_NotEqual_IntInt_ReturnValue = CallFunc_GetWinningStreak_ReturnValue != 0` |
+| `0x0373` | `Temp_bool_Variable2 = IsSessionCreater ? true : (RetryCount < 1)` |
+| `0x053a` | `PrevBattleResult = Temp_bool_Variable2 ? ((GetWinningStreak != 0) ? 1 : 2) : 0` |
+
+So the caller-side rules are:
+
+| Situation | `PrevBattleResult` sent to native helper |
+|---|---|
+| Creating a ranked ticket, winning streak nonzero | `1` |
+| Creating a ranked ticket, winning streak zero | `2` |
+| First ranked find attempt, winning streak nonzero | `1` |
+| First ranked find attempt, winning streak zero | `2` |
+| Later ranked find retry (`RetryCount >= 1`) | `0` |
+
+The result-history backing store is profile/style data, not session identity.
+`ResetLuxorMatchDataRecentBattleResult @ 0x142e1d8c0` resets the selected
+player's current-style history by tail-calling
+`ResetProfileStyleHistoryFlags @ 0x142dcc460`, which clears
+`FLuxProfileStyleRankEntry.dwHistoryFlags`. During match-result updates,
+`AdvanceProfileStyleHistoryCounters @ 0x142dcb750` shifts the history window,
+`IncrementProfileStyleWinStreak @ 0x142dce7f0` sets bit 0 for a win, and
+`ClearProfileStyleCurrentStreak @ 0x142dcb670` clears bit 0 for a non-win.
+
+The important modding conclusion: `PrevBattleResult` can initially separate
+winner/winning-streak searches from zero-streak/not-winning searches, but it
+cannot directly stop a repeat opponent. It contains no Steam ID, no
+`FUniqueNetId`, no session id, and no previous-opponent cache. Once the finder
+retries with `PrevBattleResult == 0`, the native ranked search ignores the
+previous-result bucket entirely.
+
 ## Session search object
 
 Both find helpers call `CreatePlayerMatchSessionSearch @ 0x142e18e20`. Despite
@@ -330,9 +390,13 @@ before calling the helper.
 - To disable the ranked previous-result filter, make
   `FLuxorRankMatchSessionSetting.nPrevBattleResult` zero before
   `FindLuxorRankSession`.
-- To intentionally require the previous-result match, use a nonzero
-  `nPrevBattleResult`; create always advertises it and find only searches it
-  when nonzero.
+- To intentionally require the previous-result bucket, use nonzero
+  `nPrevBattleResult`: `1` for the nonzero winning-streak bucket, `2` for the
+  zero-streak/not-winning bucket. Create always advertises it and find only
+  searches it when nonzero.
+- Stock `BP_LuxFightRequest.CreateMatchSetting` relaxes the finder-side bucket
+  after the first retry by sending `0`. Patch that caller if you want the
+  bucket to remain strict across retries.
 - `SEARCHKEYWORDS` is a hard join between create and find. If a mod changes
   session names, change both sides together.
 - Do not use `ULuxorMatchData.nRematchType` as a matchmaking filter unless you
@@ -355,3 +419,10 @@ before calling the helper.
 | `GetLuxorRankMatchSessionSettingStruct` | `0x142e46e30` | Registers the reflected ranked setting struct; no opponent identity field. |
 | `GetLuxorBlueprintFindSessionResultStruct` | `0x142e44740` | Registers the 8-byte Blueprint result wrapper used by find-session callbacks. |
 | `GetOnlineSessionInterfaceShared` | `0x142ea0470` | Shared UE OnlineSession interface resolver used by create/find. |
+| `ResetLuxorMatchDataRecentBattleResult` | `0x142e1d8c0` | Clears the selected player/style recent-result history used by ranked previous-result bucket construction. |
+| `ResetProfileStyleHistoryFlags` | `0x142dcc460` | Clears `FLuxProfileStyleRankEntry.dwHistoryFlags`. |
+| `AdvanceProfileStyleHistoryCounters` | `0x142dcb750` | Shifts the per-style result-history window before the latest result bit is applied. |
+| `IncrementProfileStyleWinStreak` | `0x142dce7f0` | Sets `dwHistoryFlags` bit 0 and increments current streak on a win. |
+| `ClearProfileStyleCurrentStreak` | `0x142dcb670` | Clears `dwHistoryFlags` bit 0 and clears/restores current streak state on a non-win. |
+| `CheckRankedMatchWinningFromProfile` | `0x14050f470` | Checks the profile-writer ranked-winning state for a style id. |
+| `CheckRankedMatchWinningInBattle` | `0x14050f540` | Reads active `ULuxorMatchData` winning streak state for the reflected ranked-winning predicate. |
