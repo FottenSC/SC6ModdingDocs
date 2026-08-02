@@ -31,6 +31,13 @@ Short, copy-pasteable recipes. Each one is self-contained: what it does, the cod
   practical local test topologies, harness gates, fault injection, artifacts,
   and limits for SC6 online/rollback experiments.
 
+## Asset recipes
+
+- [Export SC6 `.mot` animations to Blender](export-mot-to-blender.md) -
+  Ghidra-backed workflow for splitting HgMotion banks, choosing authored versus
+  final-pose fidelity, exporting the matching rig, and baking normalized
+  matrices into a Blender Action.
+
 ## Native DLL recipes
 
 - [DotVanisher spectator timeout grace](dotvanisher.md) - standalone UE4SS

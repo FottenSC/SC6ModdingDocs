@@ -116,6 +116,7 @@ nav:
       - Rollback Netcode Feasibility: cookbook/rollback-netcode-investigation.md
       - PlayFab Party Netcode Relay: cookbook/azure-backed-netcode-relay-investigation.md
       - Automated Rollback Netcode Testing: cookbook/automated-rollback-netcode-testing.md
+      - Export SC6 MOT Animations to Blender: cookbook/export-mot-to-blender.md
       - DotVanisher Spectator Timeout: cookbook/dotvanisher.md
       - Replace a Stage: cookbook/replace-stage.md
       - Custom Stage (new code): cookbook/custom-stage.md

@@ -13,6 +13,21 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-08-02 - SC6 MOT-to-Blender Export Cookbook
+
+### Added
+
+- Added a Ghidra-backed cookbook for exporting SC6 HgMotion clips to Blender,
+  including fidelity targets, matching-rig extraction, Huffman/selector decoder
+  requirements, matrix normalization, a Blender Action bake script, runtime
+  capture guidance, validation, and current decoder coverage.
+
+### Corrected
+
+- Corrected the `.mot` outer bank layout to include the reserved dword and
+  `+0x08` offset table, and documented repeated-offset aliases and the absence
+  of a guaranteed `count + 1` end sentinel.
+
 ## 2026-07-07 - Ranked Matchmaking Player Guide
 
 ### Added

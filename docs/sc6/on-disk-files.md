@@ -201,14 +201,20 @@ per-character move-transition DAG.
 
 ```text
 +0x00  u32        nMotionCount               (628..2046 motions / char)
-+0x04  u32[N+1]   motion_offsets             (last entry = end sentinel)
++0x04  u32        reserved                   (zero in shipped banks)
++0x08  u32[N]     motion_offsets             (absolute file offsets)
 @offset[i]        HgMotion frame data        (private layout)
-@end..file_end    authored lookup trailer    (2-18 KB per file, accessed
-                                              separately by the engine)
 ```
 
-Adjacent motions sharing the same offset are aliased / empty. The
-per-character empty fraction ranges from 34% to 81%.
+There is no guaranteed `N+1` end sentinel. Adjacent motion ids sharing the same
+offset are aliases and resolve to the same payload in native code. An offline
+tool can bound a payload by the next **greater** distinct offset; EOF is only an
+upper bound for the final distinct payload because the native decoder uses the
+clip's internal regions rather than an outer section size.
+
+The bank split, compressed-frame decoder, Blender interchange contract, and
+pose-fidelity limits are covered by
+[Export SC6 `.mot` animations to Blender](../cookbook/export-mot-to-blender.md).
 
 ## `.dtp` CPU AI files
 
