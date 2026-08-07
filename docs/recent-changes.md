@@ -17,14 +17,21 @@ git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 
 ### Corrected
 
-- Corrected the former `0x144844070` 12-entry stage-barrier interpretation:
-  the `0xC0` region is a structured round-restore payload, not deterministic
-  collision geometry. Custom stage and replacement guidance now directs
-  terrain/wall/ring work through paired `J_StgHitChkData` data instead.
+- Corrected the former `0x144844070` 12-entry stage-barrier interpretation in
+  [Stage System](sc6/stage-system.md), [Structures](sc6/structures.md),
+  [Custom Stage](cookbook/custom-stage.md), and
+  [Replace a Stage](cookbook/replace-stage.md): the `0xC0` region is a
+  structured round-restore payload, not deterministic collision geometry.
+  Terrain/wall/ring work now points to paired `J_StgHitChkData` data instead.
 - Recovered the embedded A/B frame-bounds-grid layout, clarified its terrain
-  enumeration and alternate-frame coordinate rules, and aligned the structures,
-  glossary, symbol index, and rollback cookbook with the corrected model.
-- Corrected reaction-gate and renamed-structure anchors so index links resolve.
+  enumeration and alternate-frame coordinate rules, and aligned
+  [the rollback cookbook](cookbook/rollback-netcode-investigation.md), the
+  [glossary](reference/glossary.md), and [symbol index](reference/symbol-index.md)
+  with the corrected model.
+- Corrected reaction-gate and renamed-structure anchors in
+  [Reaction System](sc6/reaction-system.md), [Move System](sc6/move-system.md),
+  [Structures](sc6/structures.md), and the [symbol index](reference/symbol-index.md)
+  so index links resolve.
 
 ## 2026-08-07 - Random Functions and Gameplay Impact
 
