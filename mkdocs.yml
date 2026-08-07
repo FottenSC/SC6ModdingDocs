@@ -114,6 +114,7 @@ nav:
       - Ranked Matchmaking Player Guide: cookbook/ranked-matchmaking-player-guide.md
       - Browser Replay Display Feasibility: cookbook/browser-replay-display-feasibility.md
       - Rollback Netcode Feasibility: cookbook/rollback-netcode-investigation.md
+      - Random Functions and Gameplay Impact: cookbook/random-functions-and-gameplay.md
       - PlayFab Party Netcode Relay: cookbook/azure-backed-netcode-relay-investigation.md
       - Automated Rollback Netcode Testing: cookbook/automated-rollback-netcode-testing.md
       - Export SC6 MOT Animations to Blender: cookbook/export-mot-to-blender.md

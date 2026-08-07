@@ -13,6 +13,14 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-08-07 - Random Functions and Gameplay Impact
+
+### Added
+
+- Added an evidence-scoped cookbook covering SC6's seeded Lux battle RNG,
+  nondeterministic audio-only random paths, known gameplay consumers, and
+  replay/rollback-safe investigation and modding rules.
+
 ## 2026-08-02 - SC6 MOT-to-Blender Export Cookbook
 
 ### Added

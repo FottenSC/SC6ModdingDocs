@@ -22,6 +22,9 @@ Short, copy-pasteable recipes. Each one is self-contained: what it does, the cod
 - [Rollback Netcode Feasibility Investigation](rollback-netcode-investigation.md) -
   Ghidra-backed decision record for SC6's online input path, snapshot state,
   replay reuse, and a minimal rollback prototype plan.
+- [Random Functions and Gameplay Impact](random-functions-and-gameplay.md) -
+  evidence-scoped guide to seeded battle PRNG state, nondeterministic audio
+  paths, gameplay consumers, and replay/rollback-safe investigation.
 - [PlayFab Party Netcode Relay Investigation](azure-backed-netcode-relay-investigation.md) -
   documentation-only decision record for whether PlayFab Party could improve
   America-Europe SC6 route quality through QoS measurement, region selection,
