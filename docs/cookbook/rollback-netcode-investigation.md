@@ -31,10 +31,100 @@ Practical verdict:
 | Question | Current answer |
 |---|---|
 | Is rollback theoretically feasible? | Yes, if native hooks can own the input boundary and state restore boundary. |
-| Is it proven deterministic from inputs alone? | Not yet. Static analysis says "likely within a round"; a hash round-trip test is still required. |
+| Is it proven deterministic from inputs alone? | Not for a live SC6 peer pair. `RollbackGekkoSelfTest`, `RollbackGekkoRuntimeCoreSelfTest`, and `RollbackEndToEndSelfTest` exercise local Gekko Save/Load/Advance and checksum contracts, but those executable tests are not two-process in-game evidence. |
 | Can the stock online protocol be reused unchanged? | No. It only carries small input packets and 4-bit frame-low tags; rollback needs prediction, absolute frames, confirmations, and state hashes. |
 | Is a scripting/reflection layer enough? | No. Frame stepping, snapshots, cache injection, and side-effect gates need native DLL hooks. |
-| Best first prototype | Offline/local rollback lab in `E:/myMods/HorseMod`: snapshot, advance N frames, restore, resimulate, compare hashes. |
+| Best next validation | Close the remaining presentation-dispatch manifest blocker, bind validation to the resulting DLL, then run two-process in-game PVP with delayed peer inputs, canonical hash agreement, and stage/presentation corrections. |
+
+## 2026-08-06 camera, MoveVM, and FP corrections
+
+New Ghidra work corrected and extended the native state model:
+
+- `g_abLuxMoveVMSlotParamArray @ 0x14470E0C0` is two pointer-free
+  `FLuxMoveVMSlotParam` records with 0x2C-byte stride. `LuxBattle_PerFrameTick
+  @ 0x1402DBC60` advances both records after camera processing. They are future
+  gameplay state, not allocator residue. `LuxMoveVM_AdvanceSlotParamLerp @
+  0x14032F780` consumes and mutates only each lane's +0x00..+0x27 prefix. The
+  +0x28 dword is zeroed by initialization but has no native consumer xref, so
+  rollback restores and peer-hashes the two semantic prefixes while excluding
+  that stride padding.
+- `CopyLuxBattlePublishedCameraInfo @ 0x1402D7980` does not read one 0x68-byte
+  global. It copies a 0x60-byte six-float4 bank at `0x14470D1A0`, then appends
+  `g_flLuxBattleCameraYawTurns @ 0x14470D0DC` and
+  `g_dwLuxBattleCameraMode @ 0x14470D198`.
+- `LuxCameraDirector_Initialize @ 0x140321D90` proves that the effect-camera
+  director `+0x7A0` and the HgCpu timer config alias the same action root. The
+  timer config's indexed table resolves the director's 16 component slots.
+- `LuxEffectCamera_UpdateAllComponentWeights @ 0x14031E080`,
+  `LuxEffectCamera_BlendAndApplyAllComponents @ 0x14031E410`, and
+  `LuxEffectCamera_BlendCameraState @ 0x14033E8E0` prove that component weights,
+  rotations, positions, secondary positions, blend scalars, mode, and velocity
+  offsets feed the next synthesized camera frame.
+- Camera synthesis uses scalar SSE arithmetic, so rollback peers need a
+  bilateral MXCSR/x87 policy instead of inheriting ambient thread state.
+
+Horse now captures the MoveVM pair and the proven camera value projection,
+preflights director/component/vtable identities atomically, and installs a
+schema-bound FP policy around each owned complete native iteration. Production
+still remains fail-closed, but camera coverage is no longer the blocker:
+`RollbackBattleCameraSnapshot` uses each live component's native serializer and
+is covered by `RollbackBattleCameraSnapshotSelfTest`. The sole remaining
+`PendingEvidence` manifest entry is presentation object lifetime and thread
+affinity. The 38-route presentation hub still passes source-frame events
+through, while audio/VFX journal commits remain rejected.
+
+## Horse production-path status (2026-08-07 cross-check)
+
+HorseMod now contains a disabled-by-default production path built around a
+Horse-owned transport and Gekko. Beta configuration version 2 defaults to
+`RollbackSteamP2PTransport`, which reuses SC6's initialized
+`SteamNetworking005` interface on Horse's dedicated channel `0x484F`;
+`RollbackUdpRuntime` remains the explicit direct-UDP compatibility route. This
+is an implementation milestone, not a claim that live SC6 rollback is
+accepted. Activation refuses to install the frame hook unless the executable
+fingerprint, static snapshot schema, active PVP lifecycle epoch, peer handshake,
+and manifest coverage all match. `BuildInitialRollbackManifest` currently has
+one gameplay entry marked `PendingEvidence`, `Presentation object lifetime and
+thread affinity`, so production activation is intentionally blocked even when
+the other gates succeed.
+
+The implementation separates three hash domains:
+
+- a static, ASLR-independent schema identifier;
+- a local snapshot-integrity hash used to validate save/load handles; and
+- a canonical gameplay hash exchanged by peers after corrected frames.
+
+Full snapshots remain in a 128-state Horse ring. Gekko save states contain only
+an epoch/frame/generation/hash handle. The game thread alone performs Gekko
+updates, captures, restores, and native simulation; transport workers only move
+authenticated bytes through bounded queues. SC6's stock opcode/cache path
+remains a diagnostic surface and is not the production input-injection path.
+
+The Horse protocol-v2 packet envelope carries an explicit packet type,
+source/destination slots, payload length, sequence, optional acknowledgement,
+random session nonces, and a 128-bit-truncated CNG HMAC-SHA256 tag. Steam P2P
+adds a bounded ECDH bootstrap before that authenticated protocol handshake; its
+bootstrap and Hello/HelloAck traffic are reliable, while heartbeats and gameplay
+packets remain unreliable. The receiver maintains a 64-sequence replay window
+and expires readiness after two seconds without a valid heartbeat. Queue
+overflow, authentication or epoch loss, timeout, restore failure, and
+corrected-hash disagreement all fail closed instead of returning to stock
+simulation mid-round.
+
+Current CMake registers 69 rollback-labelled CTest entries: 68 under
+`rollback-fast` plus `RollbackProtocolV2Benchmark`. The latest HorseMod
+verification record reports 69/69 passing. In particular,
+`RollbackGekkoSelfTest` exercises two local Gekko sessions with Save, Load,
+normal Advance, rollback Advance, and matching final checksums, while
+`replay_input_script_selftest.py` checks `11141/11141` extracted records. The
+normal-render strict replay report `20260807-103220-seek` passed four of four
+600-frame watch cases with `2400/2400` state comparisons, zero mismatches, and a
+maximum seek-validation time of `0.42s`. That report has no artifact-evidence
+binding, and neither the CTest results nor replay seek/oracle results are live
+two-process SC6 acceptance. The release-authority path is
+`rollback_two_client_acceptance_run.py --beta-release-gate`;
+`rollback_full_validation_run.py` explicitly identifies itself as developer
+validation only.
 
 ## Current online input path
 
@@ -48,10 +138,12 @@ Confirmed send path:
 ```text
 LuxOnline_SendInputPacket_PerFrame_Opcode0 @ 0x1403F84E0
   builds a 3-byte channel-5 packet for one frame/slot
+  if nFrameID is negative, uses pInputLog->nLastFrameId as the absolute frame
   low header bits: frameId & 0x0F
   high header bits: playerSlot << 4
   opcode: 0
   payload: one input byte
+  uses the absolute frame, not its low nibble, for the sent-input bitmap
 
 LuxOnline_SendInputPacket_BatchedRange_Opcode1 @ 0x1403F8710
   resends a window [nCurrentFrame - nWindowFrames, nCurrentFrame)
@@ -90,6 +182,14 @@ GetCachedInputForFrameInputLogSlot @ 0x1403F0720
 It indexes `pReplayInputCache[(dwFrameIndex & 0x1FF) + dwPlayerIdx * 0x200]`
 and returns `dwInputValue` only when both `nFrameID` and `dwFrameIndex` match.
 It does not check `bFilled`; the tag match is the effective validity check.
+
+Do not derive the cache's `nFrameID` tag from `dwFrameIndex & 0xF`. Ghidra
+validation of the native producer/consumer chain shows that cache identity uses
+`ALuxBattleFrameInputLog::nLastFrameId` alongside the absolute frame index. The
+4-bit low frame value belongs to the stock wire header, not the in-memory cache
+tag model. Stock diagnostic opcode-0 handling must likewise resolve a negative
+frame argument through the current `InputLog+0x3A0` value and read that same
+current `nLastFrameId` when constructing a diagnostic cache record.
 
 The chara-side consumer is:
 
@@ -205,16 +305,19 @@ The game uses at least LFSR, xorshift96, and LCG-style states. Some calls are
 gameplay-relevant; others feed camera or effect variation. Treat all battle RNG
 globals as snapshot state until a hash test proves otherwise.
 
-Stage collision is promising for deterministic rollback:
+Round-restore state includes a fixed structured payload:
 
 ```text
-SetScbattleStageInfoBarrierGeometry @ 0x1402D77C0
-GetScbattleStageInfoBarrierGeometry @ 0x1402D7730
+SetScbattleRoundSnapshotPayload @ 0x1402D77C0
+GetScbattleRoundSnapshotPayload @ 0x1402D7730
 ```
 
-These functions write/read exactly 12 `scbattle_BarrierEntry` records,
-`0xC0` bytes total, through `g_aScbattleStageInfoBarrierEntries`. That fixed
-barrier block is more rollback-friendly than arbitrary UE mesh collision.
+These functions write/read exactly `0xC0` bytes through
+`g_LuxBattleRoundSnapshotPayload`. Decompiled save/restore consumers identify
+the bytes as round index, gameplay xorshift, winner, two character records, and
+motion entries. The twelve 16-byte copies are XMM lanes, not barrier records.
+Deterministic terrain/wall/ring collision instead comes from the paired
+`J_StgHitChkData` frame-bounds grids.
 
 Unproven parts:
 
@@ -254,19 +357,90 @@ LuxBattle_HgCpuDirect_ExecFinalizeAndPost @ 0x140384540
 ```
 
 Those helpers serialize/restore large battle regions: P1/P2 chara state,
-selected globals, camera, timers, motion, physics, terrain query flags, VFX, and
-pointer fixup descriptors. Local `E:/myMods` ReplayScrub work estimates the
-HgCpuDirect sim blob at `0x28018` bytes, plus an `ALuxBattleFrameInputLog`
-window of roughly `0x4084` bytes and smaller extras.
+selected globals, bounds, terrain queries, camera, timers, motion, physics,
+VFX state, and pointer-fixup descriptors. Local `E:/myMods` ReplayScrub work
+measures the HgCpuDirect sim blob at `0x28018` bytes. These ranges should be
+classified as native-covered rather than duplicated as speculative extras.
 
-Do not assume HgCpuDirect is complete for online rollback. It likely needs
-extras for:
+### Recovered HgCpu physics, motion, and timer layouts
+
+The recovered `FLuxHgCpuPhysicsSnapshotBlock_Partial` is `0xD80` bytes:
+
+| Offset | Storage | Evidence-backed role |
+|---:|---|---|
+| `+0x000` | `byte[0xC60]` | Physics/frame-context payload. |
+| `+0xC60` | `int[8]` | Eight wall-smoothing integers. |
+| `+0xC80` | `byte[0xC0]` | Wall reset/vector payload. |
+| `+0xD40` | `FLuxHgCpuDirectRelocPair[4]` | Four direct relocation records. |
+
+The motion writer and reader consume an independently recovered
+`FLuxFrameBoundsGrid_Partial` of size `0x44C`. Its proven fields are the axis
+span pointer at `+0x0`, relocation base at `+0x8`, terrain-entry storage at
+`+0x408`, and a two-byte terrain-VFX latch at `+0x414`. Terrain records use a
+`0x40` stride, including accessed fields at `+0x0C` and `+0x1C`.
+
+The recovered `FLuxHgCpuTimerNode_Partial` is `0x2F0` bytes. It contains the
+preserved live identity at `+0x0`, backing-state reference at `+0x8`, storage
+for 17 child serializers beginning at `+0x10`, and an opaque tail beginning at
+`+0x98`. Its writer serializes the `0x2F0` node, a `0x41E0` backing block,
+17 children through their writer slot at `+0x20`, and four trailing globals.
+The reader preserves the live `+0x0` and `+0x8` values across the raw node
+restore, restores the same `0x41E0` backing block, invokes the 17 child readers
+through `+0x28`, and restores the same four globals. Treating the node as a
+blind byte blob without those preserve semantics would overwrite live object
+identity.
+
+`FLuxHgCpuTimerConfig_Partial` is `0x12C` bytes: registry storage begins at
+`+0x8`, the indexed table at `+0x90`, the timer node at `+0xA0`, and the
+remaining configuration blocks extend through `+0x128`. The native config
+restore reconstructs timer types 0 through 8 and uses component vtable slots
+`+0xE0`, `+0x100`, and `+0x108`; this is object reconstruction, not a single
+flat memcpy. These recovered HgCpu ranges are native-covered for local snapshot
+integrity, but their pointer-bearing bytes are not automatically canonical
+peer-hash evidence.
+
+The world-mode owner was also consolidated into one canonical
+`FLuxBattle_WorldModePump` (`0x40` bytes): `pCurrentMode` at `+0x0`,
+`pQueuedNextMode` at `+0x8`, `dwTransitionCompleted` at `+0x10`,
+`dwScratchState` at `+0x20`, `nSubDriverState` at `+0x24`,
+`pActiveSessionData` (`FLuxBattleActiveSessionRoot_Partial *`) at `+0x30`, and
+`pSubDriver` at `+0x38`. Runtime lifecycle discovery should still use
+`GetActiveBattleManager`; the recovered pump layout does not justify depending
+on an unresolved field as a BattleManager pointer.
+
+HgCpuDirect is still not complete for online rollback by itself. Independently
+captured extras include:
 
 - `g_LuxBattle_LatestEngineInput_PerPlayer`
 - input ring/cursor globals used by `LuxBattle_PerFrameTick`
-- `ALuxBattleFrameInputLog` cache/cursors/sent bitmaps
 - LFSR/xorshift/LCG RNG state
-- online session/drain cursors if the stock online path remains active
+- `g_dwLuxBattleRoundResultFlowState @ 0x1448463A8` (four bytes). The
+  round-result evaluator writes the committed result flow, and both
+  `LuxBattle_RoundResult_Tick @ 0x140387540` and
+  `LuxBattle_RoundResult_WaitAndAdvance @ 0x140387430` consume it. The latter
+  queues the stock advance/new-round mode only for verified values `1..3`.
+- Do **not** add a second explicit copy of the 11 reusable WorldModePump mode
+  objects. Ghidra xrefs at `0x140301884/976/B74/C66` prove HgCpu's native
+  archive already serializes these objects, including `0x144100D88`; a second
+  copy would duplicate coverage. The later live stall at D88 counters 14/21
+  versus limit 240 was instead caused by the observer freezing on a transient
+  BattleManager state 2 during the result sequence. A safe next-round boundary
+  requires state 2 **and** round ordinal `old + 1` **and** a changed nonzero
+  round-start digest. Complete the first stock result tick after releasing
+  ownership, then keep all inter-round ticks stock-owned until that full
+  identity predicate succeeds.
+- breakable wall state (`wall+0x450` id, `+0x468` break state, `+0x46C` fade)
+- breakable barrier state (`barrier+0x420` id, `+0x424` endurance,
+  `+0x468` hit count), serialized in stable actor-type/id order
+
+`ALuxBattleFrameInputLog` cache/cursors/sent bitmaps now belong to a separate
+stock-path diagnostic schema. The Horse production path supplies decoded peer
+inputs directly to temporary native tick arguments and does not accept stock
+cache injection as a production gate.
+
+The explicit global cursor at image RVA `0x485EB20` is eight bytes. Treating it
+as a 16-byte range overlaps the adjacent Lux battle LCG state and can corrupt
+RNG during restore.
 
 ## Reusing replay and state systems
 
@@ -317,16 +491,21 @@ embedded ring at `chara+0x3C0`; the online path uses
 
 ## Rewind and resimulation plan
 
-Safe rollback needs to control one exact frame boundary:
+Safe rollback needs to control one exact frame boundary. In the Horse
+production path that boundary is a PolyHook detour on
+`LuxBattle_PerFrameTick @ 0x1402DBC60`:
 
-1. Drain or bypass stock online packets.
-2. Write/predict both players' inputs for the target frame.
-3. Snapshot the current stable frame.
-4. Advance simulation exactly one frame.
-5. If a remote input arrives late, restore an earlier snapshot.
-6. Patch the corrected remote input into the input history.
-7. Resimulate frame-by-frame until current time.
-8. Release only the final visible frame's side effects.
+1. Capture only the local player's low 32-bit gameplay input and submit it to
+   Gekko.
+2. Process Gekko Save, Load, and Advance events in their emitted order.
+3. Resolve Save/Load through the Horse snapshot-handle ring and validate the
+   complete lifecycle epoch before either operation.
+4. Decode both gameplay inputs into temporary native tick arguments.
+5. Call the PolyHook trampoline exactly once for each Gekko Advance event.
+6. Return from the detour without an additional stock tick.
+7. Exchange corrected frame, canonical hash, and both applied input values;
+   accept the frame only when both clients cross-match all fields.
+8. Commit journaled presentation events only after peer confirmation.
 
 The likely native stepping target is `LuxBattle_PerFrameTick @ 0x1402DBC60`.
 If that is too broad for online insertion, the narrower
@@ -404,12 +583,18 @@ blindly.
 | System | Policy |
 |---|---|
 | Gameplay state | Restore and resimulate exactly. |
-| Audio | Suppress during resim; play final-frame events only where possible. `Audio_RandomTick @ 0x140399B70` uses C `rand()` for audio mix variation. |
-| VFX / particles | Suppress or kill/recreate on corrected final frame. `LuxEffectSystem_GetRandomVariantIndex @ 0x14038F6B0` uses gameplay xorshift. |
+| Audio | Journal requests by epoch/frame/idempotency key and commit once after peer confirmation. `LuxAudio_FireSoundCue_ViaVfxDispatcher @ 0x1403110B0` and `LuxMoveVM_DispatchVFXEffectForSlot @ 0x140311190` both dispatch through `g_pLuxVfxDispatcher` vtable `+0x38`; request byte `+0xC` distinguishes the two variants. |
+| VFX / particles | Journal the external dispatcher call (the PerFrameTick edge path uses vtable `+0xB8`) and commit once after confirmation. `LuxEffectSystem_GetRandomVariantIndex @ 0x14038F6B0` uses gameplay xorshift. |
 | Camera | Snapshot if gameplay-visible; otherwise smooth-correct. `LuxCameraAction_RandomizeArenaOrbitParams @ 0x140327250` uses xorshift. |
 | HUD/debug/online UI | Do not drive from resim frames; update from final authoritative frame. |
 | Animation notifies | Gate notifies during hidden resim or dedupe them by frame/event id. |
 | UE actor/component ticks | Prevent unrelated ticks from mutating battle state during manual resim. |
+
+`LuxBattle_SpawnStageWindParticles @ 0x140334960` is a special case. It consumes
+Lux RNG and mutates emitter timer/count state before allocating the visual wind
+object. A rollback resimulation path must reproduce that RNG/timer/count
+progression while skipping only the external particle allocation; skipping the
+whole function changes later deterministic state.
 
 The safest first prototype runs with side effects muted during hidden
 resimulation and compares only gameplay-state hashes.
@@ -922,30 +1107,128 @@ Evidence functions reviewed:
 | Input cache/online drain | `GetCachedInputForFrameInputLogSlot @ 0x1403F0720`, `LuxOnline_DrainRingBuffer_DecodeInputPackets_AndUpdateCache @ 0x1403F6770`, `LuxBattleChara_UpdatePlayerInputData_FromRoundCache @ 0x1403FCD10`, `LuxBattleManager_Tick_SimulationLoop_UpdateInputAndRoundState @ 0x1403FE520` |
 | Replay input/state | `LuxReplay_DecodeInputPackets_FromFile @ 0x1403ED310`, `LuxReplay_EncodeInputEvents_ToBuffer @ 0x1403ED980`, `LuxReplay_WriteThreeByteInputRecord_ToBuffer @ 0x1403F62E0`, `LuxBattleChara_ReplayPlayback_PushInputsToActiveSlots @ 0x1403F6600`, `ALuxBattleReplayPlayer_Tick_CopyRoundResetSnapshotAndSetMoveState4 @ 0x140435C20` |
 | Core simulation | `LuxBattle_PerFrameTick @ 0x1402DBC60`, `LuxMoveSystem_PumpVMSlots @ 0x14031D460`, `LuxBattle_TickCharaMainSimulation @ 0x14034DA70`, `LuxBattle_TickHitResolutionAndBodyCollision @ 0x14033CCA0`, `LuxMoveVM_ClassifyHitboxFrameState @ 0x140300620`, `LuxMoveVM_EvaluateMoveTransition @ 0x14033E140` |
-| RNG/stage/side effects | `LuxBattle_InitRngAndHashPrimes @ 0x14034F610`, `LuxMoveVM_GetRandU32 @ 0x14034F130`, `LuxMoveVM_GetRandXorshift96Gameplay @ 0x14034F1F0`, `LuxMoveVM_GetRandLCG @ 0x14034F550`, `LuxMoveVM_GetRandFloat01 @ 0x14034F5E0`, `SetScbattleStageInfoBarrierGeometry @ 0x1402D77C0`, `GetScbattleStageInfoBarrierGeometry @ 0x1402D7730`, `Audio_RandomTick @ 0x140399B70`, `LuxEffectSystem_GetRandomVariantIndex @ 0x14038F6B0`, `LuxCameraAction_RandomizeArenaOrbitParams @ 0x140327250` |
+| RNG/stage/side effects | `LuxBattle_InitRngAndHashPrimes @ 0x14034F610`, `LuxMoveVM_GetRandU32 @ 0x14034F130`, `LuxMoveVM_GetRandXorshift96Gameplay @ 0x14034F1F0`, `LuxMoveVM_GetRandLCG @ 0x14034F550`, `LuxMoveVM_GetRandFloat01 @ 0x14034F5E0`, `SetScbattleRoundSnapshotPayload @ 0x1402D77C0`, `GetScbattleRoundSnapshotPayload @ 0x1402D7730`, `Audio_RandomTick @ 0x140399B70`, `LuxEffectSystem_GetRandomVariantIndex @ 0x14038F6B0`, `LuxCameraAction_RandomizeArenaOrbitParams @ 0x140327250` |
 | Snapshot primitives | `LuxBattle_HgCpuDirect_ExecMoveChangeAndPost @ 0x1403841E0`, `LuxBattle_HgCpuDirect_ExecFinalizeAndPost @ 0x140384540` |
+| HgCpu motion/timers | Motion writer/reader at `0x140391CA0` / `0x140391E10`; timer-config writer/reader at `0x140321750` / `0x140321A30`; timer-node writer/reader at `0x140324900` / `0x1403249E0` |
+| World/stage lifecycle | `LuxBattle_AdvanceWorldModePump @ 0x1402D9CD0`, `LuxStage_RegisterBarrierActor_BattleEvent0x19 @ 0x140427490` |
+
+Every function touched in this production-path Ghidra pass was re-scored after
+prototype, type, variable, and comment cleanup. Each has fewer than 10 fixable
+completeness-deduction points; remaining deductions are documented decompiler
+artifacts or otherwise non-actionable evidence gaps.
 
 Known remaining unknowns:
 
 - `FLuxRecordedFrame` fields are still mostly opaque.
-- The exact online tick insertion point for prediction is not finalized.
-- HgCpuDirect coverage for live online rollback is not proven complete.
-- No deterministic hash harness has yet proven restore/resim equality.
+- The implemented production insertion point is the guarded
+  `LuxBattle_PerFrameTick` detour, but live two-process acceptance is pending.
+- The current manifest combines HgCpu-native coverage with explicit Horse
+  snapshots, but only the presentation-dispatch entry remains deliberately
+  incomplete; cross-process SC6 canonical-hash equality is not yet proven.
+- Local Gekko Save/Load/Advance and hash contracts pass their executable tests;
+  those tests do not prove that two SC6 processes converge under correction.
 - Stock online packets do not provide enough metadata for real rollback
   transport.
-- Cross-round and object-lifecycle rollback should be treated as out of scope
-  for the first prototype.
+- Round and lifecycle coordination have concrete Horse components and
+  self-tests, but still need live match, rematch, disconnect, and teardown
+  evidence.
 
 ## Related local context
 
 Local files under `E:/myMods` used as implementation context:
 
-- `E:/myMods/docs/investigations/rollback-netcode-methods-2026-05-19.md`
-- `E:/myMods/docs/investigations/sc6-replay-input-rollback-boundary-2026-05-21.md`
-- `E:/myMods/RemoveDelay.md`
-- `E:/myMods/HorseMod/horselib/ReplayScrub.hpp`
-- `E:/myMods/HorseMod/horselib/ReplayClockGate.hpp`
-- `E:/myMods/HorseMod/horselib/ActorTickGate.hpp`
+- `E:/myMods/HorseMod/horselib/RollbackProductionRuntime.hpp`
+- `E:/myMods/HorseMod/horselib/RollbackSnapshot.hpp`
+- `E:/myMods/HorseMod/horselib/RollbackGekkoRuntimeCore.hpp`
+- `E:/myMods/HorseMod/horselib/RollbackSteamP2PTransport.hpp`
+- `E:/myMods/HorseMod/horselib/RollbackReplayOracle.hpp`
+- `E:/myMods/tools/rollback_full_validation_run.py`
+- `E:/myMods/tools/rollback_two_client_acceptance_run.py`
 
 Use those files to guide the prototype, but keep future public documentation
 grounded in Ghidra MCP evidence and reproducible local tests.
+
+## Outstanding implementation work
+
+This is the status of the current uncommitted `E:/myMods` implementation, not a
+future architecture proposal. Component and test presence establishes local
+implementation coverage only unless a live artifact-bound result is named.
+
+### Implemented and self-tested pieces
+
+- **Gekko event execution and local correction contracts:**
+  `RollbackGekkoAdapter` and `RollbackGekkoRuntimeCore` implement ordered Save,
+  Load, and Advance handling. `RollbackGekkoSelfTest`,
+  `RollbackGekkoRuntimeCoreSelfTest`, and `RollbackEndToEndSelfTest` exercise
+  local two-session traffic, rollback Advance events, and checksum convergence.
+  These are executable harness results, not two SC6 processes.
+- **Snapshot schema, handle ring, and recent deterministic state:**
+  `RollbackSnapshot`, `RollbackSnapshotStore`,
+  `RollbackLuxMoveVmSlotParamSnapshot`, `RollbackBattleCameraSnapshot`, and
+  `RollbackFloatingPointEnvironment` cover the manifest, the 128-state handle
+  ring, MoveVM slot parameters, camera serializers, and the schema-bound FP
+  policy. The focused evidence is `RollbackSnapshotSelfTest`,
+  `RollbackSnapshotStoreSelfTest`, `RollbackLuxMoveStateSelfTest`,
+  `RollbackBattleCameraSnapshotSelfTest`, and
+  `RollbackFloatingPointEnvironmentSelfTest`.
+- **Transport and protocol scaffolding:** `RollbackProtocolV2`,
+  `RollbackUdpRuntime`, and `RollbackSteamP2PTransport` implement authenticated
+  protocol-v2 traffic over direct UDP or Horse's dedicated Steam P2P channel.
+  `RollbackProtocolV2SelfTest`, `RollbackUdpRuntimeSelfTest`,
+  `RollbackSteamP2PTransportSelfTest`, `RollbackBetaConfigSelfTest`, and
+  `RollbackPeerLivenessSelfTest` cover their local contracts.
+- **Native iteration, round, and fail-closed lifecycle controls:**
+  `RollbackNativeSimulationIteration`, `RollbackRoundCoordinator`,
+  `RollbackNativeTerminalGate`, `RollbackNativePreNewRoundGate`, and
+  `RollbackProductionActiveGuard` have focused tests with the corresponding
+  `*SelfTest` names. This demonstrates the modeled state machines and refusal
+  paths, not real match lifecycle behavior.
+- **Stage and replay evidence machinery:** `RollbackOnlineStageState`,
+  `RollbackStageWindSnapshot`, `RollbackStageWindAuthority`, and
+  `RollbackReplayOracle` have `RollbackOnlineStageStateSelfTest`,
+  `RollbackStageWindSnapshotSelfTest`, `RollbackStageWindAuthoritySelfTest`, and
+  `RollbackReplayOracleSelfTest`. The replay oracle test proves schema/hash
+  behavior; it is not an online determinism result.
+
+### Evidence still pending
+
+- No artifact-bound result proves that the DLL built from the current dirty
+  HorseMod worktree passes the complete gate. The recorded normal-render run
+  `20260807-103220-seek` passes its replay corridor, but its report contains
+  `artifact_evidence: null`; it must not be promoted to proof for later source
+  changes or to live rollback proof.
+- `RollbackGekkoSelfTest`, `RollbackEndToEndSelfTest`,
+  `RollbackReplayOracleSelfTest`, and `replay_input_script_selftest.py` are local
+  executable/parser evidence. Cross-process SC6 state restore, corrected-frame
+  canonical hash agreement, real consumed-input agreement, and visible
+  presentation behavior remain unproven.
+- Live evidence is still required for Steam session/bootstrap behavior, NAT or
+  relay routes, loss/reorder/duplication, rollback-window limits, round and
+  rematch transitions, disconnect/recovery, process teardown, and breakable or
+  wind-heavy stages. The evidence must bind both peers, the candidate DLL,
+  configuration, replay/golden inputs, and runner version.
+
+### Blockers before live two-process acceptance or production activation
+
+- `BuildInitialRollbackManifest` deliberately leaves exactly one gameplay
+  capability incomplete: `Presentation object lifetime and thread affinity`
+  (`RollbackCoverageCapabilityId::PresentationDispatch`). Source-frame listener
+  events still pass through, and production audio/VFX journal commit is
+  rejected. `RollbackAudioPresentationSelfTest` and
+  `RollbackVfxPresentationSelfTest` validate scaffolding; they do not close the
+  native terminal, persistent playback/slot-ID, confirmed-epoch materialization,
+  manager time-scale/visibility, or exactly-once commit boundaries.
+- Production must remain disabled until that manifest entry is evidence-backed
+  and `RollbackSnapshotSelfTest` is updated only because the implementation has
+  actually closed it. A passing support-hook mask, listener descriptor audit,
+  or replay seek cannot substitute for terminal suppression and confirmed
+  commit.
+- After the code blocker closes, validation must run against the exact candidate
+  artifact. `rollback_full_validation_run.py` is explicitly developer-only.
+  The release authority is `rollback_two_client_acceptance_run.py
+  --beta-release-gate`, which requires the artifact-bound local qualification,
+  trusted normal-render golden/replay evidence, manual stock-online attach
+  evidence, and a passing physical two-machine qualification manifest. The
+  local full gate also enforces a 14-replay corpus and a 3,600-second,
+  ten-completed-match soak; self-test or policy-lint modes cannot satisfy those
+  requirements.

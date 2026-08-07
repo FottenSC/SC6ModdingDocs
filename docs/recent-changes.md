@@ -21,6 +21,19 @@ git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
   nondeterministic audio-only random paths, known gameplay consumers, and
   replay/rollback-safe investigation and modding rules.
 
+## 2026-08-07 - HorseMod Rollback Cookbook Cross-Check
+
+### Changed
+
+- Reconciled the rollback investigation with the current HorseMod production-path
+  implementation: Steam P2P beta-v2 default/UDP compatibility routing, the
+  128-state snapshot handle model, current native snapshot coverage, and the
+  single remaining `PresentationDispatch` manifest blocker.
+- Added a three-part end-of-cookbook status section that distinguishes locally
+  implemented/self-tested components from pending evidence and the blockers to
+  artifact-bound live two-process SC6 acceptance. Replay, parser, oracle, and
+  local Gekko results are explicitly not represented as live gameplay proof.
+
 ## 2026-08-02 - SC6 MOT-to-Blender Export Cookbook
 
 ### Added
@@ -35,6 +48,29 @@ git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 - Corrected the `.mot` outer bank layout to include the reserved dword and
   `+0x08` offset table, and documented repeated-offset aliases and the absence
   of a guaranteed `count + 1` end sentinel.
+
+## 2026-07-10 - Rollback Production-Path Evidence
+
+### Changed
+
+- Updated the rollback investigation with the disabled-by-default Horse
+  UDP/Gekko production architecture, authenticated protocol-v2 envelope, three
+  distinct hash domains, 128-state handle ring, game-thread ownership rules,
+  and fail-closed lifecycle boundaries.
+- Corrected native input-cache identity: stock opcode 0 falls back to the
+  current `nLastFrameId` for a negative frame argument, uses an absolute frame
+  for its bitmap, and places only the low nibble on the wire.
+- Added recovered HgCpu physics (`0xD80`), timer-node (`0x2F0`), timer-config
+  (`0x12C`), motion bounds-grid (`0x44C`), and canonical WorldModePump (`0x40`)
+  layouts, including the timer reader's live-identity preservation semantics.
+- Documented the proven HgCpu coverage boundary, eight-byte cursor range,
+  breakable wall/barrier scalar state, confirmation-time audio/VFX ledger, and
+  wind emitter RNG/timer progression required during hidden resimulation.
+- Recorded 22 passing standalone rollback self-tests, `11141/11141` replay
+  input records, and strict replay run `20260710-021112-seek` with four of four
+  600-frame watch cases and zero state mismatches, while explicitly retaining
+  ten `PendingEvidence` gameplay gates and making no live two-process
+  acceptance claim.
 
 ## 2026-07-07 - Ranked Matchmaking Player Guide
 
