@@ -24,7 +24,7 @@ A new stage is not one asset. Treat it as several independent layers:
 | Picker validation, if used | `FBattleStageEnumEntry` in `g_LuxStage_MasterEnumStringTable` | `IsValidStageCodeStr_LookupInMasterEnum` succeeds after your append. |
 | Optional display text | Loc row or hook result for `GetStageLocIdByStageCode` | The picker label resolves to the intended string. |
 | Optional stage metadata | `StageInfoTable` row for the code | Round start, center/ring-edge metadata, and camera settings match your row. |
-| Optional deterministic collision | `ULuxStageAssetPaths` plus paired `ESA_HitData` / `ESA_HitData2`, or a native substitution hook | Runtime inspection shows the intended A/B `J_StgHitChkData*` blobs and scbattle barrier entries. |
+| Optional deterministic collision | `ULuxStageAssetPaths` plus paired `ESA_HitData` / `ESA_HitData2`, or a native substitution hook | Runtime inspection shows the intended A/B `J_StgHitChkData*` blobs and live frame-bounds grids. |
 
 The C++ load chain does not require the picker enum:
 
@@ -99,12 +99,13 @@ stub only the documented class names and keep behavior simple:
 | `ALuxBattleStage` | Root stage actor. |
 | `ALuxBattleStageActorManager` | Owns the nine documented actor lists at `+0x388..+0x408`. |
 | `ALuxStageMeshActor` | Visible geometry and ordinary UE4 `BodySetup` collision. |
-| `ALuxStageBreakableBarrierActor` | Boundary/barrier bridge actors; verify the deterministic buffer after load. |
+| `ALuxStageBreakableBarrierActor` | Event-registered breakable barrier actors; component bounds describe their current presentation geometry. |
 | `ALuxStageBreakableWallActor` | Optional visible breakable wall/set-piece actors. |
 
-Do not assume actor count equals gameplay collision capacity. The scbattle ring
-boundary is a fixed 12-entry `g_aScbattleStageInfoBarrierEntries` buffer, and
-terrain/wall/ring tags use the separate `J_StgHitChkData` path. The actor lists
+Do not assume actor count equals gameplay collision geometry. Deterministic
+terrain/wall/ring tags use the separate `J_StgHitChkData` path. The former
+12-entry buffer interpretation at `0x144844070` was disproved: that storage is
+a structured round-restore payload. The actor lists
 and collision layers are documented in [Stage System: UE4 actor and BodySetup collision](../sc6/stage-system.md#ue4-actor-and-bodysetup-collision).
 
 For visual mesh collision, use UE4's normal FBX collision names:
@@ -263,7 +264,7 @@ verified.
 |---|---|---|
 | Different round positions, center, ring edge, wall metadata, or camera DOF | Add a `StageInfoTable` row for the custom code. | Verify row lookup at round start. Missing per-character `StageInfoTable` data is documented as graceful, but custom rows still need table-path validation. |
 | Custom UE4 collision, camera collision, overlaps, particles | Cook valid static-mesh `BodySetup.AggGeom` via `UCX_` / `UBX_` / `USP_` / `UCP_` meshes. | Walk the whole map and test camera/overlap behavior. |
-| Custom deterministic ring boundary | Author barrier actors and inspect or patch the 12-entry scbattle buffer. | Runtime-check `g_aScbattleStageInfoBarrierEntries @ 0x144844070`; actor placement alone is not proof. |
+| Custom deterministic ring boundary | Route paired `ESA_HitData` / `ESA_HitData2` raw assets through `ULuxStageAssetPaths`, or substitute A/B blobs with a native hook. | Actor placement and component bounds alone are not proof of deterministic ring geometry. |
 | Custom terrain height, wall tags, or ring-edge tags | Route paired `ESA_HitData` / `ESA_HitData2` raw assets through `ULuxStageAssetPaths`, or substitute A/B blobs with a native hook. | New-code `ULuxStageAssetPaths` discovery is not documented as a finished cookbook path. Validate the exact asset path/identifier and both A/B blob pointers at runtime. |
 
 For a no-DLL content replacement of stock raw hit data, follow
@@ -291,8 +292,8 @@ Use this checklist in order:
 
 5. The level appears in battle and does not fall back to the stock stage.
 6. Camera collision, mesh collision, actor overlaps, and round transitions work.
-7. If barriers or walls matter, inspect the scbattle 12-entry barrier buffer or
-   hook the documented getter/setter path.
+7. If barriers or walls matter, inspect the registered actor state and the
+   attached `J_StgHitChkData` frame-bounds grids.
 8. If raw hit data matters, inspect both A/B `J_StgHitChkData*` pointers and
    test terrain height, wall contact, ring-out, rematch, and full stage reload.
 9. For online experiments, both peers use the same pak and the same hook build.
@@ -309,8 +310,8 @@ Use this checklist in order:
 | Map load starts, then crashes during package load | Cooked with the wrong UE version, missing dependencies, or native class references do not resolve | Recook with UE4 4.17.2, inspect load errors, and verify the stubbed SC6 class names. |
 | Code resolves to a DLC-looking path | The custom code contains a DLC routing substring | Rename the code to a substring-safe value such as `STG042` and update folder/map names. |
 | Map loads, but floor/camera collision fails | Static mesh `BodySetup` collision did not cook | Reimport meshes with `UCX_`, `UBX_`, `USP_`, or `UCP_` collision and recook. |
-| Visual collision works, but ring-out/wall behavior is stock | Only the UE4 collision layer changed | Work on scbattle barrier entries or `J_StgHitChkData`; see the replacement-stage collision notes. |
-| More barrier segments are ignored or behave unpredictably | The deterministic barrier buffer is fixed at 12 entries | Collapse the boundary to 12 segments or use a native patch that updates every consumer safely. |
+| Visual collision works, but ring-out/wall behavior is stock | Only the UE4 collision layer changed | Work on paired `J_StgHitChkData` assets or a native blob-substitution hook; see the replacement-stage collision notes. |
+| Barrier actors do not change ring-out geometry | Actor registration/presentation is separate from the `J_StgHitChkData` frame-bounds grid | Author or substitute matching `ESA_HitData` / `ESA_HitData2` blobs and verify both attached grids. |
 | Custom raw hit data appears ignored | `ULuxStageAssetPaths` lookup, identifier, or A/B raw asset paths are wrong | Prove the raw asset lookup first with runtime inspection before editing blob bytes. |
 | Online match desyncs at stage load | The other peer cannot resolve the same code/map or runs different hook/data | Install identical paks and hook builds on both peers; avoid online tests until local reload/rematch is stable. |
 
@@ -330,12 +331,12 @@ Use this checklist in order:
 ## Related
 
 - [Stage System](../sc6/stage-system.md) - master enum, stage-code routing,
-  AssetManager load chain, actor lists, scbattle storage, and raw hit-data path.
+  AssetManager load chain, actor lists, round-restore storage, and raw hit-data path.
 - [Replace a Stage](replace-stage.md) - simpler stock-slot workflow with
   concrete replacement pak paths and collision-layer diagnostics.
 - [Structures: stage geometry](../sc6/structures.md#stage-geometry) - native
-  structures for stage actors, `ULuxStageAssetPaths`, scbattle globals, and
-  `J_StgHitChkData`.
+  structures for stage actors, `ULuxStageAssetPaths`, round-restore globals,
+  and `J_StgHitChkData`.
 - [On-disk Battle Data Files](../sc6/on-disk-files.md) - separate
   `/Game/Battle/` character-data file families that a stage-only pak should not
   modify.

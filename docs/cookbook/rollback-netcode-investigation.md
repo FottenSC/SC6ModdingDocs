@@ -341,7 +341,7 @@ A rollback snapshot needs more than visible character transforms. Minimum state:
 | Hitbox/KHit/body collision state | Active attack descriptors, hurtbox masks, body collision, pending damage. |
 | Timers and frame counters | Round timers, hitstop, master clock, frame id, global battle frame counter. |
 | RNG globals | LFSR/index, xorshift96, LCG, and any helper state consumed by gameplay or camera/effects. |
-| Stage state | Deterministic scbattle barrier block, terrain/contact flags, breakable wall/barrier state. |
+| Stage state | Deterministic `J_StgHitChkData` terrain/contact state plus gameplay-relevant breakable wall/barrier state. |
 | Input buffers | `ALuxBattleFrameInputLog` cache, cache tags, current-input mirrors, cursors, sent-input bitmap. |
 | Round-start data | Per-round reset blobs and transition state for preventing rollback across object lifecycle boundaries. |
 | One-way side-effect fences | Audio/VFX/camera/HUD/animation notify state, or suppression masks for resim frames. |
@@ -911,7 +911,7 @@ boundaries. Do not mutate the live online cache from a network thread.
 | Side-effect leaks | Safe by temporarily disabling a side-effect gate for one hidden resim frame. | Required online because correction may happen under real rendering/audio load. | Pass: event ledger identifies the leaked event and gates prevent it in normal tests. Fail: duplicate visible effects, camera discontinuity, or gameplay-affecting notify mutation. |
 | Round transition boundary faults | Safe only as a refusal test: schedule corrections near KO, round end, replay reset, or object teardown and verify rollback does not cross the lifecycle boundary. | Required before any online prototype can survive real rounds. | Pass: rollback refuses, stalls, or resyncs with an explicit reason. Fail: restore into freed/recreated chara or stage objects. |
 | Actor lifecycle invalidation | Do not fake freed pointers. Safe tests are pointer/lifetime validation failures captured from natural transitions or controlled refusal cases. | Required for real online exits, rematches, loading, and disconnects. | Pass: snapshot manifest marks the target invalid and restore is blocked. Fail: restore writes into stale actor memory. |
-| Stage state mutation | Safe if limited to known deterministic stage state, such as the scbattle barrier block, or a tracked lab-only mutation. | Required for modded stages and online stage-object interactions. | Pass: mutation is either snapshotted/restored or detected as unsupported. Fail: same inputs diverge after wall/barrier/contact changes. |
+| Stage state mutation | Safe only if limited to known deterministic stage state, such as a tracked lab-only terrain/contact or stage-object mutation. | Required for modded stages and online stage-object interactions. | Pass: mutation is either snapshotted/restored or detected as unsupported. Fail: same inputs diverge after wall/barrier/contact changes. |
 | Mod mismatch | Safe to model with manifest mismatch, hash mismatch, or altered test constants; avoid silently changing live assets mid-run. | Required in real transport before matchmaking/handshake. | Pass: peers refuse rollback or mark desync before gameplay correction. Fail: different gameplay data produces plausible but divergent hashes. |
 
 Offline-safe does not mean low-risk. Keep these tests behind an explicit lab

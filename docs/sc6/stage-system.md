@@ -34,8 +34,8 @@ built statically and therefore needs a DLL hook.
 | `ULuxUIBattleLauncher::Start` | `0x1405eeb50` | Copies `StageSetting` and the other launch sub-tables into the BattleManager setup table. |
 | `ULuxUIBattleLauncher::GetBattleStageCode` | `0x1405b0c60` | Reads `StageSetting.StageCode`; defaults to `STG001` if missing. |
 | `LuxBattle_CreateStageInfoHandler` | `0x1403c3010` | Allocates the gameplay-side `scbattle::StageInfoHandler`. |
-| `SetScbattleStageInfoBarrierGeometry` | `0x1402d77c0` | Copies exactly 12 deterministic ring-boundary entries into `g_aScbattleStageInfoBarrierEntries`. |
-| `GetScbattleStageInfoBarrierGeometry` | `0x1402d7730` | Copies exactly 12 deterministic ring-boundary entries out when the valid flag is set. |
+| `SetScbattleRoundSnapshotPayload` | `0x1402d77c0` | Copies the exact `0xC0` round-restore payload and publishes its valid flag. |
+| `GetScbattleRoundSnapshotPayload` | `0x1402d7730` | Copies the valid structured round-restore payload to the caller. |
 | `LuxBattle_SetFrameCacheHitChkDataPtrs` | `0x1402dae70` | Seeds the A/B `J_StgHitChkData*` globals used by frame-cache refresh. |
 | `LuxBattle_AttachStgHitChkData` | `0x140392080` | Expands serialized terrain/wall collision blobs into live frame-bounds grids. |
 | `LuxBattleManager_InitRound_TickTimers_ClearRoundData` | `0x1403fb660` | Round-start consumer of `ULuxStageAssetPaths.Setting.bWet`; drives `WetRatio`. |
@@ -164,7 +164,7 @@ background-animation helpers.
 | `StageActorList` | Any `ALuxStageActorBase` subclass | Catch-all list for stage-specific Lux actors. It is a broad registry, not a collision layer by itself. |
 | `WolfCharacterList` | `ALuxStageWolfCharacter` (`LuxStageWolfCharacter` registered class) | Background creature/animal actor bucket. Despite some decompiler names saying `MobBase`, the registered class is wolf-character-specific. |
 | `BreakableWallActorList` | `ALuxStageBreakableWallActor` | Visible breakable wall/set-piece actors. After collection, each wall dispatches battle event class `0x19` through `LuxStage_RegisterWallActor_BattleEvent0x19`; gameplay then treats the wall as a registered breakable segment. |
-| `BarrierActorList` | `ALuxStageBreakableBarrierActor` | Invisible/nonvisual arena-boundary or ring-out trigger actors. After collection, each barrier dispatches battle event class `0x19` through `LuxStage_RegisterBarrierActor_BattleEvent0x19`. The fixed 12-entry scbattle barrier block is still the authoritative deterministic boundary after registration. |
+| `BarrierActorList` | `ALuxStageBreakableBarrierActor` | Breakable barrier actors. After collection, each barrier dispatches battle event class `0x19` through `LuxStage_RegisterBarrierActor_BattleEvent0x19`. Their current mesh-component bounds describe presentation geometry; deterministic terrain/wall/ring queries use `J_StgHitChkData`. |
 | `HideableMeshActorList` | `ALuxStageHideableMeshActor` | Mesh actors that can be hidden/faded based on camera, LOD, or stage state. The collector can immediately hide them if the active condition fails. |
 | `VisibilitySwitcherList` | `ALuxStageVisibilitySwitcher` / registered `LuxStageVisibilitySwitcher` | Stage-state visibility controllers used by streamed BG/VFX/gimmick sublevels to toggle sets of actors. The current Ghidra wrapper name includes `Actor`, but the reflected class string is `LuxStageVisibilitySwitcher`. |
 | `StageMobList` | `ULuxStageAnimInstance` from `ALuxStagePawnBase` actors | Stores stage mob animation instances, not the pawn actors themselves. Used for animated background characters/creatures and stage animation events. |
@@ -182,13 +182,34 @@ only):
 | `ALuxStageBreakableWallActor` | `STG009` (`STG009_Gimmicks.umap`) |
 | `ALuxStageHideableMeshActor` | `STG001`, `STG001_T`, `STG003`, `STG003_T`, `STG009`, `STG011`, `STG011_T`, `STG012`, `STG012_T` |
 | `ALuxStageVisibilitySwitcher` / `ALuxStageVisibilitySwitch*` | `STG001`, `STG001_T`, `STG002`, `STG002_D`, `STG002_T`, `STG003`, `STG003_T`, `STG004`, `STG005`, `STG005_T`, `STG006`, `STG008`, `STG008_T`, `STG009`, `STG010`, `STG010_T`, `STG011`, `STG011_T`, `STG012`, `STG012_T`, `STG013` |
-| `ALuxStageCuttableMeshBase` / `Cuttable*` | No exact `.umap` matches in the dumped stock stages. The class exists natively, but the dump does not show stock map usage. |
+| `ALuxStageCuttableMeshBase` / `CuttableProceduralMesh` | `STG017` (`Content/DLC/11/Stage/STG017/Maps/STG017_CutBamboo.umap`) |
 | `ALuxStageWolfCharacter` / `StageMob*` | No exact `.umap` matches in the dumped stock stages. Treat these as supported optional background-actor paths unless a specific stage asset proves otherwise. |
 
-No DLC stage `.umap` in the supplied dump matched these exact Lux stage actor
-class strings. That does not prove the DLC stages have no equivalent behavior;
-it only means this quick scan did not find those exact native class names in the
-map packages.
+The STG017 result comes from an exhaustive serialized-FString scan of 52,567
+stock package headers, followed by full package parsing of the candidate. The
+map contains both `LuxStageCuttableMeshBase` and `CuttableProceduralMesh`.
+
+The native cuttable path is presentation state, but it is not particle-only:
+
+- `HandleLuxStageCuttableMeshWeaponOverlap @ 0x14054e540` walks 0x44-byte keyed
+  move-event entries. The stable `FLuxStageCutEvent_Partial` value begins at
+  entry `+0x04` and is 0x40 bytes.
+- `ApplyLuxStageCutFromMoveEvent @ 0x140540ea0` creates/configures the
+  procedural slice at actor `+0x448`, creates a dynamic material at `+0x428`,
+  plays `SliceSE`, and calls `SpawnAndRegisterParticleAtLocationSlot @
+  0x1408a3fd0` for the slice and optional first-cut leaf particles.
+- `TickLuxStageCuttableMeshPresentation @ 0x14054d7a0` advances delayed cuts,
+  two 20-tick cut-material phases, component release, fade, and material
+  refresh. `TickIndexedLuxStageCuttableMesh @ 0x140415b80` reaches it from the
+  stage-manager presentation loop rather than the deterministic battle
+  `SimulationLoop`.
+
+UE overlap state is cached, not recomputed by the reflected query.
+`IsPrimitiveComponentOverlappingComponent @ 0x141da3160` scans the
+`UPrimitiveComponent +0x6A0` overlap TArray using 0x90-byte `FOverlapInfo`
+entries and resolves the weak component at entry `+0x74`. It performs no
+geometry update or delegate broadcast, so it cannot prove that a discarded
+historical BeginOverlap will be emitted again after rollback.
 
 Each `ULuxStageMeshComponent` carries a stock UE4 `UBodySetup`
 (`Z_Construct_UClass_UBodySetup_NoRegister @ 0x1422b8e50` confirms verbatim
@@ -198,40 +219,33 @@ meshes produces the right cooked-PhysX BodySetup.
 
 This does **not** define deterministic ring-out collision by itself. Editing a
 static mesh `BodySetup` can fix camera/particle/UE4 overlap behavior, but the
-battle simulation reads the scbattle and `J_StgHitChkData` paths below.
+battle simulation's terrain/wall/ring queries read `J_StgHitChkData` below.
 
-### scbattle ring-boundary block
+### Round-restore storage formerly misidentified as stage geometry
 
-`scbattle::StageInfoHandler` (allocated by `LuxBattle_CreateStageInfoHandler @ 0x1403c3010`)
-backs deterministic ring-boundary state with globals at `0x144844010..0x144844130`:
+The block at `0x14484406c..0x14484412f` is not a ring-boundary array.
+`GetScbattleRoundSnapshotPayload @ 0x1402d7730` and
+`SetScbattleRoundSnapshotPayload @ 0x1402d77c0` copy a structured `0xC0`
+round-restore payload in twelve 16-byte XMM lanes. The lane count was formerly
+misread as twelve geometric records.
 
 | Address | Label | Size | Purpose |
 |---|---|---:|---|
-| `0x144844010` | `g_scbattle_StageInfo_RngSeed` | 4 B | host-broadcast match seed |
-| `0x144844020` | `g_sScbattleStageBoundaryParams` | 64 B | stage origin, P1/P2 offsets, facing angles |
-| `0x144844068` | `g_dwScbattleStageInfoInitialized` | 4 B | initialized flag |
-| `0x14484406c` | `g_dwScbattleStageInfoBarrierValid` | 4 B | barrier-valid flag, not a count |
-| `0x144844070` | `g_aScbattleStageInfoBarrierEntries` | `0xC0` | `scbattle_BarrierEntry[12]` ring-boundary segments |
+| `0x14484406c` | `g_dwLuxBattleRoundSnapshotValid` | 4 B | payload-valid flag, published after a full write |
+| `0x144844070` | `g_LuxBattleRoundSnapshotPayload` | `0xC0` | round index, gameplay xorshift state, winner, two character records, and motion entries |
 
-`GetScbattleStageInfoBarrierGeometry @ 0x1402d7730` and
-`SetScbattleStageInfoBarrierGeometry @ 0x1402d77c0` both copy exactly 12
-`scbattle_BarrierEntry` records: 12 entries × 16 bytes = `0xC0`. Older notes
-that described a 24-entry / `0x180`-byte block were stale.
+`LuxBattle_SaveRoundRestoreSnapshot` and
+`LuxBattle_RestoreRoundSnapshot` independently access those exact addresses as
+structured round/VFX/RNG/motion state. No decompiled consumer supports the old
+barrier-segment interpretation. The adjacent globals at `0x144844010` and
+`0x144844020` must not be described as stage geometry without separate evidence.
 
-```c
-struct scbattle_BarrierEntry {  // 0x10
-    float flX0;
-    float flY0;
-    float flX1;
-    float flY1;
-};
-```
-
-The UE4 barrier/wall actor bridge is event-based. `LuxActor_CollectActors_By8Classes_IntoTArrays @ 0x140417a70`
-collects the stage actor lists, then `LuxStage_RegisterBarrierActor_BattleEvent0x19 @ 0x140427490`
-and `LuxStage_RegisterWallActor_BattleEvent0x19 @ 0x140428ee0` dispatch event
-class `0x19` records for those actors. `HandleStageBreakableBarrierHit @ 0x140549f40`
-is visual break-event logic; it does not write the deterministic barrier array.
+The UE4 barrier/wall actor bridge remains event-based.
+`LuxActor_CollectActors_By8Classes_IntoTArrays @ 0x140417a70` collects the stage
+actor lists; `LuxStage_RegisterBarrierActor_BattleEvent0x19 @ 0x140427490` and
+`LuxStage_RegisterWallActor_BattleEvent0x19 @ 0x140428ee0` dispatch event class
+`0x19` records. This registration path is separate from the
+`J_StgHitChkData` terrain/wall grid.
 
 ### `J_StgHitChkData` terrain/wall grid
 
@@ -303,8 +317,8 @@ Runtime storage chain:
 | `LuxBattle_SetFrameCacheHitChkDataPtrs @ 0x1402dae70` | copies those two blob pointers out of a setup packet |
 | `LuxBattle_RefreshFrameTerrainCache @ 0x140314480` | pairs FrameTransformA/B with the A/B blobs each refresh |
 | `LuxBattle_AttachStgHitChkData @ 0x140392080` | expands the serialized blob into the live frame-bounds grid |
-| `g_LuxBattle_FrameBoundsGridA @ 0x144844dd0` | live grid A |
-| `g_LuxBattle_FrameBoundsGridB @ 0x144845e80` | live grid B, inside `g_LuxBattle_FrameTransformB + 0xc60` |
+| `g_abLuxBattleFrameTransformContextA @ 0x144844170` | `0x10AC`-byte frame context A; live grid embedded at `+0xC60` (`0x144844dd0`) |
+| `g_abLuxBattleFrameTransformContextB @ 0x144845220` | `0x10AC`-byte frame context B; live grid embedded at `+0xC60` (`0x144845e80`) |
 | `g_LuxBattle_FrameContextUseB @ 0x14470dedc` | selects A vs B accessors |
 
 Consumers include `LuxBattle_SampleTerrainAtWorldXZ @ 0x1403915a0`,
@@ -315,16 +329,31 @@ observed in the wall path is: tag `1` → `0x3A`, tag `3` → `0x3C`, otherwise
 `0x3B` is vertical floor/ceiling contact, `0x3C` is edge/ring-out terrain, and
 `0x3F` is the excluded scan tag.
 
+Each live grid is exactly `0x44C` bytes. `+0x000` points to the
+`J_StgHitChkData` header, `+0x008` holds 128 cell-bucket pointers, `+0x408`
+points to a contiguous array of `0x40`-byte terrain entries, and `+0x410` is
+the live flag. The authoritative render/enumeration count is the signed
+`int16` header field at `+0x2C`; walking cell buckets can duplicate triangles
+and omit entries that only participate in point-sampling queries.
+
+Lux battle coordinates use X/Z as the ground plane and Y as vertical. For UE
+debug drawing, convert with `UE(X,Y,Z) = Lux(X,Z,Y) * 100`. Entries in alternate
+frame 1 or 2 are local to the origins at transform-context `+0x820/+0x830`;
+add the matching origin before that coordinate conversion. Sub-kind `4`
+(`dwTerrainTagAndHalfFloat & 0xF00 == 0x400`) is rejected by the segment/wall
+tester but consumed by the point-sampling matrix, so a complete stage renderer
+must still enumerate and draw it.
+
 ### Can collisions be modified or added?
 
 Yes, but the viable path depends on which collision layer you mean:
 
 | Goal | Plausible path | Hard limit / risk |
 |---|---|---|
-| Modify existing deterministic ring boundary | Hook `SetScbattleStageInfoBarrierGeometry @ 0x1402d77c0` or patch `g_aScbattleStageInfoBarrierEntries @ 0x144844070` after it is set | Fixed 12-entry buffer; both peers need identical data online |
-| Add more deterministic ring segments | Binary patch the fixed storage, getter/setter copies, and every consumer that assumes 12 entries | More invasive than a data mod; no spare count field was found at `0x14484406c` |
+| Modify deterministic terrain/wall/ring geometry | Override the stock raw asset referenced by `ESA_HitData` / `ESA_HitData2`, or substitute the blob before `LuxBattle_AttachStgHitChkData` | Requires the exact `J_StgHitChkData` format and identical deterministic data on both peers |
+| Add terrain/wall/ring triangles | Rebuild or substitute a `J_StgHitChkData` blob with the desired entries and valid cell/Z-bucket indexing | There is no verified 12-segment shortcut; `0x144844070` is round-restore state |
 | Move visible/UE4 collision | Edit the `.umap` and each mesh `UBodySetup.AggGeom` with normal UE4 collision meshes | Does not change rollback-safe ring-out/wall tests by itself |
-| Move barrier actors in a custom/replaced `.umap` | Author matching `ALuxStageBreakableBarrierActor` transforms and verify the event 0x19 registration path | Still test against the 12-entry scbattle buffer at runtime |
+| Move breakable barrier actors in a custom/replaced `.umap` | Author matching `ALuxStageBreakableBarrierActor` transforms and verify the event `0x19` registration path | Component bounds are presentation evidence; deterministic collision behavior still needs the registered actor and `J_StgHitChkData` paths understood |
 | Modify terrain/wall/ring tags without runtime code | Override the stock `ULuxStageAssetPaths` asset and/or the raw assets referenced by its `ESA_HitData` / `ESA_HitData2` `RawAssets` entries in a higher-priority pak | Requires exact stock object paths and a valid `J_StgHitChkData` binary blob format |
 | Modify terrain/wall/ring tags with runtime code | Hook `LuxBattle_SetFrameCacheHitChkDataPtrs` / `LuxBattle_AttachStgHitChkData` to substitute A/B blobs | Easier to experiment, but needs native code and both peers online |
 
@@ -408,9 +437,8 @@ to register with the gameplay engine:
 - `ALuxBattleStageActorManager` (manages the 9 lists)
 - 1+ `ALuxStageMeshActor` — visuals + UE4 collision (`UCX_/UBX_/USP_/UCP_`
   meshes auto-route into `BodySetup.AggGeom`)
-- `ALuxStageBreakableBarrierActor` placements covering the ring boundary;
-  the deterministic scbattle buffer has room for 12 `scbattle_BarrierEntry`
-  segments
+- Any `ALuxStageBreakableBarrierActor` placements required by the stock stage's
+  event-registered breakable presentation/gameplay path
 - (Optional) `ALuxStageBreakableWallActor` — breakable walls
 
 Stub these classes in a UE4 4.17.2 project with the correct `UClass` names and
@@ -439,18 +467,16 @@ path — the stream load fails and the match desyncs at level-load time.
 
 ## Runtime collision overlay (collision-only mods)
 
-To reshape ring-out or wall-break geometry without authoring a new umap, hook
-`SetScbattleStageInfoBarrierGeometry @ 0x1402d77c0` and rewrite the `0xC0`
-buffer it copies into `g_aScbattleStageInfoBarrierEntries @ 0x144844070`.
-The visual stage stays the same; the deterministic ring boundary becomes the
-12 segments you supply. Online play needs the same hook on both peers —
-otherwise rollback snapshots disagree about ring-out events.
-
-For terrain height, wall tags, or ring-edge tags, the barrier setter is the
-wrong layer. Substitute the `J_StgHitChkData` blob before
+To reshape deterministic terrain height, wall tags, or ring-edge tags without
+authoring a new umap, substitute the `J_StgHitChkData` blob before
 `LuxBattle_AttachStgHitChkData @ 0x140392080`, or hook
 `LuxBattle_SetFrameCacheHitChkDataPtrs @ 0x1402dae70` to provide replacement
-A/B blob pointers.
+A/B blob pointers. Both peers need identical deterministic data online.
+
+Do not patch `0x144844070` for stage geometry: it is the structured round-restore
+payload, and modifying it corrupts round/RNG/VFX/motion restoration rather than
+changing collision. Breakable wall/barrier component bounds can be overlaid as
+presentation geometry, but are not a substitute for the terrain grid.
 
 ## Random-pool bias
 
@@ -503,7 +529,7 @@ content-authorable and affects visible runtime behavior. Good next stage threads
 | Stage wind emitters | Per-stage wind could drive cloth, particles, or force-style cosmetic effects that custom maps may want to preserve. | `AddStageWindParamFromAsset @ 0x1403b3100`, `LuxBattle_RebuildStageWindEmitterList @ 0x1402d9f30`, `LuxBattle_TickStageWindAndAccumulateForces @ 0x140333fd0` |
 | Intro/start camera raw assets | `ESA_IntroCameraData` / `ESA_StartCameraData` already map to setup slots 2 and 3, but the binary camera payload format is still not documented. | `LuxCameraAction_StartStageIntro @ 0x140324ad0`, `LuxEffectSystem_InitStageIntroCameraSlot @ 0x140322240`, `LuxEffectCamera_GetStageIntroCameraTypeID @ 0x140301490` |
 | Stage BGSE / ambience audio | Custom or replaced stages may need matching background SE `.acb` assets and DLC path routing. | `LuxObject_CreateAsyncLoader_StageBGSE_ACB_RegisterAndAppend @ 0x14042d3d0`, `LuxAudio_LookupStageMaterialSoundTable @ 0x1404247b0` |
-| Destructible and visibility actors | Breakable walls, hideable meshes, and visibility switchers are likely the next layer after deterministic barriers. | `HandleStageBreakableWallBroken @ 0x14053d4b0`, `SetStageVisibilitySwitcherEnableFlag @ 0x140bdeaa0`, `SetLuxStageHideableMeshActorMeshHidden @ 0x14055cbf0` |
+| Destructible and visibility actors | Breakable walls, hideable meshes, and visibility switchers are the presentation/state layer adjacent to deterministic `J_StgHitChkData` geometry. | `HandleStageBreakableWallBroken @ 0x14053d4b0`, `SetStageVisibilitySwitcherEnableFlag @ 0x140bdeaa0`, `SetLuxStageHideableMeshActorMeshHidden @ 0x14055cbf0` |
 | Online stage sync payload | New-stage mods need exact host/client stage-code and random-stage behavior to avoid load desyncs. | `LuxOnlineBattleSync_SendStage_StageCode_IsRandom_RngSeed @ 0x14051fc80`, `LuxOnlineBattleSync_RequestStage_SendOpcode6 @ 0x14051dbc0` |
 
 ## Cross-references

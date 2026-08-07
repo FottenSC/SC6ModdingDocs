@@ -13,6 +13,19 @@ For audit detail, use the current branch history:
 git log --date=short --pretty=format:"%h%x09%ad%x09%s" -30
 ```
 
+## 2026-08-07 - Stage Collision and Reaction Documentation Corrections
+
+### Corrected
+
+- Corrected the former `0x144844070` 12-entry stage-barrier interpretation:
+  the `0xC0` region is a structured round-restore payload, not deterministic
+  collision geometry. Custom stage and replacement guidance now directs
+  terrain/wall/ring work through paired `J_StgHitChkData` data instead.
+- Recovered the embedded A/B frame-bounds-grid layout, clarified its terrain
+  enumeration and alternate-frame coordinate rules, and aligned the structures,
+  glossary, symbol index, and rollback cookbook with the corrected model.
+- Corrected reaction-gate and renamed-structure anchors so index links resolve.
+
 ## 2026-08-07 - Random Functions and Gameplay Impact
 
 ### Added
@@ -261,8 +274,9 @@ Related commit: [`7868995`](https://github.com/FottenSC/SC6ModdingDocs/commit/78
 ### Added
 
 - Expanded the stage replacement cookbook with practical collision-layer guidance
-  for visual `BodySetup` collision, breakable wall/barrier actors, the fixed
-  scbattle barrier block, and paired `J_StgHitChkData` raw hit-data blobs.
+  for visual `BodySetup` collision, breakable wall/barrier actors, structured
+  round-restore storage, and paired `J_StgHitChkData` raw hit-data blobs. The
+  newer correction above supersedes the former barrier-array interpretation.
 - Added a community exploration workflow for testing wall collision changes,
   donor hit-data swaps, and possible extra breakable wall experiments without
   implying that actor placement alone creates deterministic wall cells.

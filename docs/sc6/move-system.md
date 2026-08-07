@@ -43,7 +43,7 @@ UI docs for `DA_MoveListTable_*` are in [Character Data](character-data.md).
 | `LuxMoveSystem_TickMove` | `0x367EE0` | Plain per-frame tick. |
 | `LuxMoveSystem_TickMoveAndAutoAdvance` | `0x31C740` | Tick + auto-advance to next move. |
 | `LuxMoveVM_TickAgainstReactingOpp` | `0x31C8B0` | Tick variant when opponent is in hit-reaction. |
-| `LuxMoveVM_PostATKDelayGate` | `0x365520` | 1..5-frame randomised post-ATK delay. |
+| `LuxMoveVM_PostATKDelayGate` | `0x365520` | Inclusive 5..20-tick randomised post-ATK delay. |
 | `LuxBattle_DispatchYarareReaction` | `0x3521B0` | Yarare dispatcher — 80-case switch on hit-reaction id. |
 
 ### Opcode quick reference
@@ -221,6 +221,17 @@ Auxiliary scratch / queue structs the VM maintains alongside the per-slot state:
     `MoveStartCounter`, bumped on each `TransitionToMove` call (handy for
     "did the move change?" checks without diffing `PackedMoveAddr`). `chara+0x1360` is the
     `LastHitAnimFrame` mirror, written by `ProcessHit` for HUD consumers.
+
+    Static native-code verification also fixes the containing object view: the three
+    `FLuxMoveLane` records form one contiguous `FLuxMoveLane[3]` at `+0x444F0` and end
+    exactly at the five `FLuxMotionPlaybackSlot` records at `+0x45228`. An older Ghidra
+    overlay beginning at `+0x44958` called lane 1's `+0x08/+0x10` floats "reaction
+    heights"; those bytes are actually `flAnimFrameCurrent` and `flAnimLength`.
+
+- `LuxMoveEventRbTreeNode` is a distinct 0x30-byte runtime node used by the KH11 event
+  lookup. Its payload is `dwPackedMoveId` at `+0x20` and
+  `FLuxMoveBankEventRecord* pEventRecord` at `+0x28`. It must not reuse the similarly
+  shaped fighter-registry node type; doing so falsely renders `+0x28` as `pChara`.
 - [`FLuxBattleVMFreezeRecord`](structures.md#fluxbattlevmfreezerecord-64-bytes) —
   64-byte slow-motion / VM-freeze blend state. Three candidate alphas, two countdowns,
   blended output. The `flAlphaCandidate3_SlowMo` slot is the slow-mo source (e.g. the
@@ -274,7 +285,7 @@ dedicated [Reaction System](reaction-system.md) page.
 <battle tick>
   → LuxMoveSystem_TickMove / TickMoveAndAutoAdvance / TickAgainstReactingOpp
       → LuxMoveVM_TickDriver
-          [phase==2] → LuxMoveVM_PostATKDelayGate   (1..5 frame random delay)
+          [phase==2] → LuxMoveVM_PostATKDelayGate   (inclusive 5..20 tick random delay)
           [phase==1] → LuxMoveVM_RefreshConditionFlagRing
                       → LuxMoveVM_ExecuteAndDumpOpcode   (executes opcode)
                           switch on opcode >> 16:
@@ -650,10 +661,10 @@ Key globals on the shared layer (see `structures.md` §
 "Stage / frame spatial acceleration"):
 
 - `g_LuxBattle_FrameContextUseB @ 0x14470DEDC` — byte flag; selects A vs B variants.
-- `g_LuxBattle_FrameBoundsGridA @ 0x144844DD0` / `g_LuxBattle_FrameBoundsGridB @ 0x144845E80` —
-  the two alternate 2D cell grids of triangle entries that the VM traces against.
-- `g_LuxBattle_FrameTransformA @ 0x144844170` / `g_LuxBattle_FrameTransformB @ 0x144845220` —
-  matched transform blocks read in lockstep with the bounds grid.
+- `g_abLuxBattleFrameBoundsGridA @ 0x144844DD0` / `g_abLuxBattleFrameBoundsGridB @ 0x144845E80` —
+  the two `0x44C`-byte grids of terrain entries that the VM traces against.
+- `g_abLuxBattleFrameTransformContextA @ 0x144844170` / `g_abLuxBattleFrameTransformContextB @ 0x144845220` —
+  matched `0x10AC`-byte contexts; each bounds grid is embedded at `+0xC60`.
 - `g_LuxBattle_TerrainProbeUp @ 0x1440FBC38` / `g_LuxBattle_TerrainProbeDown @ 0x1440F7688` —
   two 16-byte vec4 scratch slots. Primed by `SampleTerrainAtXZ_Impl` as vertical
   probes at ±100 units, reused by `IntersectSegmentWithTerrainTriangle` as
@@ -1201,7 +1212,7 @@ LOAD_VAR path when investigating "why does this move morph".
 | `0x140394E30` | `LuxMoveVM_CompareMoveClassName` | equality test on the pair built above |
 | `0x140365900` | `LuxMoveVM_ExecuteAndDumpOpcode` (was `LuxBattleMoveCommandPlayer_DebugDumpCommand`) | **the VM executor + disassembler combined** — mutates VM state per opcode AND emits debug trace. Not "just a dump". |
 | `0x1403656B0` | `LuxMoveVM_TickDriver` | per-tick entry point; gates executor on VM phase (idle/normal/post-ATK), calls ConditionFlagRing refresh + ExecuteAndDumpOpcode |
-| `0x140365520` | `LuxMoveVM_PostATKDelayGate` | 1..5-frame randomized delay after ATK opcode so the anim can play |
+| `0x140365520` | `LuxMoveVM_PostATKDelayGate` | Inclusive 5..20-tick randomized delay after ATK opcode; native selector dispatch uses `RandomInteger(16) + 5` |
 | `0x140364D10` | `LuxMoveVM_RefreshConditionFlagRing` | refreshes the `vmCtx+0x19F0..+0x1A64` predicate-flag ring each tick so IF opcodes see current chara state |
 | `0x1403732F0` | `LuxMoveVM_EvaluateIfOpcode` | ~120-arm switch evaluating a single IF-opcode subject token; NOT hit detection |
 | `0x140307BD0` | `LuxMoveVM_ResolveRangeAndAngleOffset` | decodes 3-short (range, angle, angle) into a world-space offset at chara+0x130; reads opponent position for direction-snap path |

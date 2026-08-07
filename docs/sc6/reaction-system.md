@@ -138,12 +138,12 @@ tick", and `0` to continue or cleanly exit.
 
 ---
 
-## `CheckYarareReactionGate` — 134 gate codes
+## `CheckYarareReactionGate` — 135 gate codes
 
 The reaction picker reads the opponent's per-character yarare table (entries
 `{u16 yarareId, s16 weight, s16 bodyPart}` at `opp+0x10 + idx*0x12`) and gates
 each entry via `LuxBattle_CheckYarareReactionGate @ 0x140362E70`. The gate
-function dispatches by gate-code `1..0x87` (134 codes) into one of 15 family
+function dispatches by gate-code `1..0x87` (135 inclusive codes) into one of 15 family
 helpers.
 
 ### Gate family dispatch
@@ -272,7 +272,9 @@ the reaction-specific block is:
 | +0x2C48 | `u32` | post-effect dispatched | `1` = in post-effect chain (via `TickWithNotifTokenSwitch`) |
 | +0x2C5C | `u32` | notif-token / post-effect index | |
 | +0x2C90 | `u32` | opp-change re-eval flag | |
-| +0x2CF4..+0x2CFC | `float[3]` | `RngRoll1`, `RngRoll2`, scratch | per-tick RNG cache |
+| +0x2CF4 | `float` | unknown/scratch | no write from `DispatchYarareReaction` in the 83-function static sweep |
+| +0x2CF8 | `float` | `flPrimaryRoll` | primary dispatcher RNG sample |
+| +0x2CFC | `float` | `flSecondaryRoll` | secondary dispatcher RNG sample |
 | +0x3008 | `u32` | `dwBodyPartStash` | bodyPart of the latest hit |
 
 ---

@@ -108,7 +108,7 @@ the page link for full context.
 | `LuxMoveVM_ProbeSpecialReactionOverride` | `0x1402DFD60` | [Reaction System: pipeline](../sc6/reaction-system.md#at-a-glance) |
 | `LuxMoveVM_RollComboExtensionReaction` | `0x1402E04A0` | [Reaction System: pipeline](../sc6/reaction-system.md#at-a-glance) |
 | `LuxBattle_YarareIdToReactionBitmask` | `0x14035F390` | [Reaction System: pipeline](../sc6/reaction-system.md#at-a-glance) |
-| `LuxBattle_CheckYarareReactionGate` | `0x140362E70` | [Reaction System: 134 gate codes](../sc6/reaction-system.md#checkyararereactiongate-134-gate-codes) |
+| `LuxBattle_CheckYarareReactionGate` | `0x140362E70` | [Reaction System: 135 gate codes](../sc6/reaction-system.md#checkyararereactiongate-135-gate-codes) |
 | `LuxBattle_CheckYarareGate_AttackCategoryGate` | `0x140362C30` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
 | `LuxBattle_CheckYarareGate_AttackMotionGate` | `0x140362D30` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
 | `LuxBattle_CheckYarareGate_StepRange` | `0x140360650` | [Reaction System: gate family dispatch](../sc6/reaction-system.md#gate-family-dispatch) |
@@ -244,10 +244,10 @@ the page link for full context.
 | `ApplyBattleSettingDataTableToBattleManager` | `0x140594EB0` | [Stage System: key entry points](../sc6/stage-system.md#key-entry-points) |
 | `LuxBattle_CreateStageInfoHandler` | `0x1403C3010` | [Stage System: key entry points](../sc6/stage-system.md#key-entry-points) |
 | `LuxActor_CollectActors_By8Classes_IntoTArrays` | `0x140417A70` | [Stage System: collision storage](../sc6/stage-system.md#stage-collision-storage) |
-| `GetScbattleStageInfoBarrierGeometry` | `0x1402D7730` | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
-| `SetScbattleStageInfoBarrierGeometry` | `0x1402D77C0` | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
-| `LuxStage_RegisterBarrierActor_BattleEvent0x19` | `0x140427490` | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
-| `LuxStage_RegisterWallActor_BattleEvent0x19` | `0x140428EE0` | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
+| `GetScbattleRoundSnapshotPayload` | `0x1402D7730` | [Stage System: round-restore storage](../sc6/stage-system.md#round-restore-storage-formerly-misidentified-as-stage-geometry) |
+| `SetScbattleRoundSnapshotPayload` | `0x1402D77C0` | [Stage System: round-restore storage](../sc6/stage-system.md#round-restore-storage-formerly-misidentified-as-stage-geometry) |
+| `LuxStage_RegisterBarrierActor_BattleEvent0x19` | `0x140427490` | [Stage System: round-restore correction and actor bridge](../sc6/stage-system.md#round-restore-storage-formerly-misidentified-as-stage-geometry) |
+| `LuxStage_RegisterWallActor_BattleEvent0x19` | `0x140428EE0` | [Stage System: round-restore correction and actor bridge](../sc6/stage-system.md#round-restore-storage-formerly-misidentified-as-stage-geometry) |
 | `LuxBattle_SetFrameCacheHitChkDataPtrs` | `0x1402DAE70` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
 | `LuxBattle_ApplyFrameCacheHitChkDataSetup` | `0x1403CFC20` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
 | `LuxObject_BuildParamSlots_FromBattleSubstrings_4Slots` | `0x1404208B0` | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
@@ -388,9 +388,7 @@ note on lazy extensions.
 | `FBatchedLine` | `0x34` | [structures](../sc6/structures.md#fbatchedline-0x34-bytes) |
 | `LuxBattleStageInfoTableRow` | `0x108` | [stage-system](../sc6/stage-system.md#luxbattlestageinfotablerow) |
 | `LuxBattleStageBasePositionParam` | `0x28` | [stage-system](../sc6/stage-system.md#luxbattlestagebasepositionparam) |
-| `scbattle_BarrierEntry` | `0x10` | [structures](../sc6/structures.md#scbattle-stage-info-globals) |
-| `scbattle_StageBoundaryParams` | `0x40` | [structures](../sc6/structures.md#scbattle-stage-info-globals) |
-| `scbattle_StageInfoParam` | `0x120` | [structures](../sc6/structures.md#scbattle-stage-info-globals) |
+| `LuxBattleRoundSnapshotPayload_Partial` | `0xC0` | [structures](../sc6/structures.md#round-restore-snapshot-globals) |
 | `FLuxBattleEventRecord` | `0x18` | [structures](../sc6/structures.md#stage-actor-registration-event-record) |
 | `ULuxStageAssetPaths` | class | [structures](../sc6/structures.md#uluxstageassetpaths-luxstagerawasset-and-luxstagesetting) |
 | `LuxStageRawAsset` | `0x18` | [structures](../sc6/structures.md#uluxstageassetpaths-luxstagerawasset-and-luxstagesetting) |
@@ -517,15 +515,15 @@ Layout source: [structures.md / ALuxBattleFrameInputLog](../sc6/structures.md#al
 | `0x1447123BC` | `g_LuxCharaAttrTable_Int_0x3038Stride` | Per-chara int table. | [Move System](../sc6/move-system.md#key-vm-globals) |
 | `0x1440F4750` | `g_LuxMoveStateTable` | Move-state ids, stride `0x14`, `0x29` rows. | [Move System](../sc6/move-system.md#key-vm-globals) |
 | `0x144149C50` | `g_LuxStage_MasterEnumStringTable` | `TArray<FBattleStageEnumEntry>` — 31 stock entries. | [Stage System: master enum table](../sc6/stage-system.md#master-enum-table) |
-| `0x144844010` | `g_scbattle_StageInfo_RngSeed` | Host-broadcast stage-info seed at the head of `scbattle_StageInfoParam`. | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
-| `0x144844020` | `g_sScbattleStageBoundaryParams` | 64-byte origin/spawn/facing parameter block. | [structures](../sc6/structures.md#scbattle-stage-info-globals) |
-| `0x14484406C` | `g_dwScbattleStageInfoBarrierValid` | Ring-boundary valid flag, not an entry count. | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
-| `0x144844070` | `g_aScbattleStageInfoBarrierEntries` | Fixed `scbattle_BarrierEntry[12]` deterministic ring-boundary buffer. | [Stage System: scbattle ring-boundary block](../sc6/stage-system.md#scbattle-ring-boundary-block) |
+| `0x14484406C` | `g_dwLuxBattleRoundSnapshotValid` | Valid flag for the structured round-restore payload. | [Stage System: round-restore storage](../sc6/stage-system.md#round-restore-storage-formerly-misidentified-as-stage-geometry) |
+| `0x144844070` | `g_LuxBattleRoundSnapshotPayload` | `0xC0` round/RNG/VFX/motion restore payload; not stage geometry. | [Stage System: round-restore storage](../sc6/stage-system.md#round-restore-storage-formerly-misidentified-as-stage-geometry) |
 | `0x14470D0D0` | `g_pLuxBattle_StgHitChkDataA` | Serialized `J_StgHitChkData*` attached into frame-bounds grid A. | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
 | `0x14470D0F8` | `g_pLuxBattle_StgHitChkDataB` | Serialized `J_StgHitChkData*` attached into frame-bounds grid B. | [Stage System: J_StgHitChkData terrain/wall grid](../sc6/stage-system.md#j_stghitchkdata-terrainwall-grid) |
 | `0x14470DEDC` | `g_LuxBattle_FrameContextUseB` | Selects frame-transform/grid A vs B. | [structures](../sc6/structures.md#frame-bounds-grid) |
-| `0x144844DD0` | `g_LuxBattle_FrameBoundsGridA` | Live terrain/wall frame-bounds grid A. | [structures](../sc6/structures.md#frame-bounds-grid) |
-| `0x144845E80` | `g_LuxBattle_FrameBoundsGridB` | Live terrain/wall frame-bounds grid B, embedded in FrameTransformB at `+0xC60`. | [structures](../sc6/structures.md#frame-bounds-grid) |
+| `0x144844170` | `g_abLuxBattleFrameTransformContextA` | `0x10AC`-byte frame-transform context A; grid embedded at `+0xC60`. | [structures](../sc6/structures.md#frame-transform) |
+| `0x144845220` | `g_abLuxBattleFrameTransformContextB` | `0x10AC`-byte frame-transform context B; grid embedded at `+0xC60`. | [structures](../sc6/structures.md#frame-transform) |
+| `0x144844DD0` | `g_abLuxBattleFrameBoundsGridA` | `0x44C`-byte live grid A, embedded in context A. | [structures](../sc6/structures.md#frame-bounds-grid) |
+| `0x144845E80` | `g_abLuxBattleFrameBoundsGridB` | `0x44C`-byte live grid B, embedded in context B. | [structures](../sc6/structures.md#frame-bounds-grid) |
 | `0x143E87838` | `KHitBase_vftable` | Vtable for the `KHitBase` family. | [structures](../sc6/structures.md#hit-detection-node-structs-khit) |
 | `0x1448554E8` | `g_LuxBattle_HitReactionSlideTable` | Per-hit-type slide-decay curves. | [Movement: code references](../sc6/movement.md#code-references) |
 | `0x14470E018` | `g_LuxBattle_YarareReactionParamBlock` (lazy-malloc'd) | The 1100-byte `FLuxBattleYarareReactionParamBlock` (per-intensity reach/knockback/weight tables). | [Reaction System](../sc6/reaction-system.md#fluxbattleyararereactionparamblock-1100-byte-global-param-table) |
